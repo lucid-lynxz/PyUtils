@@ -35,12 +35,20 @@ if __name__ == '__main__':
         target_dirs = FileUtil.listAllFilePath(lDir)
         target_dirs.append(lDir)
 
-        # 遍历所有目录¡路径，若是git仓库，则进行更新
+        # 遍历所有目录路径，若是git仓库，则进行更新
         for tDir in target_dirs:
             if FileUtil.isDirFileExist("%s/.git/" % tDir):  # 是个仓库
                 print('正在更新目录: %s' % tDir)
-                GitUtil(remotePath='', localPath=tDir).updateBranch()
-                update_dirs.append(tDir)
+                gitUtil = GitUtil(remotePath='', localPath=tDir)
+                status = gitUtil.getStatus()
+                nothingToCommit = 'nothing to commit' in status  # 是否已全部提交
+                if nothingToCommit:  # 切换到目标分支
+                    print('当前分支代码已全部提交, 执行pull操作...')
+                    gitUtil.updateBranch()
+                    update_dirs.append(tDir)
+                else:
+                    print('当前分支有代码未commit, 等待人工处理, 脚本跳过...')
+                    continue
 
     # 钉钉通知审核人员进行合并
     robotSection = configParser.getSectionItems('robot')
