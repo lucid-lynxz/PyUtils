@@ -315,14 +315,22 @@ class GitUtil(object):
         return self
 
     def pushBranch(self, localBranch: str = None, remoteBranch: str = None,
-                   codeReview: bool = False, options: str = ''):
+                   codeReview: bool = False, options: str = '') -> str:
         """
         推送代码到远程仓库的指定分支
         :param localBranch: 本地分支名,若为空,则使用当前分支,否则会先切换到目标分支
         :param remoteBranch: 远程目标分支
         :param codeReview: 是否需要触发代码评审, True-git push origin HEAD:refs/for/{remoteBranch}
         :param options: 额外的参数信息,如: -o reviewer=lynxz
-        return: self
+        return: push命令执行结果, 成功则:  Everything up-to-date 或者:
+            Counting objects: 4, done.
+            Delta compression using up to 8 threads.
+            Compressing objects: 100% (4/4), done.
+            Writing objects: 100% (4/4), 877 bytes | 877.00 KiB/s, done.
+            Total 4 (delta 3), reused 0 (delta 0)
+            remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+            To https://github.com/lucid-lynxz/PyUtils.git
+             * [new branch]      HEAD -> refs/for/master
         """
         if not CommonUtil.isNoneOrBlank(localBranch):
             self.checkoutBranch(localBranch)
@@ -333,8 +341,7 @@ class GitUtil(object):
 
         remoteBranchInfo = 'refs/for/%s' % remoteBranch if codeReview else remoteBranch
         gitCmd = 'git %s push HEAD:%s %s' % (self._gitDirWorkTreeInfo, remoteBranchInfo, options)
-        CommonUtil.exeCmd(gitCmd)
-        return self
+        return CommonUtil.exeCmd(gitCmd)
 
     def updateAllSubmodule(self, subModuleBranch: str = 'master'):
         """
