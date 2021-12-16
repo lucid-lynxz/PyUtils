@@ -183,6 +183,7 @@ class GitUtil(object):
         """
         获取当前分支名, 要求本地已有仓库存在
         踩坑:  可能分支正在rebasing, 导致 git branch 得到的结果为:  * (no branch, rebasing login_branch_demo)
+        也可以使用命令: git rev-parse --abbrev-ref HEAD
         :return: 分支名str
         """
         branchInfo = self.getBranch()
@@ -310,6 +311,28 @@ class GitUtil(object):
 
         gitCmd = 'git %s %s %s %s' % (
             self._gitDirWorkTreeInfo, 'rebase' if byRebase else 'pull', self._remoteRepositoryName, branch)
+        CommonUtil.exeCmd(gitCmd)
+        return self
+
+    def pushBranch(self, localBranch: str = None, remoteBranch: str = None,
+                   codeReview: bool = False, options: str = ''):
+        """
+        推送代码到远程仓库的指定分支
+        :param localBranch: 本地分支名,若为空,则使用当前分支,否则会先切换到目标分支
+        :param remoteBranch: 远程目标分支
+        :param codeReview: 是否需要触发代码评审, True-git push origin HEAD:refs/for/{remoteBranch}
+        :param options: 额外的参数信息,如: -o reviewer=lynxz
+        return: self
+        """
+        if not CommonUtil.isNoneOrBlank(localBranch):
+            self.checkoutBranch(localBranch)
+        localBranch = self.getCurBranch()
+
+        if CommonUtil.isNoneOrBlank(remoteBranch):
+            remoteBranch = localBranch
+
+        remoteBranchInfo = 'refs/for/%s' % remoteBranch if codeReview else remoteBranch
+        gitCmd = 'git %s push HEAD:%s %s' % (self._gitDirWorkTreeInfo, remoteBranchInfo, options)
         CommonUtil.exeCmd(gitCmd)
         return self
 
