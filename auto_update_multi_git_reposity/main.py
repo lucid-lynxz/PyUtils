@@ -12,50 +12,11 @@ import sys
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from util.ConfigUtil import NewConfigParser
-from util.GitUtil import GitUtil
-from util.CommonUtil import CommonUtil
-from util.NetUtil import push_ding_talk_robot
-from util import FileUtil
+from auto_update_multi_git_reposity.UpdateImpl import UpdateImpl
 
 if __name__ == '__main__':
+    # 默认使用当前目录下的 config.ini 文件路径
     configPath = '%s/config.ini' % os.getcwd()
-    configParser = NewConfigParser().initPath(configPath)
-    repository = configParser.getSectionItems('repository')
-    local_dir_str = repository['local']
 
-    # 检测仓库配置文件信息符合要求
-    if CommonUtil.isNoneOrBlank(local_dir_str):  # `local` 本地仓库路径
-        raise Exception('invalid local_dir path,please check %s' % configPath)
-
-    # 获取 `local` 路径目录及其下一级目录
-    local_dirs = [x.strip() for x in local_dir_str.split(",")]  # 待更新的根目录列表
-    update_dirs = []  # 更新过的目录
-    for lDir in local_dirs:
-        target_dirs = FileUtil.listAllFilePath(lDir)
-        target_dirs.append(lDir)
-
-        # 遍历所有目录路径，若是git仓库，则进行更新
-        for tDir in target_dirs:
-            if FileUtil.isDirFileExist("%s/.git/" % tDir):  # 是个仓库
-                print('正在更新目录: %s' % tDir)
-                gitUtil = GitUtil(remotePath='', localPath=tDir)
-                status = gitUtil.getStatus()
-                nothingToCommit = 'nothing to commit' in status  # 是否已全部提交
-                if nothingToCommit:  # 切换到目标分支
-                    print('当前分支代码已全部提交, 执行pull操作...')
-                    gitUtil.updateBranch()
-                    update_dirs.append(tDir)
-                else:
-                    print('当前分支有代码未commit, 等待人工处理, 脚本跳过...')
-                    continue
-
-    # 钉钉通知审核人员进行合并
-    robotSection = configParser.getSectionItems('robot')
-    token = robotSection['accessToken']
-    if not CommonUtil.isNoneOrBlank(token):
-        content = robotSection['keyWord']
-        atPhoneList = robotSection['atPhone'].split(',')
-        content += '\n已触发过更新的目录:\n%s' % '\n'.join(update_dirs)
-        print(push_ding_talk_robot(content, token, False, atPhoneList))
-    print('自动更新代码结束')
+    # 触发更新
+    UpdateImpl(configPath, optFirst=True).run()
