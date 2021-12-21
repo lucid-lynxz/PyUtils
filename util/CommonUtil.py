@@ -40,7 +40,7 @@ class CommonUtil(object):
         os.system(cmd)
 
     @classmethod
-    def isNoneOrBlank(cls, info: str):
+    def isNoneOrBlank(cls, info: str) -> bool:
         """
         判断所给字符串是否为None或者空(都是空白字符),若是则返回True
         :param info: 待判定的字符串

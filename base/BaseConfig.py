@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from util.ConfigUtil import NewConfigParser
 from util.CommonUtil import CommonUtil
 from base.Runnable import Runnable
+from util import FileUtil
 
 
 class BaseConfig(Runnable):
@@ -24,26 +25,28 @@ class BaseConfig(Runnable):
     """
 
     def __init__(self, configPath: str,
-                 configLongOpts: str = 'config',
+                 configLongOpt: str = 'config',
+                 configShortOpt: str = 'c',
                  optFirst: bool = False):
         """
         支持通过命令参数 --config 传入自定义的配置文件路径
         也可以直接通过沟通方法传入
         :param configPath: 配置文件路径
-        :param configLongOpts:由外部通过参数传入时的参数名, 默认是 'config' 表示: --config
+        :param configLongOpt:由外部通过参数传入时的长参数名, 默认是 'config' 表示: --config
+        :param configShortOpt:由外部通过参数传入时的短参数名, 默认是 'c' 表示: -c
         :param optFirst: True-优先使用通过命令参数获取的路径, False-优先使用 configPath 值
         """
 
         # 优先提取外部传入的config.ini配置文件路径,若未设置,则使用当前目录下的默认值
         optPath: str = ''
-        if not CommonUtil.isNoneOrBlank(configLongOpts):
+        if not CommonUtil.isNoneOrBlank(configLongOpt):
             try:
-                opts, args = getopt.getopt(sys.argv[1:], '', [configLongOpts])
+                opts, args = getopt.getopt(sys.argv[1:], '%s:' % configShortOpt, ['%s=' % configLongOpt])
                 if opts is None or len(opts) == 0:
                     print("opts is none, use default config path=%s" % configPath)
                 else:
                     for name, value in opts:
-                        if name in ['--config']:
+                        if name in ['-%s' % configShortOpt, '--%s' % configLongOpt]:
                             optPath = value
                             break
             except getopt.GetoptError as e:
@@ -58,4 +61,5 @@ class BaseConfig(Runnable):
         self.configPath = optPath if optFirst else configPath
 
         print('BaseConfig configPath=%s' % configPath)
-        self.configParser = NewConfigParser().initPath(configPath)
+        print('content is:\n%s' % ''.join(FileUtil.readFile(self.configPath)))
+        self.configParser = NewConfigParser().initPath(self.configPath)

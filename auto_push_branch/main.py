@@ -14,7 +14,8 @@ from auto_push_branch.PushImpl import PushImpl
 
 if __name__ == "__main__":
     # 默认使用当前目录下的 config.ini 文件路径
-    configPath = '%s/config.ini' % os.getcwd()
+    curDirPath = os.path.abspath(os.path.dirname(__file__))
+    configPath = '%s/config.ini' % curDirPath
 
     # 触发更新
     PushImpl(configPath, optFirst=True).run()

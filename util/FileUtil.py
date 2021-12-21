@@ -18,7 +18,7 @@ def recookPath(path: str):
     return path.replace("\\", "/").replace("//", "/")
 
 
-def isFileExist(path: str):
+def isFileExist(path: str) -> bool:
     """
     文件是否存在
     :param path: 文件路径
@@ -30,7 +30,7 @@ def isFileExist(path: str):
     return os.path.exists(path)
 
 
-def isDirFileExist(path: str):
+def isDirFileExist(path: str) -> bool:
     """
     文件是否是目录
     :param path: 文件路径
@@ -196,10 +196,11 @@ def __wirte2FileInnner(path: str, msg: str, append: bool) -> bool:
     return True
 
 
-def readFile(path: str) -> list:
+def readFile(path: str, encoding='utf-8') -> list:
     """
     读取给定路径的文件,返回所有放信息
     :param path: 文件路径(目录无效)
+    :param encoding: 读取时使用的编码,默认为: utf-8
     :return: list
     """
     path = recookPath(path)
@@ -208,7 +209,7 @@ def readFile(path: str) -> list:
             or isDirFileExist(path):
         return lines
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding=encoding) as f:
         lines = f.readlines()
 
     return lines

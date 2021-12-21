@@ -182,8 +182,14 @@ class GitUtil(object):
     def getCurBranch(self) -> str:
         """
         获取当前分支名, 要求本地已有仓库存在
-        踩坑:  可能分支正在rebasing, 导致 git branch 得到的结果为:  * (no branch, rebasing login_branch_demo)
         也可以使用命令: git rev-parse --abbrev-ref HEAD
+        踩坑:
+        1. 使用rebase合并发生冲突后, 分支处于rebasing, 导致 git branch 得到的结果为:  * (no branch, rebasing login_branch_demo)
+        2. 使用merge合并发生冲突后, 通过 git branch 得到的分支名是正常的, 此时若触发 git status,则得到如下:
+            On branch xxx
+            You have unmerged paths.
+            (fix conflicts and run "git commit")
+            (use "git merge --abort" to abort the merge)
         :return: 分支名str
         """
         branchInfo = self.getBranch()
@@ -340,7 +346,8 @@ class GitUtil(object):
             remoteBranch = localBranch
 
         remoteBranchInfo = 'refs/for/%s' % remoteBranch if codeReview else remoteBranch
-        gitCmd = 'git %s push HEAD:%s %s' % (self._gitDirWorkTreeInfo, remoteBranchInfo, options)
+        gitCmd = 'git %s push %s HEAD:%s %s' % (
+            self._gitDirWorkTreeInfo, self._remoteRepositoryName, remoteBranchInfo, options)
         return CommonUtil.exeCmd(gitCmd)
 
     def updateAllSubmodule(self, subModuleBranch: str = 'master'):
@@ -349,7 +356,8 @@ class GitUtil(object):
         :param subModuleBranch: 子模块对应的远程分支名
         :return: self
         """
-        gitCmd = "git %s submodule foreach 'git pull origin %s'" % (self._gitDirWorkTreeInfo, subModuleBranch)
+        gitCmd = "git %s submodule foreach 'git pull %s %s'" % (
+            self._gitDirWorkTreeInfo, self._remoteRepositoryName, subModuleBranch)
         CommonUtil.exeCmd(gitCmd)
         return self
 
@@ -361,12 +369,32 @@ class GitUtil(object):
         gitCmd = 'git %s status' % self._gitDirWorkTreeInfo
         return CommonUtil.exeCmd(gitCmd)
 
-    def mergeBranch(self, fromBranch: str, targetBranch: str = None, byRebase: bool = False):
+    def reset(self, mode: str = 'hard', commitId: str = 'HEAD') -> str:
+        """
+        还原代码到指定commitId, 默认为 --hard 模式
+        :param mode: 模式,默认为: hard
+        :param commitId: 回退的代码点, 默认为: HEAD
+        return: str, reset命令执行结果
+        """
+        modeOpt = '--%s' % mode
+        if CommonUtil.isNoneOrBlank(mode):
+            modeOpt = ''
+        gitCmd = 'git %s reset %s %s' % (self._gitDirWorkTreeInfo, modeOpt, commitId)
+        return CommonUtil.exeCmd(gitCmd)
+
+    def mergeBranch(self, fromBranch: str,
+                    targetBranch: str = None,
+                    byRebase: bool = False,
+                    strategyOption: str = ''):
         """
         将源分支代码合入目标分支中，默认使用 merge 命令进行合并
+        若合并失败,则默认进行回退: git reset --hard HEAD, 并抛出 Exception
         :param fromBranch: 源分支名
         :param targetBranch: 目标分支名, 默认使用当前分支
         :param byRebase: True-使用 rebase 命令进行合入, False-使用 merge 命令进行合入
+        :param strategyOption: 合并发生冲突时的处理方式,默认空
+                theirs->以fromBranch分支代码为准
+                ours->以targetBranch分支代码为准
         :return:  self
         """
         if CommonUtil.isNoneOrBlank(targetBranch):
@@ -381,8 +409,22 @@ class GitUtil(object):
         if CommonUtil.isNoneOrBlank(targetBranch):
             raise Exception('targetBranch 参数无效,mergeBranch失败')
 
-        gitCmd = 'git %s %s %s' % (self._gitDirWorkTreeInfo, 'rebase' if byRebase else 'merge', fromBranch)
-        CommonUtil.exeCmd(gitCmd)
+        strategyCmdOpt = '--strategy-option=%s' % strategyOption
+        if CommonUtil.isNoneOrBlank(strategyOption):
+            strategyCmdOpt = ''
+
+        mergeCmd = 'rebase' if byRebase else 'merge'
+        gitCmd = 'git %s %s %s %s' % (self._gitDirWorkTreeInfo, mergeCmd, strategyCmdOpt, fromBranch)
+        mergeResult = CommonUtil.exeCmd(gitCmd)
+
+        # 合并失败的提示语关键字, 任意一个命中就表示合并失败
+        failKW = ['Merge conflict', 'merge failed']
+        for kw in failKW:
+            if kw in mergeResult:  # 合并失败
+                print('merge into %s fail, will abort and reset... %s' % (targetBranch, mergeResult))
+                CommonUtil.exeCmd('git %s %s --abort' % (self._gitDirWorkTreeInfo, mergeCmd))  # 终止合并
+                self.reset('hard', 'HEAD')  # 还原代码到合并前
+                raise Exception('mergeBranch into %s 失败,存在未处理的冲突,请人工处理' % targetBranch)
 
         tempCurBranchName = self.getCurBranch()
         maxWaitSec = 60  # 最长等待时间,单位: s
@@ -400,7 +442,8 @@ class GitUtil(object):
                 break
 
         # 记录下当前git状态(若处于rebasing中,如有冲突了,则会有报错)
-        self.getStatus()
+        statusMsg = self.getStatus()
+        print('merge into %s, cur statusMsg=%s' % (targetBranch, statusMsg))
 
         headIdAfter = self.getHeadCommitId()  # 合并后的commitId
         # 确认是否合并完成
