@@ -61,6 +61,7 @@ class UpdateImpl(BaseConfig):
         robotSection = self.configParser.getSectionItems('robot')
         token = robotSection['accessToken']
         content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
+        content = content.strip()
         content += '\n已触发过更新的目录:\n%s' % '\n'.join(update_dirs)
         print(content)
         if CommonUtil.isNoneOrBlank(token):

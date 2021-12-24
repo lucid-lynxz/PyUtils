@@ -98,6 +98,7 @@ class PushImpl(BaseConfig):
         # 发送钉钉通知, 仅汇总失败的目录,提醒进行人工处理
         robotSection = self.configParser.getSectionItems('robot')
         content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
+        content = content.strip()
         content += '\n已完成自动push流程'
         failInfo = '\n\t'.join(failList).strip()
         successInfo = '\n\t'.join(successList).strip()
@@ -111,6 +112,8 @@ class PushImpl(BaseConfig):
             content += '\npush命令结果为空的目录如下, 请自行判断:\n\t%s' % unknownInfo
         if not CommonUtil.isNoneOrBlank(nothingCommitInfo):
             content += '\n代码无变更,无需push的目录如下:\n\t%s' % nothingCommitInfo
+        if not CommonUtil.isNoneOrBlank(settings['codeReviewUrl']):
+            content += '\n代码评审地址:\n%s' % settings['codeReviewUrl']
         print(content)
 
         token = robotSection['accessToken']

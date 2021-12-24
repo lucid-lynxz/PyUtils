@@ -54,9 +54,12 @@ class MergeImpl(BaseConfig):
 
             mergeResult = MergeResult(targetBranch)
             try:
+                # oriCommitId为远程分支的最新commitId
                 mergeResult.oriCommitId = gitUtil.checkoutBranch(srcBranch).updateBranch() \
-                    .checkoutBranch(targetBranch).updateBranch().getHeadCommitId()
-                mergeResult.curCommitId = gitUtil.mergeBranch(srcBranch, strategyOption=stargeOpt).getHeadCommitId()
+                    .checkoutBranch(targetBranch).updateBranch().getCommitId(remote=True)
+                # curCommitId为本地merge代码后的最新commitId
+                mergeResult.curCommitId = gitUtil.mergeBranch(srcBranch, strategyOption=stargeOpt).getCommitId()
+
                 diffFiles = gitUtil.getDiffInfo(mergeResult.oriCommitId, mergeResult.curCommitId).splitlines()
                 print("diffFiles=%s" % diffFiles)
                 mergeResult.isChanged = len(diffFiles) != 0
@@ -89,9 +92,10 @@ class MergeImpl(BaseConfig):
 
         if sendDingDing:
             content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
+            content = content.strip()
             if not CommonUtil.isNoneOrBlank(pendingReviewBranch):
                 content += '\n待评审分支:%s' % pendingReviewBranch[:-1]  # 删除结尾的逗号
-                content += "\n评审地址:%s\n请及时处理,若已合入请忽略" % repository['codeReviewPath']
+                content += "\n评审地址:%s\n请及时处理,若已合入请忽略" % settings['codeReviewUrl']
             if not CommonUtil.isNoneOrBlank(mergeFailBranch):
                 content += '\n\n合并失败的分支如下,请人工处理:%s' % mergeFailBranch
             print(content)

@@ -97,16 +97,20 @@ class GitUtil(object):
             self._depth = depth
         return self
 
-    def getHeadCommitId(self) -> str:
+    def getCommitId(self, branch: str = '', remote: bool = False, opts: str = '') -> str:
         """
-        获取当前最新的commitId
-        请自行确保相关仓库已经clone过
-        return: str
+        获取指定分支的commitId, 使用命令:  git rev-parse [origin/]{branch} [opts]
+        :param branch: 分支名, 如: master,若放空,则默认使用当前分支名
+        :param remote: 是否是远程分支
+        :param opts: 其他参数
+        return: commitId
         """
-        print('--> getHeadCommitId')
-        gitCmd = "git %s rev-parse HEAD" % self._gitDirWorkTreeInfo
-        cmdResult = CommonUtil.exeCmd(gitCmd)
-        return cmdResult.strip()
+        if CommonUtil.isNoneOrBlank(branch):
+            branch = self.getCurBranch() if remote else 'HEAD'
+
+        remoteRepoOpt = '%s/' % self.remoteRepositoryName if remote else ''
+        gitCmd = 'git %s rev-parse %s%s %s' % (self._gitDirWorkTreeInfo, remoteRepoOpt, branch, opts)
+        return CommonUtil.exeCmd(gitCmd).strip()
 
     def getHeadCommitInfo(self) -> dict:
         """
@@ -202,6 +206,28 @@ class GitUtil(object):
                 return bName
         return ''
 
+    def getRemoteBranchName(self) -> str:
+        """
+        查看当前分支对应的远程分支,若不存在,则返回 ''
+        使用命令: git branch -vv , 得到如下列表, 提取星号开头的行,带方括号表示有远程分支
+          local_branchX 20812344d [origin/remote_branchX]
+        * local_branchA 20812345d [origin/remote_branchA: ahead xx]
+          local_branchB 20812346d [origin/remote_branchB: ahead xx]
+          local_branchC 20812347d XXXXX
+        """
+        curBranch = self.getCurBranch()
+
+        gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
+        cmdResult = CommonUtil.exeCmd(gitCmd)
+        # print('cmdResult=%s' % cmdResult)
+        lines = cmdResult.split('\n')
+        for line in lines:
+            if '* %s' % curBranch in line:
+                if '[%s/' % self._remoteRepositoryName in line:
+                    return line.split('[')[1].split(']')[0].split(':')[0].replace('%s/' % self.remoteRepositoryName, '')
+                break
+        return ''
+
     def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False):
         """
         按需进行仓库clone, 分支切换, 仅本地分支不存在,首次创建时才会拉取最新代码
@@ -237,18 +263,24 @@ class GitUtil(object):
             if self.getCurBranch() != targetBranch:
                 raise Exception('checkoutBranch失败')
 
-            # 查看当前分支对应的远程分支,若不存在,则进行指定
-            gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
-            cmdResult = CommonUtil.exeCmd(gitCmd)
-            # print('cmdResult=%s' % cmdResult)
-            lines = cmdResult.split('\n')
-            for line in lines:
-                if '* %s' % targetBranch in line:
-                    if '[%s/%s' % (self._remoteRepositoryName, targetBranch) not in line:
-                        gitCmd = 'git %s branch --set-upstream-to=%s/%s' % (
-                            self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch)
-                        CommonUtil.exeCmd(gitCmd)
-                    break
+            # 查看当前分支对应的远程分支,若不存在,则进行指定\
+            if CommonUtil.isNoneOrBlank(self.getRemoteBranchName()):
+                print('当前分支的远程分支为空,进行设置')
+                gitCmd = 'git %s branch --set-upstream-to=%s/%s' % (
+                    self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch)
+                CommonUtil.exeCmd(gitCmd)
+
+            # gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
+            # cmdResult = CommonUtil.exeCmd(gitCmd)
+            # # print('cmdResult=%s' % cmdResult)
+            # lines = cmdResult.split('\n')
+            # for line in lines:
+            #     if '* %s' % targetBranch in line:
+            #         if '[%s/%s' % (self._remoteRepositoryName, targetBranch) not in line:
+            #             gitCmd = 'git %s branch --set-upstream-to=%s/%s' % (
+            #                 self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch)
+            #             CommonUtil.exeCmd(gitCmd)
+            #         break
 
             # if "* %s" % targetBranch in cmdResult:  # 当前分支就是目标分支,无需切换
             #     gitCmd = ""
@@ -401,7 +433,7 @@ class GitUtil(object):
             targetBranch = self.getCurBranch()
         else:
             self.checkoutBranch(targetBranch)
-        headIdBefore = self.getHeadCommitId()  # 合并前的commitId
+        headIdBefore = self.getCommitId()  # 合并前的commitId
 
         print('-->%s mergeBranch fromBranch=%s,targetBranch=%s,byRebase=%s' % (
             TimeUtil.getTimeStr(), fromBranch, targetBranch, byRebase))
@@ -445,7 +477,7 @@ class GitUtil(object):
         statusMsg = self.getStatus()
         print('merge into %s, cur statusMsg=%s' % (targetBranch, statusMsg))
 
-        headIdAfter = self.getHeadCommitId()  # 合并后的commitId
+        headIdAfter = self.getCommitId()  # 合并后的commitId
         # 确认是否合并完成
         if tempCurBranchName != targetBranch:
             raise Exception('mergeBranch失败,分支名与预期%s不符,请确认是否尚未合并完成 %s' % (tempCurBranchName, targetBranch))
@@ -463,7 +495,7 @@ class GitUtil(object):
         :return: 文件变更列表字符串,若无变更,则返回 '', 可通过 result.splitlines() 转换为列表
         """
         if CommonUtil.isNoneOrBlank(newCommitId):
-            newCommitId = self.getHeadCommitId()
+            newCommitId = self.getCommitId()
 
         print('--> getDiffInfo oldCommitId=%s,newCommitId=%s,options=%s' % (oldCommitId, newCommitId, options))
         gitCmd = "git %s diff %s %s %s" % (
