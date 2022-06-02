@@ -47,6 +47,7 @@ class MergeImpl(BaseConfig):
         codeReviewOpts: str = settings['code_review_opts']
         stargeOpt: str = settings['strategyOpt']
         shouldPush: bool = settings['push'] == 'True'
+        updateByRebase = 'True' == settings['update_branch_by_rebase']  # 是否使用 rebase 更新代码
 
         branches = self.configParser.getSectionItems('branch')
         for targetBranch, srcBranch in branches.items():
@@ -55,8 +56,8 @@ class MergeImpl(BaseConfig):
             mergeResult = MergeResult(targetBranch)
             try:
                 # oriCommitId为远程分支的最新commitId
-                mergeResult.oriCommitId = gitUtil.checkoutBranch(srcBranch).updateBranch() \
-                    .checkoutBranch(targetBranch).updateBranch().getCommitId(remote=True)
+                mergeResult.oriCommitId = gitUtil.checkoutBranch(srcBranch).updateBranch(byRebase=updateByRebase) \
+                    .checkoutBranch(targetBranch).updateBranch(byRebase=updateByRebase).getCommitId(remote=True)
                 # curCommitId为本地merge代码后的最新commitId
                 mergeResult.curCommitId = gitUtil.mergeBranch(srcBranch, strategyOption=stargeOpt).getCommitId()
 

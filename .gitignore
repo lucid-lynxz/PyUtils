@@ -1,3 +1,5 @@
 .idea
 venv
 test.py
+**/espressoAutoCmd.bat
+**/__pycache__

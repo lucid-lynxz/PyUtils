@@ -32,6 +32,7 @@ class PushImpl(BaseConfig):
         settings = self.configParser.getSectionItems('settings')
         codeReview = 'True' == settings['code_review']  # push时是否需要触发代码评审
         pushOptions = settings['code_review_opts']  # push命令额外的参数
+        updateByRebase = 'True' == settings['update_branch_by_rebase']  # 是否使用 rebase 更新代码
 
         nothingCommitList = list()  # 本地与服务端代码一致, 无变更了,无需push
         failList = list()  # push失败或者本地有改动未commit导致无法push等情况
@@ -64,7 +65,7 @@ class PushImpl(BaseConfig):
                 print('curBranch=%s,nothingToCommit=%s,aheadOfRemote=%s' % (curBranch, nothingToCommit, aheadOfRemote))
 
                 if nothingToCommit:  # 本地分支已全部commit, 则拉取最新代码,并获取status信息
-                    status = gitUtil.updateBranch().getStatus()  # 更新代码, 提取最新的status信息
+                    status = gitUtil.updateBranch(byRebase=updateByRebase).getStatus()  # 更新代码, 提取最新的status信息
                     nothingToCommit = 'nothing to commit' in status  # 是否已全部提交
                     aheadOfRemote = 'Your branch is ahead of' in status  # 是否比远程仓库代码更新
                 else:  # 本地有代码未提交, 则不作处理, 等待人工提交
