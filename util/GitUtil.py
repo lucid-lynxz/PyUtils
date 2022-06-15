@@ -214,6 +214,7 @@ class GitUtil(object):
         * local_branchA 20812345d [origin/remote_branchA: ahead xx]
           local_branchB 20812346d [origin/remote_branchB: ahead xx]
           local_branchC 20812347d XXXXX
+        返回 'remote_branchA'
         """
         curBranch = self.getCurBranch()
 
@@ -502,3 +503,67 @@ class GitUtil(object):
             self._gitDirWorkTreeInfo, oldCommitId, newCommitId, options)
         cmdResult = CommonUtil.exeCmd(gitCmd)
         return cmdResult
+
+    def getCheckoutFromBranchName(self, targetBranch: str = None):
+        """
+        假设当前是branchB 且是从branchA checkout出的 branchB
+        则通过本方法可得到分支名: branchB
+        :param targetBranch: 目标分支名, 即上面的提到的 'branchB'
+
+        todo 2022.6.15 暂不可用, 执行git log获取的结果丢失了分支信息(直接在shell中执行是正常的), 原因不明
+        """
+        if CommonUtil.isNoneOrBlank(targetBranch):
+            targetBranch = self.getCurBranch()
+        else:
+            self.checkoutBranch(targetBranch)
+
+        # 获取远程分支名, 不包括 'origin/'
+        remoteBranchName = self.getRemoteBranchName()
+
+        # 通过 git log获取日志, 格式如下:
+        # b0820ea (HEAD -> test2, origin/test2) commitMsg
+        # 93d2a25 commitMsg  # 新分支提交记录
+        # 30ff761 (origin/master, origin/HEAD)  commitMsg   # 这是源分支的提交记录
+        # 1dee362 commitMsg
+        gitCmd = "git %s log --oneline" % self._gitDirWorkTreeInfo
+        cmdResult = CommonUtil.exeCmd(gitCmd)
+        print("git log --oneline result:%s" % cmdResult)
+        lines = cmdResult.splitlines()
+
+        resultBranchName: str = None
+        resultFirstCommitId: str = None  # 首次提交的commitId
+        resultFirstCommitMsg: str = None
+
+        for line in lines:
+            if not CommonUtil.isNoneOrBlank(resultBranchName):
+                break
+
+            infos = line.split(" ")
+            commitIdShort = infos[0]  # commitId
+            commitInfo = line[len(commitIdShort) + 1:]
+            if commitInfo.startswith("(") and "%s/" % self._remoteRepositoryName in line:
+                # 分割获取分支信息
+                branchArr = commitInfo.split(") ")[0] \
+                    .replace("(", "") \
+                    .replace('%s/%s' % (self._remoteRepositoryName, remoteBranchName), "") \
+                    .replace("origin/HEAD", "") \
+                    .split(",")
+
+                # 上面已经剔除了当前分支对应的远程分支名
+                # 则包含 "origin/" 的分支名就是checkout出当前分支的源分支
+                for branchName in branchArr:
+                    if "%s/" % self._remoteRepositoryName == branchName.strip():
+                        resultBranchName = branchName
+                        break
+
+                if CommonUtil.isNoneOrBlank(resultBranchName) \
+                        or CommonUtil.isNoneOrBlank(resultFirstCommitId):
+                    resultFirstCommitId = commitIdShort
+                    resultFirstCommitMsg = commitInfo
+
+        if CommonUtil.isNoneOrBlank(resultBranchName):
+            resultBranchName = '%s/%s' % (self._remoteRepositoryName, remoteBranchName)
+
+        print("getCheckoutFromBranchName=%s, commitId=%s,commitMsg=%s" % (
+            resultBranchName, resultFirstCommitId, resultFirstCommitMsg))
+        return (resultBranchName, resultFirstCommitId, resultFirstCommitMsg)
