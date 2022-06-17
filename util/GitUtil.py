@@ -16,11 +16,13 @@ class GitUtil(object):
     获取当前分支diff信息: getDiffInfo(...)
     """
 
-    def __init__(self, remotePath: str, localPath: str, branch: str = None):
+    def __init__(self, remotePath: str, localPath: str, branch: str = None, depth: int = 0, cloneOptions: str = None):
         """
         :param remotePath: 远程仓库地址,若为空,则尝试从 localPath 目录中提取 (git remote -v)
         :param localPath: 本地仓库目录地址, 要求非空
         :param branch: 目标分支名(本地分支与远程分支名保持一致,默认使用当前分支,若不存在再使用 'master')
+        :param depth: git clone/fetch 深度,默认为0 表示不限制
+        :param cloneOptions: 额外的clone参数, 如: --shallow-since="2021.4.1"
         """
         self._localRepositoryPath = localPath
         self._dotGitPath = None  # 代码仓库下 .git/ 目录路径
@@ -48,10 +50,10 @@ class GitUtil(object):
             if not CommonUtil.isNoneOrBlank(cmdResult):
                 self.remoteRepositoryUrl = cmdResult.split('(fetch)')[0].replace(self.remoteRepositoryName, "").strip()
 
-        self._depth = 30  # git clone/fetch 深度,默认为30
+        self._depth = depth  # git clone/fetch 深度,默认为30
 
         # clone仓库,并checkout到指定分支
-        self.checkoutBranch(self.branch, False)
+        self.checkoutBranch(self.branch, False, cloneOptions)
 
     @property
     def remoteRepositoryName(self):
@@ -90,12 +92,14 @@ class GitUtil(object):
     def setDepth(self, depth: int):
         """
         设置git操作深度,避免clone及fetch太多历史快照
-        :param depth: >=1 有效
+        :param depth: >=1 有效, 其他值表示不限制
         :return: self
         """
-        if depth >= 1:
-            self._depth = depth
+        self._depth = depth
         return self
+
+    def _getDepthOption(self) -> str:
+        return '--depth=%s' % self._depth if self._depth >= 1 else ''
 
     def getCommitId(self, branch: str = '', remote: bool = False, opts: str = '') -> str:
         """
@@ -229,11 +233,12 @@ class GitUtil(object):
                 break
         return ''
 
-    def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False):
+    def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False, cloneOptions: str = None):
         """
         按需进行仓库clone, 分支切换, 仅本地分支不存在,首次创建时才会拉取最新代码
         :param targetBranch 要切换的分支名,默认为 self.branch
         :param forceClone 是否要强制clone, true-若本地目录存在,删除后重新clone
+        :param cloneOptions clone时使用的其他信息
         :return: self
         """
         # 强制重新clone
@@ -262,7 +267,7 @@ class GitUtil(object):
                     targetBranch, self.getCurBranch(), cmdResult))
 
             if self.getCurBranch() != targetBranch:
-                raise Exception('checkoutBranch失败')
+                raise Exception('checkoutBranch失败cur=%s,target=%s' % (self.getCurBranch(), targetBranch))
 
             # 查看当前分支对应的远程分支,若不存在,则进行指定\
             if CommonUtil.isNoneOrBlank(self.getRemoteBranchName()):
@@ -312,8 +317,9 @@ class GitUtil(object):
             # cmdResult = CommonUtil.exeCmd(gitCmd)
             # print("执行git rebase更新分支代码结束: %s" % cmdResult)
         else:  # clone 仓库指定分支代码,目前首次clone耗时较长,4min+
-            gitCmd = "git clone -b %s --depth=%s %s %s  --recurse-submodules" % (
-                targetBranch, self._depth, self.remoteRepositoryUrl, self.localRepositoryPath)
+            _cloneOptions = '' if CommonUtil.isNoneOrBlank(cloneOptions) else cloneOptions
+            gitCmd = "git clone -b %s %s %s %s %s --recurse-submodules" % (
+                targetBranch, self._getDepthOption(), self.remoteRepositoryUrl, self.localRepositoryPath, _cloneOptions)
             print("%s 准备clone源码,请耐心等候" % TimeUtil.getTimeStr())
             CommonUtil.exeCmd(gitCmd)
             print("%s git clone完成" % TimeUtil.getTimeStr())
@@ -327,11 +333,12 @@ class GitUtil(object):
                                                                            targetBranch))
         return self
 
-    def updateBranch(self, branch: str = None, byRebase: bool = False):
+    def updateBranch(self, branch: str = None, byRebase: bool = False, fetchOptions: str = None):
         """
         更新分支代码, 要求对应的远程分支存在
         :param branch: 分支名, 默认使用当前分支, 要求对应的远程分支存在
         :param byRebase: True-使用rebase更新本地分支 False-使用pull更新本地分支
+        :param fetchOptions: fetch时额外增加的属性, 比如: --shallow-since={date} , --unshallow 等
         :return: self
         """
         if CommonUtil.isNoneOrBlank(branch):  # 目标分支名不存在, 使用当前分支名
@@ -345,7 +352,9 @@ class GitUtil(object):
 
         print('--> updateBranch branch=%s,byRebase=%s' % (branch, byRebase))
         # 拉取分支代码
-        gitCmd = 'git %s fetch %s %s' % (self._gitDirWorkTreeInfo, self._remoteRepositoryName, branch)
+        _fetchOptions = '' if CommonUtil.isNoneOrBlank(fetchOptions) else fetchOptions
+        gitCmd = 'git %s fetch %s %s %s' % (
+            self._gitDirWorkTreeInfo, self._remoteRepositoryName, branch, _fetchOptions)
         CommonUtil.exeCmd(gitCmd)
 
         gitCmd = 'git %s %s %s %s' % (
@@ -504,66 +513,112 @@ class GitUtil(object):
         cmdResult = CommonUtil.exeCmd(gitCmd)
         return cmdResult
 
-    def getCheckoutFromBranchName(self, targetBranch: str = None):
+    def exeGitCmd(self, cmd: str) -> str:
         """
-        假设当前是branchB 且是从branchA checkout出的 branchB
-        则通过本方法可得到分支名: branchB
-        :param targetBranch: 目标分支名, 即上面的提到的 'branchB'
-
-        todo 2022.6.15 暂不可用, 执行git log获取的结果丢失了分支信息(直接在shell中执行是正常的), 原因不明
+        执行其他git方法
+        :param cmd: 命令内容, 无需输入 'git'
         """
-        if CommonUtil.isNoneOrBlank(targetBranch):
-            targetBranch = self.getCurBranch()
-        else:
-            self.checkoutBranch(targetBranch)
-
-        # 获取远程分支名, 不包括 'origin/'
-        remoteBranchName = self.getRemoteBranchName()
-
-        # 通过 git log获取日志, 格式如下:
-        # b0820ea (HEAD -> test2, origin/test2) commitMsg
-        # 93d2a25 commitMsg  # 新分支提交记录
-        # 30ff761 (origin/master, origin/HEAD)  commitMsg   # 这是源分支的提交记录
-        # 1dee362 commitMsg
-        gitCmd = "git %s log --oneline" % self._gitDirWorkTreeInfo
+        gitCmd = "git %s %s" % (
+            self._gitDirWorkTreeInfo, cmd)
         cmdResult = CommonUtil.exeCmd(gitCmd)
-        print("git log --oneline result:%s" % cmdResult)
-        lines = cmdResult.splitlines()
+        return cmdResult
 
-        resultBranchName: str = None
-        resultFirstCommitId: str = None  # 首次提交的commitId
-        resultFirstCommitMsg: str = None
+    def config(self, key: str, value: str):
+        """
+        在当前仓库中执行config命令, 比如调整时间戳: key=log.date  value=format:'%Y-%m-%d %H:%M:%S'
+        """
+        # gitCmd = "git %s config log.date format:'%Y-%m-%d %H:%M:%S'"
+        gitCmd = "git %s config %s %s" % (self._gitDirWorkTreeInfo, key, value)
+        cmdResult = CommonUtil.exeCmd(gitCmd)
+        return cmdResult
 
-        for line in lines:
-            if not CommonUtil.isNoneOrBlank(resultBranchName):
-                break
+    def formatLogDate(self, dateFormat: str = '%Y-%m-%d %H:%M:%S'):
+        """
+        格式化 git log 日期格式
+        :return self
+        """
+        self.config('log.date', 'format:%s' % dateFormat)
+        return self
 
-            infos = line.split(" ")
-            commitIdShort = infos[0]  # commitId
-            commitInfo = line[len(commitIdShort) + 1:]
-            if commitInfo.startswith("(") and "%s/" % self._remoteRepositoryName in line:
-                # 分割获取分支信息
-                branchArr = commitInfo.split(") ")[0] \
-                    .replace("(", "") \
-                    .replace('%s/%s' % (self._remoteRepositoryName, remoteBranchName), "") \
-                    .replace("origin/HEAD", "") \
-                    .split(",")
+    def deleteDotGitFile(self, relPath: str):
+        """
+        删除 .git/ 目录下的某个文件
+        :param relPath: 文件相对路径, 如: "index.lock" 表示要删除: '.git/index.lock' 文件
+        """
+        absPath = '%s%s' % (self._dotGitPath, relPath)
+        return CommonUtil.exeCmd('rm -rf %s' % absPath)
 
-                # 上面已经剔除了当前分支对应的远程分支名
-                # 则包含 "origin/" 的分支名就是checkout出当前分支的源分支
-                for branchName in branchArr:
-                    if "%s/" % self._remoteRepositoryName == branchName.strip():
-                        resultBranchName = branchName
-                        break
-
-                if CommonUtil.isNoneOrBlank(resultBranchName) \
-                        or CommonUtil.isNoneOrBlank(resultFirstCommitId):
-                    resultFirstCommitId = commitIdShort
-                    resultFirstCommitMsg = commitInfo
-
-        if CommonUtil.isNoneOrBlank(resultBranchName):
-            resultBranchName = '%s/%s' % (self._remoteRepositoryName, remoteBranchName)
-
-        print("getCheckoutFromBranchName=%s, commitId=%s,commitMsg=%s" % (
-            resultBranchName, resultFirstCommitId, resultFirstCommitMsg))
-        return (resultBranchName, resultFirstCommitId, resultFirstCommitMsg)
+    #
+    # def getBranchFirstCommitInfo(self, targetBranch: str = None) -> tuple:
+    #     """
+    #     获取指定分支的第一次提交信息
+    #     假设当前是branchB 且是从branchA checkout出的 branchB
+    #     则通过本方法可得到分支名: branchB
+    #     :param targetBranch: 目标分支名, 即上面的提到的 'branchB'
+    #     :return tuple(源分支名称(不准确), 第一次commitId, 第一次commit日志)
+    #     """
+    #     if CommonUtil.isNoneOrBlank(targetBranch):
+    #         targetBranch = self.getCurBranch()
+    #     else:
+    #         self.checkoutBranch(targetBranch)
+    #
+    #     # 获取远程分支名, 格式: 'origin/branchName'
+    #     remoteBranchName = '%s/%s' % (self._remoteRepositoryName, self.getRemoteBranchName())
+    #
+    #     # 通过 git log获取日志, 格式如下:
+    #     # b0820ea (HEAD -> test2, origin/test2) commitMsg
+    #     # 93d2a25 commitMsg  # 新分支提交记录
+    #     # 30ff761 (origin/master, origin/HEAD)  commitMsg   # 这是源分支的提交记录
+    #     # 1dee362 commitMsg
+    #     gitCmd = "git %s log --oneline" % self._gitDirWorkTreeInfo
+    #     cmdResult = CommonUtil.exeCmd(gitCmd)
+    #     # print("git log --oneline result:%s" % cmdResult)
+    #     lines = cmdResult.splitlines()
+    #     totalSize = len(lines)
+    #     print("git log --oneline result finished, commitSize=%s" % totalSize)
+    #
+    #     resultBranchName: str = None
+    #     resultFirstCommitId: str = None  # 首次提交的commitId
+    #     resultFirstCommitMsg: str = None
+    #     index = 0
+    #     for line in lines:
+    #         index += 1
+    #         if not CommonUtil.isNoneOrBlank(resultBranchName):
+    #             break
+    #
+    #         infos = line.split(" ")
+    #         commitIdShort = infos[0]  # commitId
+    #         commitInfo = line[len(commitIdShort) + 1:]
+    #
+    #         # 查看哪些分支包含了该commitId
+    #         # 失败结果: error: malformed object name {commitId}
+    #         # 成功结果:
+    #         # *  master
+    #         #   remotes/origin/master
+    #         gitCmd = "git %s  branch --all --contains %s" % (self._gitDirWorkTreeInfo, commitIdShort)
+    #         cmdResult = CommonUtil.exeCmd(gitCmd, printCmdInfo=False)
+    #         if index == 1 or index % 50 == 0:
+    #             # print('->getBranchFirstCommitInfo: %s/%s id=%s,msg=%s,containsCommitBranchs=\n%s' % (
+    #             #     index, totalSize, commitIdShort, commitInfo, cmdResult))
+    #             print('->getBranchFirstCommitInfo:%s/%s id=%s,msg=%s' % (index, totalSize, commitIdShort, commitInfo))
+    #
+    #         if cmdResult.startswith('error'):
+    #             break
+    #
+    #         hit = False
+    #         for cBranch in cmdResult.splitlines():
+    #             # if targetBranch in cBranch or remoteBranchName in cBranch:
+    #             if 'remotes/%s' % remoteBranchName == cBranch.strip():
+    #                 resultFirstCommitId = commitIdShort
+    #                 resultFirstCommitMsg = commitInfo
+    #                 hit = True
+    #                 break
+    #
+    #         # 找到第一个不属于该分支的commit, 其所属的branch都有可能是其源分支,暂无法确定
+    #         if not hit and CommonUtil.isNoneOrBlank(resultFirstCommitId):
+    #             resultBranchName = cmdResult
+    #             break
+    #
+    #     print("getCheckoutFromBranchName=%s, commitId=%s,commitMsg=%s" % (
+    #         resultBranchName, resultFirstCommitId, resultFirstCommitMsg))
+    #     return (resultBranchName, resultFirstCommitId, resultFirstCommitMsg)

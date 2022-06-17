@@ -19,9 +19,14 @@ class CommonUtil(object):
     #     return srcStr.decode(srcEncode).encode(toEncode)
 
     @classmethod
-    def exeCmd(cls, cmd: str) -> str:
-        """ 执行shell命令,此处不使用 os.system()"""
-        print("%s execute cmd: %s" % (TimeUtil.getTimeStr(), cmd))
+    def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
+        """
+        执行shell命令, 可得到返回值
+        :param cmd: 待执行的命令
+        :param printCmdInfo: 是否打印命令内容
+        """
+        if printCmdInfo:
+            print("%s execute cmd: %s" % (TimeUtil.getTimeStr(), cmd))
         # readlines = os.popen(cmd).readlines()
         # result = "".join(readlines)
         # print("result=%s" % result)
@@ -35,8 +40,12 @@ class CommonUtil(object):
             return bf.decode('gbk').strip()
 
     @classmethod
-    def exeCmdByOSSystem(cls, cmd: str):
-        print("execute cmd by os.system: %s" % cmd)
+    def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
+        """
+        通过os.system(xxx) 执行命令, 吴返回信息
+        """
+        if printCmdInfo:
+            print("execute cmd by os.system: %s" % cmd)
         os.system(cmd)
 
     @classmethod
