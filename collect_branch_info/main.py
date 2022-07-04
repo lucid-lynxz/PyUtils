@@ -1,3 +1,6 @@
+# !/usr/bin/env python3
+# -*- coding:utf-8 -*-
+
 """
 收集分支信息,包括首次提交时间, commitId,最新提交时间及commitId, commitAuthor列表等, 见 BranchInfo 类
 具体以 config.ini 文件配置信息为准

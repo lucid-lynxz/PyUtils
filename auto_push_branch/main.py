@@ -1,8 +1,10 @@
+# !/usr/bin/env python3
+# -*- coding:utf-8 -*-
+
 """
 自动push本地指定分支代码
 具体以 config.ini 文件配置信息为准
 """
-import getopt
 import os
 import sys
 

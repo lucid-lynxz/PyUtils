@@ -1,3 +1,5 @@
+# !/usr/bin/env python3
+# -*- coding:utf-8 -*-
 """
 自动合并源分支代码到制定目标分支中, 如合并dev到release分支
 具体以 config.ini 文件配置信息为准
