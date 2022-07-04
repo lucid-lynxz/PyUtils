@@ -1,8 +1,56 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
-from util import FileUtil
+import os
+
 from util.CommonUtil import CommonUtil
+from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
+
+
+class CommitInfo(object):
+    """
+    git某次提交的信息
+    """
+
+    def __init__(self, commitId: str = ''):
+        # commit id
+        self.id: str = commitId
+        # 提交内容
+        self.msg: str = ''
+
+        # 完整的提交信息
+        self.totalInfo: str = ''
+        # 提交人员姓名
+        self.author: str = ''
+        # 提交人员邮箱
+        self.authorEmail: str = ''
+        # 提交日期, 格式: 2022-06-16 13:30:30
+        self.date: str = ''
+        # merge信息
+        self.merge: str = ''
+
+
+class BranchInfo(object):
+    """
+    分支信息汇总
+    """
+
+    def __init__(self):
+        self.branchNameLocal: str = ''  # 本地分支名
+        self.branchNameRemote: str = ''  # 对应的远程分支名
+        self.srcBranchName: str = ''  # 源分支名称
+
+        # 最近一次commitId
+        self.headCommitInfo: CommitInfo = CommitInfo()
+
+        # {srcBranchName} 存在时可获取分支首次提交记录
+        # 假设已知是从 branchA checkout 出了 branchB, 当前分支为: branchB, 则获取本分支的特有提交记录如下, 找到最早的一次提交即可:
+        # git log branchA..branchB
+        # 分支第一次commitId
+        self.firstCommitInfo: CommitInfo = CommitInfo()
+
+        # 参与代码提价的author名称列表
+        self.authorList: list = []
 
 
 class GitUtil(object):
@@ -116,47 +164,41 @@ class GitUtil(object):
         gitCmd = 'git %s rev-parse %s%s %s' % (self._gitDirWorkTreeInfo, remoteRepoOpt, branch, opts)
         return CommonUtil.exeCmd(gitCmd).strip()
 
-    def getHeadCommitInfo(self) -> dict:
+    def getCommitInfo(self, commitId: str = 'HEAD') -> CommitInfo:
         """
-        获取仓库中最新一次commit的信息
-        :return: 字典dict, 包含commit的信息:
-                    key-value 如下:
-                        totalInfo  对应 git log -1 得到的完整日志信息
-                        commitId   当前commitId
-                        message    commit提交信息
-                        Author     当前commit创建者
-                        Date       commit时间
+        获取仓库中某次commit的信息
+        :param commitId: 获取指定的commitId提交信息, 若为空,则返回最新的提交记录
+        :return: CommitBean
         """
-        print('--> getHeadCommitInfo')
-        gitCmd = "git %s log -1" % self._gitDirWorkTreeInfo
+        commitIdOpt = '' if CommonUtil.isNoneOrBlank(commitId) else commitId
+        gitCmd = "git %s log %s -1" % (self._gitDirWorkTreeInfo, commitIdOpt)
         cmdResult = CommonUtil.exeCmd(gitCmd)
-        print("获取仓库中最新一次commit的信息: %s" % cmdResult)
 
-        infoMap = {'totalInfo': cmdResult}
+        commitInfo = CommitInfo(commitId)
+        commitInfo.totalInfo = cmdResult
+
         if CommonUtil.isNoneOrBlank(cmdResult):
-            return infoMap
+            return commitInfo
 
         infoLinesArr = cmdResult.split("\n")
         commitMsg = []
-
         for line in infoLinesArr:
             lineTrim = line.strip()
             if CommonUtil.isNoneOrBlank(lineTrim):
                 continue
 
             if line.startswith('Author:'):
-                infoMap['Author'] = line[len('Author:'):].strip()
+                commitInfo.author = line[len('Author:'):].strip()
             elif line.startswith('Date:'):
-                infoMap['Date'] = line[len('Date:'):].strip()
+                commitInfo.date = line[len('Date:'):].strip()
             elif line.startswith('Merge:'):
-                infoMap['Merge'] = line[len('Merge:'):].strip()
+                commitInfo.merge = line[len('Merge:'):].strip()
             elif line.startswith('commit '):
-                infoMap['commitId'] = line[len('commit '):].strip()
+                commitInfo.id = line[len('commit '):].strip()
             else:
                 commitMsg.append(lineTrim)
-
-        infoMap['message'] = "\n".join(commitMsg)
-        return infoMap
+        commitInfo.msg = "\n".join(commitMsg)
+        return commitInfo
 
     def getBranch(self, options: str = '') -> str:
         """
@@ -168,7 +210,8 @@ class GitUtil(object):
     def getBranchList(self, options: str = '') -> list:
         """
         通过 git branch [options] 命令获取分支信息
-        :return: 分支名列表
+        :param options: 额外的参数,如: -r --sort=-committerdate 表示按提交顺序列出远程分支
+        :return: 分支名列表, 若是远程分支, 则分支名会带有 origin/ 前缀, 自行剔除
         """
         print('--> getBranchList options=%s' % options)
 
@@ -183,9 +226,14 @@ class GitUtil(object):
             name = name.strip()
             if name[0] == '*':
                 name = name[1:]
+            if ' ' in name:  # 过滤掉: origin/HEAD -> origin/master
+                name = ''
             return name.strip()
 
-        return list(map(removeStar, self.getBranch(options).splitlines()))
+        def isValidBranch(branchName: str) -> bool:
+            return not CommonUtil.isNoneOrBlank(branchName)
+
+        return list(filter(isValidBranch, list(map(removeStar, self.getBranch(options).splitlines()))))
 
     def getCurBranch(self) -> str:
         """
@@ -210,26 +258,43 @@ class GitUtil(object):
                 return bName
         return ''
 
-    def getRemoteBranchName(self) -> str:
+    def getRemoteBranchName(self, targetBranch: str = '') -> str:
         """
-        查看当前分支对应的远程分支,若不存在,则返回 ''
+        查看指定分支对应的远程分支,若不存在,则返回 ''
         使用命令: git branch -vv , 得到如下列表, 提取星号开头的行,带方括号表示有远程分支
-          local_branchX 20812344d [origin/remote_branchX]
-        * local_branchA 20812345d [origin/remote_branchA: ahead xx]
-          local_branchB 20812346d [origin/remote_branchB: ahead xx]
-          local_branchC 20812347d XXXXX
+          local_branchX 20812344c [origin/remote_branchX]
+        * local_branchA 20812345c [origin/remote_branchA: ahead xx]
+          local_branchB 20812346c [origin/remote_branchB: ahead xx]
+          local_branchC 20812347c XXXXX
         返回 'remote_branchA'
-        """
-        curBranch = self.getCurBranch()
+        偶尔会出现, 远程分支前方多了个 'remotes/' :
+        * local_branchA  f6bca93c1 [remotes/origin/remote_branchA]
+          local_branchB 20812346c [origin/remote_branchB: ahead xx]
 
+        另外, 远程分支可能命名为: origin/branchC, 则通过 git branch -vv 得到的可能就是如下结果:
+        origin/local_branchC    285e076cb [origin/origin/local_branchC]
+
+        :param targetBranch: 本地目标分支名, 若传空, 则表示当前分支
+        """
+        if not CommonUtil.isNoneOrBlank(targetBranch):
+            self.checkoutBranch(targetBranch)
+
+        curBranch = self.getCurBranch()
         gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
         cmdResult = CommonUtil.exeCmd(gitCmd)
         # print('cmdResult=%s' % cmdResult)
         lines = cmdResult.split('\n')
         for line in lines:
             if '* %s' % curBranch in line:
+                remotePrefix = '[remotes/%s/' % self._remoteRepositoryName
+                if remotePrefix in line:
+                    line = line.replace(remotePrefix, '[%s/' % self._remoteRepositoryName)
+
                 if '[%s/' % self._remoteRepositoryName in line:
-                    return line.split('[')[1].split(']')[0].split(':')[0].replace('%s/' % self.remoteRepositoryName, '')
+                    return line.split('[')[1] \
+                        .split(']')[0] \
+                        .split(':')[0] \
+                        .replace('%s/' % self.remoteRepositoryName, '', 1)  # 只替换第一个 origin/ 即可
                 break
         return ''
 
@@ -337,7 +402,7 @@ class GitUtil(object):
         """
         更新分支代码, 要求对应的远程分支存在
         :param branch: 分支名, 默认使用当前分支, 要求对应的远程分支存在
-        :param byRebase: True-使用rebase更新本地分支 False-使用pull更新本地分支
+        :param byRebase: True-使用 pull --rebase 更新本地分支  False-仅使用pull更新本地分支
         :param fetchOptions: fetch时额外增加的属性, 比如: --shallow-since={date} , --unshallow 等
         :return: self
         """
@@ -358,7 +423,7 @@ class GitUtil(object):
         CommonUtil.exeCmd(gitCmd)
 
         gitCmd = 'git %s %s %s %s' % (
-            self._gitDirWorkTreeInfo, 'rebase' if byRebase else 'pull', self._remoteRepositoryName, branch)
+            self._gitDirWorkTreeInfo, 'pull --rebase' if byRebase else 'pull', self._remoteRepositoryName, branch)
         CommonUtil.exeCmd(gitCmd)
         return self
 
@@ -513,31 +578,42 @@ class GitUtil(object):
         cmdResult = CommonUtil.exeCmd(gitCmd)
         return cmdResult
 
-    def exeGitCmd(self, cmd: str) -> str:
+    def exeGitCmd(self, cmd: str, printCmdInfo: bool = True) -> str:
         """
         执行其他git方法
         :param cmd: 命令内容, 无需输入 'git'
         """
+        if cmd.startswith('git'):
+            cmd = cmd[3:]
         gitCmd = "git %s %s" % (
             self._gitDirWorkTreeInfo, cmd)
-        cmdResult = CommonUtil.exeCmd(gitCmd)
+        cmdResult = CommonUtil.exeCmd(gitCmd, printCmdInfo)
         return cmdResult
 
-    def config(self, key: str, value: str):
+    def config(self, key: str, value: str, option: str = ''):
         """
         在当前仓库中执行config命令, 比如调整时间戳: key=log.date  value=format:'%Y-%m-%d %H:%M:%S'
         """
         # gitCmd = "git %s config log.date format:'%Y-%m-%d %H:%M:%S'"
-        gitCmd = "git %s config %s %s" % (self._gitDirWorkTreeInfo, key, value)
+        gitCmd = "git %s config %s %s %s" % (self._gitDirWorkTreeInfo, key, value, option)
         cmdResult = CommonUtil.exeCmd(gitCmd)
         return cmdResult
 
     def formatLogDate(self, dateFormat: str = '%Y-%m-%d %H:%M:%S'):
         """
         格式化 git log 日期格式
+        :param dateFormat: 日期格式:
+            %y 两位数的年份表示（00-99）
+            %Y 四位数的年份表示（000-9999）
+            %m 月份（01-12）
+            %d 月内中的一天（0-31）
+            %H 24小时制小时数（0-23）
+            %I 12小时制小时数（01-12）
+            %M 分钟数（00=59）
+            %S 秒（00-59）
         :return self
         """
-        self.config('log.date', 'format:%s' % dateFormat)
+        self.config('log.date', 'format:%s' % dateFormat, '--replace-all')
         return self
 
     def deleteDotGitFile(self, relPath: str):
@@ -548,77 +624,67 @@ class GitUtil(object):
         absPath = '%s%s' % (self._dotGitPath, relPath)
         return CommonUtil.exeCmd('rm -rf %s' % absPath)
 
-    #
-    # def getBranchFirstCommitInfo(self, targetBranch: str = None) -> tuple:
-    #     """
-    #     获取指定分支的第一次提交信息
-    #     假设当前是branchB 且是从branchA checkout出的 branchB
-    #     则通过本方法可得到分支名: branchB
-    #     :param targetBranch: 目标分支名, 即上面的提到的 'branchB'
-    #     :return tuple(源分支名称(不准确), 第一次commitId, 第一次commit日志)
-    #     """
-    #     if CommonUtil.isNoneOrBlank(targetBranch):
-    #         targetBranch = self.getCurBranch()
-    #     else:
-    #         self.checkoutBranch(targetBranch)
-    #
-    #     # 获取远程分支名, 格式: 'origin/branchName'
-    #     remoteBranchName = '%s/%s' % (self._remoteRepositoryName, self.getRemoteBranchName())
-    #
-    #     # 通过 git log获取日志, 格式如下:
-    #     # b0820ea (HEAD -> test2, origin/test2) commitMsg
-    #     # 93d2a25 commitMsg  # 新分支提交记录
-    #     # 30ff761 (origin/master, origin/HEAD)  commitMsg   # 这是源分支的提交记录
-    #     # 1dee362 commitMsg
-    #     gitCmd = "git %s log --oneline" % self._gitDirWorkTreeInfo
-    #     cmdResult = CommonUtil.exeCmd(gitCmd)
-    #     # print("git log --oneline result:%s" % cmdResult)
-    #     lines = cmdResult.splitlines()
-    #     totalSize = len(lines)
-    #     print("git log --oneline result finished, commitSize=%s" % totalSize)
-    #
-    #     resultBranchName: str = None
-    #     resultFirstCommitId: str = None  # 首次提交的commitId
-    #     resultFirstCommitMsg: str = None
-    #     index = 0
-    #     for line in lines:
-    #         index += 1
-    #         if not CommonUtil.isNoneOrBlank(resultBranchName):
-    #             break
-    #
-    #         infos = line.split(" ")
-    #         commitIdShort = infos[0]  # commitId
-    #         commitInfo = line[len(commitIdShort) + 1:]
-    #
-    #         # 查看哪些分支包含了该commitId
-    #         # 失败结果: error: malformed object name {commitId}
-    #         # 成功结果:
-    #         # *  master
-    #         #   remotes/origin/master
-    #         gitCmd = "git %s  branch --all --contains %s" % (self._gitDirWorkTreeInfo, commitIdShort)
-    #         cmdResult = CommonUtil.exeCmd(gitCmd, printCmdInfo=False)
-    #         if index == 1 or index % 50 == 0:
-    #             # print('->getBranchFirstCommitInfo: %s/%s id=%s,msg=%s,containsCommitBranchs=\n%s' % (
-    #             #     index, totalSize, commitIdShort, commitInfo, cmdResult))
-    #             print('->getBranchFirstCommitInfo:%s/%s id=%s,msg=%s' % (index, totalSize, commitIdShort, commitInfo))
-    #
-    #         if cmdResult.startswith('error'):
-    #             break
-    #
-    #         hit = False
-    #         for cBranch in cmdResult.splitlines():
-    #             # if targetBranch in cBranch or remoteBranchName in cBranch:
-    #             if 'remotes/%s' % remoteBranchName == cBranch.strip():
-    #                 resultFirstCommitId = commitIdShort
-    #                 resultFirstCommitMsg = commitInfo
-    #                 hit = True
-    #                 break
-    #
-    #         # 找到第一个不属于该分支的commit, 其所属的branch都有可能是其源分支,暂无法确定
-    #         if not hit and CommonUtil.isNoneOrBlank(resultFirstCommitId):
-    #             resultBranchName = cmdResult
-    #             break
-    #
-    #     print("getCheckoutFromBranchName=%s, commitId=%s,commitMsg=%s" % (
-    #         resultBranchName, resultFirstCommitId, resultFirstCommitMsg))
-    #     return (resultBranchName, resultFirstCommitId, resultFirstCommitMsg)
+    def getFirstCommitId(self, srcBranch: str, targetBranch: str = None) -> str:
+        """
+        获取指定分支的第一次提交信息
+        假设当前是branchB ,且是从branchA checkout出的 branchB
+        则通过本方法得到首次提交的commitId, 实际是执行:  git log branchA..branchB --oneline
+        :param srcBranch: {targetBranch} 对应的源分支名
+        :param targetBranch: 目标分支名, 即上面的提到的 'branchB'
+        :return  commitId 或者空 ''
+        """
+        if CommonUtil.isNoneOrBlank(srcBranch):
+            return ''
+
+        if CommonUtil.isNoneOrBlank(targetBranch):
+            targetBranch = self.getCurBranch()
+        else:
+            self.checkoutBranch(targetBranch)
+
+        # 确保本地已有 srcBranch 分支信息
+        self.checkoutBranch(srcBranch).updateBranch().checkoutBranch(targetBranch)
+
+        # 获取最早一次提交
+        cmdResult = self.exeGitCmd('log %s..%s --oneline' % (srcBranch, targetBranch))
+        if cmdResult.startswith('fatal'):
+            print('getFirstCommitId fail ascmdResult=%s' % cmdResult)
+            return ''
+        lines = cmdResult.splitlines()
+        n = len(lines)
+        if n <= 0:
+            return ''
+        commitId = lines[n - 1].split(' ')[0]
+        print('getFirstCommitId(src=%s,target=%s)=%s' % (srcBranch, targetBranch, commitId))
+        return commitId
+
+    def getAllAuthorName(self, allBranch: bool = False, since: str = '', until: str = '') -> list:
+        """
+        获取所有author姓名
+        命令: git log --all --format='%aN' --since=xxxx  --unity=xxxx | sort -u
+        windows cmd中 sort -u 报错, 此处自行去重
+        :param allBranch: 是否提取所有分支的commit作者, 默认False,只提取当前分支
+        :param since: 起始日期(不包括), 格式与当前仓库的 git config log.date相符,可先触发 formatLogDate() 方法进行指定
+        :param until: 截止日期(包括)
+        :return: 作者名列表
+        """
+        # 由于windows下执行后中文有乱码存在, 未解决, 此处将结果重定向到文件中
+        curDirPath = os.path.abspath(os.path.dirname(__file__))
+        tempResultFile = '%s/tempAllAuthorName.txt' % curDirPath
+        FileUtil.deleteFile(tempResultFile)
+
+        allBranchOpt = '--all' if allBranch else ''
+        sinceOpt = '' if CommonUtil.isNoneOrBlank(since) else '--since %s' % since
+        untilOpt = '' if CommonUtil.isNoneOrBlank(until) else '--until %s' % until
+        gitCmd = "log --format=%s %s %s %s > %s" % ('%aN', allBranchOpt, sinceOpt, untilOpt, tempResultFile)
+        self.exeGitCmd(gitCmd, False)
+        allAutoNameLines = FileUtil.readFile(tempResultFile)
+        FileUtil.deleteFile(tempResultFile)  # 删除无用的临时文件
+        nameDict: dict = {}
+        resultList: list = []
+        if len(allAutoNameLines) > 0:
+            for line in allAutoNameLines:
+                line = line.strip().replace('\'', '')
+                nameDict[line] = ''
+            for key in nameDict:
+                resultList.append(key)
+        return resultList

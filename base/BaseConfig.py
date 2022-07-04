@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from util.ConfigUtil import NewConfigParser
 from util.CommonUtil import CommonUtil
 from base.Runnable import Runnable
-from util import FileUtil
+from util.FileUtil import FileUtil
 
 
 class BaseConfig(Runnable):

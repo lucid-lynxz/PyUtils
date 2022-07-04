@@ -1,5 +1,11 @@
 ## 抽取个人日常工作中常用的脚本工具
 
+1. 将本项目放置于: `D:\workSpace\python\` 目录下
+2. 修改 `D:\workSpace\python\PyUtils\custom_config_test\*.ini` 配置文件
+3. 执行 `D:\workSpace\python\PyUtils\custom_config_test\bat\*.bat` 脚本
+
+各脚本的含义见下方说明
+
 ## 基础工具:
 
 ```shell script

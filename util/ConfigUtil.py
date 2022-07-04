@@ -7,12 +7,13 @@
 import configparser
 
 
-class NewConfigParser(configparser.ConfigParser):
+class NewConfigParser(configparser.RawConfigParser):
     """
     自定义ConfigParser, 处理options返回小写的问题
     参考:https://www.cnblogs.com/wozijisun/p/6371084.html
     要求先通过 initPath(...) 设置参数文件路径
     然后通过 getSectionItems(...)
+    变更为: RawConfigParser, 忽略config文件中的 % 等特殊字符
     """
 
     def initPath(self, configPath: str):

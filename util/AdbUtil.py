@@ -4,8 +4,8 @@
 import os
 import subprocess
 
-from util import FileUtil
 from util.CommonUtil import CommonUtil
+from util.FileUtil import FileUtil
 
 
 class AdbUtil(object):

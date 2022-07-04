@@ -35,9 +35,9 @@ class CommonUtil(object):
         with os.popen(cmd) as fp:
             bf = fp._stream.buffer.read()
         try:
-            return bf.decode().strip()
+            return bf.decode('utf8', 'ignore').strip()
         except UnicodeDecodeError:
-            return bf.decode('gbk').strip()
+            return bf.decode('gbk', 'ignore').strip()
 
     @classmethod
     def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
