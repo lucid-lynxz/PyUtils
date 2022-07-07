@@ -40,7 +40,7 @@ class CollectBranchInfoImpl(BaseConfig):
         excludeBranch: str = setting['excludeBranch']
         for eBranch in excludeBranch.split(','):
             excludeBranchDict[eBranch.strip()] = ''
-        FileUtil.write2File(outputFile, '分支名,创建日期,commitId,最近提交日期,commitId,源分支,总提交数,参与提交的人员')
+        FileUtil.write2File(outputFile, '分支名,首次提交日期,commitId,最近提交日期,commitId,源分支,总提交数,参与提交的人员')
 
         gitUtil = GitUtil(repository['remote'],
                           repository['local'],
@@ -82,7 +82,6 @@ class CollectBranchInfoImpl(BaseConfig):
             branchInfo = BranchInfo()
             branchInfo.branchNameLocal = targetBranch  # 本地分支名
             branchInfo.branchNameRemote = gitUtil.getRemoteBranchName(targetBranch)
-            branchInfo.authorList = gitUtil.getAllAuthorName(since=sinceDate, until=untilDate)
 
             # 获取最新提交信息
             branchInfo.headCommitInfo = gitUtil.getCommitInfo(targetBranch)
@@ -94,12 +93,14 @@ class CollectBranchInfoImpl(BaseConfig):
                 branchInfo.firstCommitInfo = gitUtil.getCommitInfo(firstCommitId)
 
             # 根据指定的日期区间, 计算commit总数
-            if CommonUtil.isNoneOrBlank(sinceDate):
-                sinceDate = branchInfo.firstCommitInfo.date
-            elif TimeUtil.dateDiff(sinceDate, branchInfo.firstCommitInfo.date, dateFormat=gitLogDateFormat) < 0:
-                sinceDate = branchInfo.firstCommitInfo.date
+            tSinceDate = sinceDate
+            if CommonUtil.isNoneOrBlank(tSinceDate):
+                tSinceDate = branchInfo.firstCommitInfo.date
+            elif TimeUtil.dateDiff(tSinceDate, branchInfo.firstCommitInfo.date, dateFormat=gitLogDateFormat) < 0:
+                tSinceDate = branchInfo.firstCommitInfo.date
 
-            sinceDateOpt = '' if CommonUtil.isNoneOrBlank(sinceDate) else '--since=%s' % sinceDate
+            branchInfo.authorList = gitUtil.getAllAuthorName(since=tSinceDate, until=untilDate)
+            sinceDateOpt = '' if CommonUtil.isNoneOrBlank(tSinceDate) else '--since=%s' % tSinceDate
             untilDateOpt = '' if CommonUtil.isNoneOrBlank(untilDate) else '--until=%s' % untilDate
             gitCmd = 'log %s %s --oneline' % (sinceDateOpt, untilDateOpt)
             cmdResult = gitUtil.checkoutBranch(targetBranch).exeGitCmd(gitCmd)
@@ -107,7 +108,7 @@ class CollectBranchInfoImpl(BaseConfig):
             commitCount = len(commitLines)
 
             # 用户指定了起始日期, 则重新计算第一次提交信息
-            if not CommonUtil.isNoneOrBlank(sinceDate):
+            if not CommonUtil.isNoneOrBlank(tSinceDate):
                 if commitCount == 0:
                     branchInfo.firstCommitInfo = CommitInfo()
                 else:
