@@ -16,6 +16,7 @@ from util.GitUtil import GitUtil, BranchInfo, CommitInfo
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
+from util import NetUtil
 
 from base.BaseConfig import BaseConfig
 
@@ -134,3 +135,20 @@ class CollectBranchInfoImpl(BaseConfig):
                 branchInfo.srcBranchName,
                 commitCount, " ".join(branchInfo.authorList)
             ))
+
+        # 发送钉钉通知
+        robotSection = self.configParser.getSectionItems('robot')
+        content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
+        content += '\n提取分支信息 %s 条' % validBranchCount \
+                   + '\n结果日志: ' + outputFile \
+                   + '\n开启日期: ' + sinceDate \
+                   + '\n结束日期: ' + untilDate \
+                   + '\n仓库地址: ' + repository['remote']
+        content = content.strip()
+        token = robotSection['accessToken']
+        if CommonUtil.isNoneOrBlank(token):
+            print('accessToken为空, 无需发送通知')
+        else:
+            atPhoneList = robotSection['atPhone'].split(',')
+            print(NetUtil.push_ding_talk_robot(content, token, False, atPhoneList))
+        print('提取分支信息结束')
