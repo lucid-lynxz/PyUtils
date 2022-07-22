@@ -44,7 +44,7 @@ class UpdateImpl(BaseConfig):
 
             # 遍历所有目录路径，若是git仓库，则进行更新
             for tDir in target_dirs:
-                if FileUtil.isDirFileExist("%s/.git/" % tDir):  # 是个仓库
+                if FileUtil.isDirFile("%s/.git/" % tDir):  # 是个仓库
                     print('正在更新目录: %s' % tDir)
                     gitUtil = GitUtil(remotePath='', localPath=tDir)
                     status = gitUtil.getStatus()

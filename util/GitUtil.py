@@ -315,7 +315,7 @@ class GitUtil(object):
 
         print('--> checkoutBranch targetBranch=%s' % targetBranch)
         # 若对应git仓库目录已存在,则直接进行分支切换,代码pull
-        if FileUtil.isDirFileExist("%s" % self._dotGitPath):
+        if FileUtil.isDirFile("%s" % self._dotGitPath):
             # 查看本地现有分支,按需切换拉取远程指定分支代码
             gitCmd = "git %s branch" % self._gitDirWorkTreeInfo
             cmdResult = CommonUtil.exeCmd(gitCmd)
@@ -396,6 +396,15 @@ class GitUtil(object):
             # print('fetch origin结束')
         print('%s checkoutBranch finish, curBranch=%s, targetBranch=%s' % (TimeUtil.getTimeStr(), self.getCurBranch(),
                                                                            targetBranch))
+        return self
+
+    def fetch(self, options: str = ''):
+        """
+        执行 fetch origin [options]
+        """
+        gitCmd = 'git %s fetch %s %s' % (
+            self._gitDirWorkTreeInfo, self._remoteRepositoryName, options)
+        CommonUtil.exeCmd(gitCmd)
         return self
 
     def updateBranch(self, branch: str = None, byRebase: bool = False, fetchOptions: str = None):

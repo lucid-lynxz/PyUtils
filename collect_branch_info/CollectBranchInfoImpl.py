@@ -45,7 +45,7 @@ class CollectBranchInfoImpl(BaseConfig):
 
         gitUtil = GitUtil(repository['remote'],
                           repository['local'],
-                          repository['initBranch']).updateBranch().formatLogDate(dateFormat=gitLogDateFormat)
+                          repository['initBranch']).fetch().updateBranch().formatLogDate(dateFormat=gitLogDateFormat)
 
         # 若未指定分支信息,则统计所有分支
         validBranchCount = 0  # 已提取有效信息的分支数
@@ -141,7 +141,7 @@ class CollectBranchInfoImpl(BaseConfig):
         content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
         content += '\n提取分支信息 %s 条' % validBranchCount \
                    + '\n结果日志: ' + outputFile \
-                   + '\n开启日期: ' + sinceDate \
+                   + '\n开始日期: ' + sinceDate \
                    + '\n结束日期: ' + untilDate \
                    + '\n仓库地址: ' + repository['remote']
         content = content.strip()

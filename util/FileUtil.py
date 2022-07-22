@@ -9,7 +9,7 @@ from util.CommonUtil import CommonUtil
 
 class FileUtil(object):
     @staticmethod
-    def recookPath(path: str):
+    def recookPath(path: str) -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠
         :param path: 路径字符串
@@ -18,6 +18,26 @@ class FileUtil(object):
         if CommonUtil.isNoneOrBlank(path):
             return path
         return path.replace("\\", "/").replace("//", "/")
+
+    @staticmethod
+    def getParentPath(path: str, level: int = 1) -> str:
+        """
+        获取父目录路径
+        如输入: /x/y/z.txt 则:
+         level=1 时, 返回: /x/y/
+         level=2 时, 返回: /x/
+         level=3 时, 返回: /
+         level>=4 时, 仍是返回: /
+         :param path: 原路径
+         :param level: 返回第几级父目录路径,如1表示返回上一级目录
+        """
+        pPath = path
+        for index in range(level):
+            try:
+                pPath = os.path.dirname(pPath)
+            except Exception as e:
+                print('getParentPath error: %s' % e)
+        return FileUtil.recookPath('%s/' % pPath)
 
     @staticmethod
     def isFileExist(path: str) -> bool:
@@ -32,7 +52,7 @@ class FileUtil(object):
         return os.path.exists(path)
 
     @staticmethod
-    def isDirFileExist(path: str) -> bool:
+    def isDirFile(path: str) -> bool:
         """
         文件是否是目录
         :param path: 文件路径
@@ -42,7 +62,7 @@ class FileUtil(object):
         return FileUtil.isFileExist(path) and os.path.isdir(path)
 
     @staticmethod
-    def isDirPath(path: str):
+    def isDirPath(path: str) -> bool:
         """
         判断指定路径是否表示一个目录, 以是否以文件分隔符结尾来判断
         不考虑文件是否存在
@@ -54,6 +74,32 @@ class FileUtil(object):
         return path.endswith("/") or path.endswith("\\")
 
     @staticmethod
+    def copy(src: str, dst: str):
+        """
+        复制文件到指定位置
+        :param src: 源文件, 要求文件存在, 若是目录, 则 dst 也必须是目录
+        :param dst: 目标位置
+        """
+        if not FileUtil.isFileExist(src):
+            return
+
+        if FileUtil.isDirFile(src):  # 目录, 递归复制
+            # 由于 src 为目录时, dst也必须是目录
+            # 且shutil复制目录要求dst不存在, 因此需要遍历进行普通文件复制
+            if FileUtil.isFileExist(dst):
+                for fileItem in FileUtil.listAllFilePath(src):
+                    fileName, _, _ = FileUtil.getFileName(src)
+                    if FileUtil.isDirFile(fileItem):
+                        FileUtil.copy(fileItem, '%s/%s/' % (dst, fileName))
+                    else:
+                        shutil.copy(fileItem, '%s/%s' % (dst, fileName))
+            else:
+                shutil.copytree(src, dst)  # dst目录不存在时, 直接使用copytree复制即可
+            pass
+        else:  # 普通文件, 直接复制
+            shutil.copy(src, dst)
+
+    @staticmethod
     def deleteFile(path: str):
         """
         删除文件
@@ -62,14 +108,14 @@ class FileUtil(object):
         """
         path = FileUtil.recookPath(path)
         if FileUtil.isFileExist(path):
-            if FileUtil.isDirFileExist(path):  # 目录
+            if FileUtil.isDirFile(path):  # 目录
                 shutil.rmtree(path)
                 # os.rmdir(path) # 非空目录会报错: WindowsError：[Error 145]
             else:  # 文件
                 os.remove(path)
 
     @staticmethod
-    def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0, *path_filters):
+    def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0, *path_filters) -> list:
         """
         获取指定目录下所有文件的绝对路径
         若目录不存在,则返回空数据
@@ -81,12 +127,12 @@ class FileUtil(object):
         """
         folderPath = FileUtil.recookPath(folderPath)
         result = list()
-        if FileUtil.isDirFileExist(folderPath):
+        if FileUtil.isDirFile(folderPath):
             subFiles = os.listdir(folderPath)  # 返回的是子文件的相对路径
             curDepth = curDepth + 1
             for sub in subFiles:
                 subPath = os.path.join(folderPath, sub)  # 子文件路径
-                if FileUtil.isDirFileExist(subPath) and curDepth < depth:  # 子文件是目录, 则递归遍历
+                if FileUtil.isDirFile(subPath) and curDepth < depth:  # 子文件是目录, 则递归遍历
                     subList = FileUtil.listAllFilePath(subPath, curDepth, *path_filters)
                     for reSubFile in subList:
                         result.append(reSubFile)
@@ -98,7 +144,7 @@ class FileUtil(object):
         return result
 
     @staticmethod
-    def getFileName(path: str):
+    def getFileName(path: str) -> tuple:
         """
         根据所给文件名或者文件路径,去除目录信息后, 得到文件名和扩展名, 如输入 a.txt 返回 ("a.txt","a","txt")
         若当前就以斜杠结尾,则先删除斜杠
@@ -137,16 +183,16 @@ class FileUtil(object):
         """
         path = FileUtil.recookPath(path)
         # 创建文件, 若文件存在,但为目录,则先删除
-        if FileUtil.isDirFileExist(path) and recreateIfExist:
+        if FileUtil.isDirFile(path) and recreateIfExist:
             FileUtil.deleteFile(path)
 
         if FileUtil.isDirPath(path):  # 创建目录
-            if not FileUtil.isDirFileExist(path):
+            if not FileUtil.isDirFile(path):
                 os.makedirs(path)
         else:
             # 按需创建父目录
             parentPath = os.path.dirname(path) + os.sep
-            if not FileUtil.isDirFileExist(parentPath):
+            if not FileUtil.isDirFile(parentPath):
                 os.makedirs(parentPath)
 
             # 创建文件
@@ -190,7 +236,7 @@ class FileUtil(object):
             msg = "%s\n" % msg
 
         FileUtil.createFile(path, recreateIfExist=False)
-        if FileUtil.isDirFileExist(path):
+        if FileUtil.isDirFile(path):
             print("append2File fail as %s is a folder" % path)
             return False
 
@@ -210,7 +256,7 @@ class FileUtil(object):
         path = FileUtil.recookPath(path)
         lines = []
         if not FileUtil.isFileExist(path) \
-                or FileUtil.isDirFileExist(path):
+                or FileUtil.isDirFile(path):
             return lines
 
         with open(path, "r", encoding=encoding) as f:
@@ -221,6 +267,11 @@ class FileUtil(object):
 
 if __name__ == '__main__':
     tPath = "/Users/lynxz/temp/a.txt"
+    print(FileUtil.getParentPath(tPath, 1))
+    print(FileUtil.getParentPath(tPath, 2))
+    print(FileUtil.getParentPath(tPath, 3))
+    print(FileUtil.getParentPath(tPath, 4))
+    print(FileUtil.getParentPath(tPath, 30))
     FileUtil.createFile(tPath, True)
     FileUtil.write2File(tPath, "hello")
     lines = FileUtil.readFile(tPath)
