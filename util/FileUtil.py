@@ -77,7 +77,7 @@ class FileUtil(object):
     def copy(src: str, dst: str):
         """
         复制文件到指定位置
-        :param src: 源文件, 要求文件存在, 若是目录, 则 dst 也必须是目录
+        :param src: 源文件, 要求文件存在, 若是目录, 则 dst 也必须是目录, 且目录本身不会复制
         :param dst: 目标位置
         """
         if not FileUtil.isFileExist(src):
@@ -88,7 +88,7 @@ class FileUtil(object):
             # 且shutil复制目录要求dst不存在, 因此需要遍历进行普通文件复制
             if FileUtil.isFileExist(dst):
                 for fileItem in FileUtil.listAllFilePath(src):
-                    fileName, _, _ = FileUtil.getFileName(src)
+                    fileName, _, _ = FileUtil.getFileName(fileItem)
                     if FileUtil.isDirFile(fileItem):
                         FileUtil.copy(fileItem, '%s/%s/' % (dst, fileName))
                     else:
