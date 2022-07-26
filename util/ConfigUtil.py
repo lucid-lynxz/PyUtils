@@ -21,6 +21,11 @@ class NewConfigParser(configparser.RawConfigParser):
         :param configPath: ini文件路径
         """
         self.read(configPath, encoding='utf-8')
+
+        # 缓存config文件内容, key-sectionName value-dict 存储该section中所有k v数据
+        self._cache: dict = {}
+        for sectionName in self.sections():
+            self._cache[sectionName] = self.getSectionItems(sectionName)
         return self
 
     def optionxform(self, optionstr):
@@ -32,8 +37,28 @@ class NewConfigParser(configparser.RawConfigParser):
         :param sectionName: ini中section名称
         :return: dict
         """
+
+        if sectionName in self._cache:
+            return self._cache[sectionName]
+
+        if not self.has_section(sectionName):
+            return {}
+
         items = self.items(sectionName)
         resultDict = {}
         for item in items:
             resultDict[item[0]] = item[1]
         return resultDict
+
+    def updateSectonItem(self, sectionName: str, key: str, value: str):
+        """
+        更新section属性值
+        :param sectionName: section名称, 若不存在,则会新增
+        :param key: 属性名
+        :param value: 属性值
+        """
+        if sectionName not in self:
+            self.add_section(sectionName)
+        self.set(sectionName, key, value)
+        sectionDict = self._cache.get(sectionName, dict())
+        sectionDict[key] = value
