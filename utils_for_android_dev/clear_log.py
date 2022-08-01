@@ -1,6 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 import os
+import re
 
 from base.BaseConfig import BaseConfig
 from util.AdbUtil import AdbUtil
@@ -12,7 +13,7 @@ from util.FileUtil import FileUtil
 """
 
 
-class GetLogImpl(BaseConfig):
+class ClearLogImpl(BaseConfig):
 
     def run(self):
         sectionName = 'clear_logs'
@@ -40,9 +41,38 @@ class GetLogImpl(BaseConfig):
         # 依次删除日志
         adbUtil = AdbUtil()
         targetDeviceId = adbUtil.choosePhone()  # 选择待截图的手机信息
+        regularPathList = list()  # 正则表达式路径
         for logPath in pendingPullLogList:
+            if '*' in logPath:
+                rPath = FileUtil.recookPath(logPath).strip()
+                if not rPath.startswith('/'):
+                    rPath = FileUtil.recookPath('%s/%s' % (parent_log_dir_in_phone, rPath))
+                regularPathList.append(rPath)
+                continue
             print('正在删除日志:%s' % logPath)
             adbUtil.exeShellCmds(['su', 'rm -r %s' % logPath], targetDeviceId)
+
+        # 根据正则路径,删除相关日志
+        subRegularFileList = list()
+        for regularPath in regularPathList:
+            fullName, _, _ = FileUtil.getFileName(regularPath)
+            parentDirPath = FileUtil.getParentPath(regularPath)
+
+            # 获取所有子文件名, 并进行正则匹配
+            stdout, stderr = adbUtil.exeShellCmds(['ls %s' % parentDirPath], deviceId=targetDeviceId)
+            if stderr is not None:
+                print('获取子文件名列表失败 stderr=%s' % stderr)
+                break
+
+            for name in stdout.split():
+                name = CommonUtil.convert2str(name)
+                if re.search(r'%s' % fullName, name) is not None:
+                    path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))
+                    subRegularFileList.append(path)
+
+        for path in subRegularFileList:
+            print('正在删除正则路径日志 %s' % path)
+            adbUtil.deleteFromPhone(path, targetDeviceId)
 
         print('清除logcat日志')
         CommonUtil.exeCmd('adb -s %s logcat -c' % targetDeviceId)
@@ -52,4 +82,4 @@ if __name__ == '__main__':
     # 根据配置文件, 清理日志
     curDir = FileUtil.getParentPath(os.path.abspath(__file__))
     configPath = FileUtil.recookPath('%s/config.ini' % curDir)
-    GetLogImpl(configPath, optFirst=True).run()
+    ClearLogImpl(configPath, optFirst=True).run()

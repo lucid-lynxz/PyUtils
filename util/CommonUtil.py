@@ -69,6 +69,19 @@ class CommonUtil(object):
         """
         return src.replace('/', os.sep)
 
+    @classmethod
+    def convert2str(cls, src: object, encoding: str = 'utf8') -> str:
+        """
+        将源数据转换为str
+        """
+        if isinstance(src, bytes):
+            return bytes.decode(src, encoding=encoding)
+        elif isinstance(src, str):
+            return src
+        elif isinstance(src, (int, float, bool)):
+            return str(src)
+        raise Exception('convert2str fail unsupport type:%s, value=%s' % (type(src), src))
+
 
 if __name__ == "__main__":
     result = CommonUtil.exeCmd('git --git-dir=D:/D/987/.git/ --work-tree=D:\D\987 log -1')

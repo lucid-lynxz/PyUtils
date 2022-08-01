@@ -3,6 +3,7 @@
 
 import os
 import platform
+import re
 import shutil
 
 from util.CommonUtil import CommonUtil
@@ -287,3 +288,11 @@ if __name__ == '__main__':
     lines = FileUtil.readFile(tPath)
     for line in lines:
         print(line)
+
+
+    def filterLog(path: str) -> bool:
+        pattern = 'log_*'
+        return re.search(r'%s' % pattern, path) is not None
+
+
+    print(FileUtil.listAllFilePath('/Users/lynxz/temp/', 1, 0, filterLog))
