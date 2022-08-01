@@ -74,7 +74,7 @@ class BaseConfig(Runnable):
 
         print('BaseConfig configPath=%s' % configPath)
         print('content is:\n%s' % ''.join(FileUtil.readFile(self.configPath)))
-        self.configParser = NewConfigParser().initPath(self.configPath)
+        self.configParser = NewConfigParser(allow_no_value=True).initPath(self.configPath)
 
         # 更新 config.ini 属性值
         if len(sectionItemValues) > 0:

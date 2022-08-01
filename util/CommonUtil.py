@@ -60,6 +60,15 @@ class CommonUtil(object):
         else:
             return False
 
+    @classmethod
+    def changeSep(cls, src: str) -> str:
+        """
+        将指定路径的分隔符('/'),替换成系统标准的分隔符
+        :param src: 原路径
+        :return: 处理的路径str
+        """
+        return src.replace('/', os.sep)
+
 
 if __name__ == "__main__":
     result = CommonUtil.exeCmd('git --git-dir=D:/D/987/.git/ --work-tree=D:\D\987 log -1')

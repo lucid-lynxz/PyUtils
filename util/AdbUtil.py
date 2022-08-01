@@ -202,15 +202,15 @@ class AdbUtil(object):
         cmd = "%s %s logcat *:%s -d  > %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), level.upper(), log_file)
         CommonUtil.exeCmd(cmd)
         # 提取tombstone信息
-        with open(log_file, 'r') as f:
+        with open(log_file, 'r', encoding='UTF8') as f:
             while True:
                 log = f.readline()
                 if not log:
                     break
                 if log.__contains__("Tombstone written to:"):
                     tmb = log.split(":")
-                    tombstone_file = tmb[len(tmb) - 1].replace("\n", "").replace(" ", "")
-                    self.pullTombstoneFile(tombstone_file, saveDirPath, deviceId)
+                    # tombstone_file = tmb[len(tmb) - 1].replace("\n", "").replace(" ", "")
+                    self.pullTombstoneFile(saveDirPath, deviceId)
 
     def pullANRFile(self, saveDirPath: str, deviceId: str = None) -> bool:
         """
@@ -297,3 +297,59 @@ class AdbUtil(object):
             success = True
         print('installApk %s 结果success=%s,result=%s' % (runCmd, success, result))
         return success
+
+    def getImeiInfo(self, targetDeviceId: str = None) -> list:
+        """
+        获取本机连接的手机设备imei列表,要求手机已root,需要执行 su 命令
+        :param targetDeviceId: 要获取imei的手机序列号, 若为空,则获取所有手机的序列号
+        :return: list 元素类型是str
+        """
+        if CommonUtil.isNoneOrBlank(targetDeviceId):
+            deviceIdList, _ = self.getAllDeviceId()
+        else:
+            deviceIdList = [targetDeviceId]
+
+        resultList = list()
+        for did in deviceIdList:
+            cmd = ["su", "service call iphonesubinfo 1"]
+            out, err = self.exeShellCmds(cmd, did)
+            lines = out.splitlines()
+            device_imei_list = []
+            for line in lines:
+                if isinstance(line, bytes):
+                    line = bytes.decode(line)
+                if "Result: Parcel" in line:
+                    continue
+                if "'" in line:
+                    splits = line.split("'")
+                    device_imei_list.append(splits[-2])
+            if len(device_imei_list) > 0:
+                imei = "".join(device_imei_list).replace(".", "")
+                resultList.append(imei.strip())
+        return resultList
+
+    def getMacAddress(self, targetDeviceId: str = None) -> list:
+        """
+        获取设备的网卡地址,要求手机已root,需要执行 su 命令
+        :param targetDeviceId: 要获取imei的手机序列号, 若为空,则获取所有手机的序列号
+        :return: list 元素类型是str
+        """
+        if CommonUtil.isNoneOrBlank(targetDeviceId):
+            deviceIdList, _ = self.getAllDeviceId()
+        else:
+            deviceIdList = [targetDeviceId]
+
+        resultList = list()
+        for did in deviceIdList:
+            cmd = ["su", "cat /sys/class/net/wlan0/address"]
+            out, err = self.exeShellCmds(cmd, did)
+            if isinstance(out, bytes):
+                out = bytes.decode(out)
+            resultList.append(out.strip())
+        return resultList
+
+
+if __name__ == '__main__':
+    adbUtil = AdbUtil()
+    print(adbUtil.getImeiInfo())
+    print(adbUtil.getMacAddress())

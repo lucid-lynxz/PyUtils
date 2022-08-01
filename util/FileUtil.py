@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os
+import platform
 import shutil
 
 from util.CommonUtil import CommonUtil
@@ -261,8 +262,17 @@ class FileUtil(object):
 
         with open(path, "r", encoding=encoding) as f:
             lines = f.readlines()
-
         return lines
+
+    @staticmethod
+    def openDir(path: str):
+        system = platform.system()
+        if system == 'Windows':
+            # cmd = CommonUtil.changeSep('start %s' % picFolder)
+            cmd = CommonUtil.changeSep('explorer.exe %s' % path)
+        else:
+            cmd = CommonUtil.changeSep('open %s' % path)
+        CommonUtil.exeCmd(cmd)
 
 
 if __name__ == '__main__':
