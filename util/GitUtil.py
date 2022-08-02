@@ -666,6 +666,49 @@ class GitUtil(object):
         print('getFirstCommitId(src=%s,target=%s)=%s' % (srcBranch, targetBranch, commitId))
         return commitId
 
+    def getFirstCommitInfoByReflog(self) -> CommitInfo:
+        """
+        根据 reflog 命令获取分支首次提交信息
+        命令: git reflog show --date=iso master
+        输出:
+        46d5029 (HEAD -> master, origin/master) master@{2022-06-27 21:49:04 +0800}: reset: moving to 46d5029f52abf0f09923dba6b38059ea638bb326
+        66c0a6a master@{2022-06-27 21:47:37 +0800}: rebase -i (finish): refs/heads/master onto 284e96a3df6049b047e7211f40de8a36e816237c
+        e042715 master@{2022-06-27 21:40:47 +0800}: rebase (continue) (finish): refs/heads/master onto 284e96a3df6049b047e7211f40de8a36e816237c
+        74649e7 master@{2022-06-27 21:33:02 +0800}: commit (amend): test3
+        172f81d master@{2022-06-27 21:32:41 +0800}: commit (amend): test3
+        883c1c0 master@{2022-06-27 21:32:33 +0800}: commit (amend): test3
+        b826bac master@{2022-06-27 21:32:02 +0800}: commit (amend): test3
+        3240275 master@{2019-10-24 22:14:16 +0800}: commit (merge): 添加手机识别信息
+        ad89575 master@{2019-10-19 11:14:27 +0800}: commit (amend): 更新gradle,修改初始化参数
+        63e2fc5 master@{2019-10-17 22:23:56 +0800}: commit: 更新包名
+        71a62c9 master@{2019-10-17 22:15:16 +0800}: commit (initial): init
+        ee4e912 master@{2022-06-15 20:45:31 +0800}: branch: Created from HEAD
+
+        命令: git reflog show --date=iso master2222
+        输出: fatal: ambiguous argument 'master2222': unknown revision or path not in the working tree.
+        Use '--' to separate paths from revisions, like this:
+        'git <command> [<revision>...] -- [<file>...]
+        """
+        commitInfo = CommitInfo()
+        curBarnchName = self.getCurBranch()
+        cmdResult = self.exeGitCmd('reflog show --date=iso %s' % curBarnchName)
+        if cmdResult.startswith('fatal'):
+            print('getFirstCommitInfoByReflog fail as cmdResult=%s' % cmdResult)
+            commitInfo.totalInfo = cmdResult
+            return commitInfo
+
+        lines = cmdResult.splitlines()
+        cnt = len(lines)
+        firstIdShort = ''
+        for index in range(start=cnt - 1, stop=0, step=-1):
+            line = lines[index]
+            arr = line.split(' ')
+            action = ' '.join(arr[1:]).split('}:')[1].split(':')[0]
+            if 'commit' in action:
+                firstIdShort = arr[0]
+                break
+        return self.getCommitInfo(firstIdShort)
+
     def getAllAuthorName(self, allBranch: bool = False, since: str = '', until: str = '') -> list:
         """
         获取所有author姓名
