@@ -85,6 +85,9 @@ class FileUtil(object):
         if not FileUtil.isFileExist(src):
             return
 
+        src = FileUtil.recookPath(src)
+        dst = FileUtil.recookPath(dst)
+
         if FileUtil.isDirFile(src):  # 目录, 递归复制
             # 由于 src 为目录时, dst也必须是目录
             # 且shutil复制目录要求dst不存在, 因此需要遍历进行普通文件复制
@@ -92,9 +95,9 @@ class FileUtil(object):
                 for fileItem in FileUtil.listAllFilePath(src):
                     fileName, _, _ = FileUtil.getFileName(fileItem)
                     if FileUtil.isDirFile(fileItem):
-                        FileUtil.copy(fileItem, '%s/%s/' % (dst, fileName))
+                        FileUtil.copy(fileItem, FileUtil.recookPath('%s/%s/' % (dst, fileName)))
                     else:
-                        shutil.copy(fileItem, '%s/%s' % (dst, fileName))
+                        shutil.copy(fileItem, FileUtil.recookPath('%s/%s' % (dst, fileName)))
             else:
                 shutil.copytree(src, dst)  # dst目录不存在时, 直接使用copytree复制即可
             pass
