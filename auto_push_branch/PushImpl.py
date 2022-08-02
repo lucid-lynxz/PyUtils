@@ -33,6 +33,7 @@ class PushImpl(BaseConfig):
         codeReview = 'True' == settings['code_review']  # push时是否需要触发代码评审
         pushOptions = settings['code_review_opts']  # push命令额外的参数
         updateByRebase = 'True' == settings['update_branch_by_rebase']  # 是否使用 rebase 更新代码
+        pushOnlyFileChange = 'True' == settings['push_only_file_change']  # 与远程分支间存在文件变更时才可push
 
         nothingCommitList = list()  # 本地与服务端代码一致, 无变更了,无需push
         failList = list()  # push失败或者本地有改动未commit导致无法push等情况
@@ -73,8 +74,15 @@ class PushImpl(BaseConfig):
                     failList.append('%s %s' % (branch, repo))
                     continue
 
-                print('curBranch=%s,nothingToCommit=%s,aheadOfRemote=%s' % (curBranch, nothingToCommit, aheadOfRemote))
-                if nothingToCommit and aheadOfRemote:  # 本地分支更新, 则需要push到远程仓库
+                # 判断是否有实际的文件变更,有再发起提交
+                localCommitId = gitUtil.getCommitId(curBranch)
+                remoteCommitId = gitUtil.getCommitId(gitUtil.getRemoteBranchName(curBranch), remote=True)
+                diffFiles = gitUtil.getDiffInfo(localCommitId, remoteCommitId)
+                same = CommonUtil.isNoneOrBlank(diffFiles)
+
+                print('curBranch=%s,nothingToCommit=%s,aheadOfRemote=%s,same=%s,diffFiles=%s' % (
+                    curBranch, nothingToCommit, aheadOfRemote, same, diffFiles))
+                if nothingToCommit and aheadOfRemote and (not pushOnlyFileChange or not same):  # 本地分支更新, 则需要push到远程仓库
                     print('push当前分支到远程: %s --> %s' % (branch, repo))
                     result = gitUtil.pushBranch(codeReview=codeReview, options=pushOptions)
                     if CommonUtil.isNoneOrBlank(result):
@@ -95,6 +103,8 @@ class PushImpl(BaseConfig):
                 elif not aheadOfRemote:
                     nothingCommitList.append('%s %s' % (branch, repo))
                     print('当前分支无代码变更,无需push:%s' % curBranch)
+                elif pushOnlyFileChange and same:
+                    print('当前分支文件变更,无需push:%s' % curBranch)
 
         # 发送钉钉通知, 仅汇总失败的目录,提醒进行人工处理
         robotSection = self.configParser.getSectionItems('robot')

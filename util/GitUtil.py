@@ -153,7 +153,7 @@ class GitUtil(object):
         """
         获取指定分支的commitId, 使用命令:  git rev-parse [origin/]{branch} [opts]
         :param branch: 分支名, 如: master,若放空,则默认使用当前分支名
-        :param remote: 是否是远程分支
+        :param remote: 是否是远程分支,若是,则会自动加上远程仓库名, 如: origin/master
         :param opts: 其他参数
         return: commitId
         """
@@ -594,8 +594,7 @@ class GitUtil(object):
         """
         if cmd.startswith('git'):
             cmd = cmd[3:]
-        gitCmd = "git %s %s" % (
-            self._gitDirWorkTreeInfo, cmd)
+        gitCmd = "git %s %s" % (self._gitDirWorkTreeInfo, cmd)
         cmdResult = CommonUtil.exeCmd(gitCmd, printCmdInfo)
         return cmdResult
 
