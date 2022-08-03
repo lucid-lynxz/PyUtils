@@ -1,6 +1,11 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 import os
+import sys
+
+# 把当前文件所在文件夹的父文件夹路径加入到 PYTHONPATH,否则在shell中运行会提示找不到util包
+# 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from base.BaseConfig import BaseConfig
 from util.AdbUtil import AdbUtil
@@ -12,7 +17,7 @@ from util.TimeUtil import TimeUtil
 
 class GetLogImpl(BaseConfig):
     def run(self):
-        sectionName = 'pull_logs'
+        sectionName = 'get_log'
         keySaveDir = 'save_dir'  # 日志保存在本机的路径key
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
         keyCompressFile = 'compress_file'  # 待压缩的本机文件路径key

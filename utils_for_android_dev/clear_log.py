@@ -2,6 +2,11 @@
 # -*- coding:utf-8 -*-
 import os
 import re
+import sys
+
+# 把当前文件所在文件夹的父文件夹路径加入到 PYTHONPATH,否则在shell中运行会提示找不到util包
+# 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from base.BaseConfig import BaseConfig
 from util.AdbUtil import AdbUtil
@@ -16,7 +21,7 @@ from util.FileUtil import FileUtil
 class ClearLogImpl(BaseConfig):
 
     def run(self):
-        sectionName = 'clear_logs'
+        sectionName = 'clear_log'
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
 
         parent_log_dir_in_phone = self.configParser.get(sectionName, keyParentLogDirInPhone)
