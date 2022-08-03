@@ -81,6 +81,9 @@ class ScrcpyMultiDevicesImpl(BaseConfig):
         CommonUtil.exeCmd("cd %s && %s" % (scrypy_dir_path, vbsFilePath))
         # file_util.deleteFile(vbsFilePath)
 
+    def getPrintConfigSections(self) -> set:
+        return {'screenshot'}
+
 
 if __name__ == '__main__':
     curDir = FileUtil.getParentPath(os.path.abspath(__file__))

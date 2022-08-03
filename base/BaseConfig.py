@@ -22,6 +22,8 @@ from util.FileUtil import FileUtil
 class BaseConfig(Runnable):
     """
     带配置文件的类
+    可通过命令 --config 传入配置文件路径, 可以通过  --param sectionName.key=value 来动态修改/新增 参数
+    子类可重写 [getPrintConfigSections] 返回一个 set() 来判断是否需要打印 config.ini 中指定 section 的内容
     """
 
     def __init__(self, configPath: str,
@@ -73,7 +75,6 @@ class BaseConfig(Runnable):
         self.configPath = optPath if optFirst else configPath
 
         print('BaseConfig configPath=%s' % configPath)
-        print('content is:\n%s' % ''.join(FileUtil.readFile(self.configPath)))
         self.configParser = NewConfigParser(allow_no_value=True).initPath(self.configPath)
 
         # 更新 config.ini 属性值
@@ -86,5 +87,83 @@ class BaseConfig(Runnable):
                 kv = splitFlag.join(arr[1:])
                 arr = kv.split('=')
                 itemKey = arr[0]
-                itemValue = splitFlag.join(arr[1:]) if len(arr) >= 2 else ''
+                itemValue = '='.join(arr[1:]) if len(arr) >= 2 else ''
                 self.configParser.updateSectonItem(sectionName, itemKey, itemValue)
+
+        # 按需打印 config.ini 中的信息(注释以及key, value则是实际生效的值(即通过--param注入后的最新值))
+        self._printConfigDetail()
+
+    def getPrintConfigSections(self) -> set:
+        """
+        要打印的 config.ini section信息列表
+        :return: set 元素是str, 表示 config.ini 中Section名称
+         - 返回 None 表示都不打印
+         - 返回空list, 则打印全部内容
+         - 返回非空list, 则只打印指定的section信息
+        """
+        return None
+
+    def _printConfigDetail(self):
+        allLines = FileUtil.readFile(self.configPath)
+        if len(allLines) == 0:
+            return
+
+        printSectionSet = self.getPrintConfigSections()
+        if printSectionSet is None:  # 返回 None 表示不打印
+            return
+
+        if len(printSectionSet) == 0:  # 返回空列表表示打印全部内容
+            # print('all config content is:\n%s' % ''.join(allLines))
+            printSectionSet = set(self.configParser.sections())
+
+        shouldPrint = False  # 当前section西西里是否需要打印
+        curSectionName = ''  # 当前section名称
+        hashPrintKeySet = set()  # 已经打印的key信息,用于最后打印未在config.ini中设置,而是通过 --param 传入的新增参数
+        lineCount = len(allLines)
+
+        def _printOtherSectonKV():
+            """
+            打印当前section的其他信息(未在 config.ini 中定义, 而是由 --param 动态传入的新增参数)
+            """
+            lastSectonDict = self.configParser.getSectionItems(curSectionName)
+            hasPrintTip = False
+            for key in lastSectonDict:
+                if key in hashPrintKeySet:
+                    continue
+                if not hasPrintTip:
+                    print('\n# 其他动态新增的参数如下:')
+                    hasPrintTip = True
+                print('%s=%s' % (key, lastSectonDict.get(key, '')))
+            if hasPrintTip:
+                print('')
+
+        for index in range(lineCount):
+            line = ('%s' % allLines[index]).strip()
+            # 检测当前行信息是 section
+            curLineIsASectionName = line.startswith('[') and line.endswith(']') and len(line) > 3
+
+            if shouldPrint and curLineIsASectionName:
+                # 在打印下一个 section 信息前先把前一个section的其他参数一并打印出来
+                _printOtherSectonKV()
+
+            if curLineIsASectionName:
+                curSectionName = line[1:-1]
+                shouldPrint = curSectionName in printSectionSet
+                hashPrintKeySet = set()
+
+            if shouldPrint:
+                # section行/空白行/注释行(#开头)则直接打印
+                if curLineIsASectionName \
+                        or CommonUtil.isNoneOrBlank(line) \
+                        or line.startswith('#'):
+                    print(line)
+                else:  # key-value 行信息,则更新value值为最新值
+                    arr = line.split('=')
+                    key = arr[0].strip()
+                    value = self.configParser.getSectionItems(curSectionName).get(key, '')
+                    print('%s=%s' % (key, value))
+                    hashPrintKeySet.add(key)
+
+                # 当前已是最后一行,则打印动态传入本section的其他参数信息
+                if index == lineCount - 1:
+                    _printOtherSectonKV()
