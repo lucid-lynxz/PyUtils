@@ -23,6 +23,25 @@ from base.BaseConfig import BaseConfig
 
 class PushImpl(BaseConfig):
 
+    def _addRepoPathInfo(self, targetList: list, branchName: str,
+                         repoPath: str, ignorePath: bool,
+                         prefix: str = '\t'):
+        """
+        用于汇总push结果时,是否需要显示分支对应的仓库路径
+        若该分支只对应一个仓库,则可不显示仓库路径
+        """
+        tRepoPath = '' if ignorePath else '%s%s' % (prefix, repoPath)
+        length = len(targetList)
+        if length == 0:
+            targetList.append('%s%s' % (branchName, '' if CommonUtil.isNoneOrBlank(tRepoPath) else '\n%s' % tRepoPath))
+        else:
+            lastItem = targetList[-1]
+            lastBranch = lastItem.split()[0]
+            if branchName == lastBranch:  # 与上一条记录的分支名相同,则仅记录仓库路径即可
+                targetList.append(tRepoPath)
+            else:
+                targetList.append('%s%s' % (branchName, tRepoPath))
+
     def run(self):
         # push成功的字符串匹配模板
         pushSuccessPatternArr = [r'completed with \d+ local objects',
@@ -35,7 +54,8 @@ class PushImpl(BaseConfig):
         updateByRebase = 'True' == settings['update_branch_by_rebase']  # 是否使用 rebase 更新代码
         pushOnlyFileChange = 'True' == settings['push_only_file_change']  # 与远程分支间存在文件变更时才可push
 
-        nothingCommitList = list()  # 本地与服务端代码一致, 无变更了,无需push
+        cannotPushList = list()  # 有代码未commit,无法push
+        nothingCommitList = list()  # 本地与服务端代码一致, 无变更,无需push
         failList = list()  # push失败或者本地有改动未commit导致无法push等情况
         successList = list()  # push成功的信息列表
         unknownList = list()  # push命令返回结果为空,无法判断是否正常
@@ -43,6 +63,8 @@ class PushImpl(BaseConfig):
         for branch, localRepoPath in branches.items():
             print("targetBranch=%s,repoPath=%s" % (branch, localRepoPath))
             repoArr = localRepoPath.split(',')  # 可能多个本地仓库目录待提交分支名相同
+            hasMultiRepo = len(repoArr) > 1  # 是否有多个仓库对应同一个分支名
+
             for repo in repoArr:
                 gitUtil = GitUtil(remotePath='', localPath=repo, branch=None)
                 status = gitUtil.getStatus()
@@ -58,7 +80,7 @@ class PushImpl(BaseConfig):
                         curBranch = gitUtil.getCurBranch()
                     else:
                         print('当前分支有代码未commit, 等待人工处理, 脚本跳过...')
-                        failList.append('%s %s' % (branch, repo))
+                        self._addRepoPathInfo(cannotPushList, branch, repo, not hasMultiRepo)
                         continue
 
                 nothingToCommit = 'nothing to commit' in status  # 是否已全部提交
@@ -71,7 +93,7 @@ class PushImpl(BaseConfig):
                     aheadOfRemote = 'Your branch is ahead of' in status  # 是否比远程仓库代码更新
                 else:  # 本地有代码未提交, 则不作处理, 等待人工提交
                     print('当前分支有代码未commit,不自动push,请人工提交')
-                    failList.append('%s %s' % (branch, repo))
+                    self._addRepoPathInfo(cannotPushList, branch, repo, not hasMultiRepo)
                     continue
 
                 # 判断是否有实际的文件变更,有再发起提交
@@ -82,47 +104,47 @@ class PushImpl(BaseConfig):
 
                 print('curBranch=%s,nothingToCommit=%s,aheadOfRemote=%s,same=%s,diffFiles=%s' % (
                     curBranch, nothingToCommit, aheadOfRemote, same, diffFiles))
-                if nothingToCommit and aheadOfRemote and (not pushOnlyFileChange or not same):  # 本地分支更新, 则需要push到远程仓库
+
+                if aheadOfRemote and (not pushOnlyFileChange or not same):  # 本地分支更新, 则需要push到远程仓库
                     print('push当前分支到远程: %s --> %s' % (branch, repo))
                     result = gitUtil.pushBranch(codeReview=codeReview, options=pushOptions)
-                    if CommonUtil.isNoneOrBlank(result):
-                        unknownList.append('%s %s' % (branch, repo))
+                    print('push result:%s' % result)
+                    if CommonUtil.isNoneOrBlank(result):  # push命令无输出信息,无法判断是否成功
+                        self._addRepoPathInfo(unknownList, branch, repo, not hasMultiRepo)
                     else:
                         success = False
                         for pattern in pushSuccessPatternArr:
                             pushResult = re.search(pattern, result, re.I)  # 忽略大小写比较
                             if pushResult is not None:  # 匹配成功, 即push成功
-                                successList.append('%s %s' % (branch, repo))
+                                self._addRepoPathInfo(successList, branch, repo, not hasMultiRepo)
                                 success = True
                                 break
                         if not success:
-                            failList.append('%s %s' % (branch, repo))
-                elif not nothingToCommit:
-                    nothingCommitList.append('%s %s' % (branch, repo))
-                    print('当前分支有代码未commit,不自动push,请人工提交:%s' % curBranch)
-                elif not aheadOfRemote:
-                    nothingCommitList.append('%s %s' % (branch, repo))
+                            self._addRepoPathInfo(failList, branch, repo, not hasMultiRepo)
+                else:
+                    self._addRepoPathInfo(nothingCommitList, branch, repo, not hasMultiRepo)
                     print('当前分支无代码变更,无需push:%s' % curBranch)
-                elif pushOnlyFileChange and same:
-                    print('当前分支文件变更,无需push:%s' % curBranch)
 
         # 发送钉钉通知, 仅汇总失败的目录,提醒进行人工处理
         robotSection = self.configParser.getSectionItems('robot')
         content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])
         content = content.strip()
         content += '\n已完成自动push流程'
-        failInfo = '\n\t'.join(failList).strip()
-        successInfo = '\n\t'.join(successList).strip()
-        unknownInfo = '\n\t'.join(unknownList).strip()
-        nothingCommitInfo = '\n\t'.join(nothingCommitList).strip()
+        failInfo = '\n '.join(failList).strip()
+        cannotPushInfo = '\n '.join(cannotPushList).strip()
+        successInfo = '\n '.join(successList).strip()
+        unknownInfo = '\n '.join(unknownList).strip()
+        nothingCommitInfo = '\n '.join(nothingCommitList).strip()
         if not CommonUtil.isNoneOrBlank(failInfo):
-            content += '\n失败的目录如下,请人工处理:\n\t%s' % failInfo
+            content += '\n失败的分支 %s 个,请人工处理:\n %s' % (len(failList), failInfo)
+        if not CommonUtil.isNoneOrBlank(cannotPushInfo):
+            content += '\n有未commit的分支 %s 个, 请处理后重试:\n %s' % (len(cannotPushList), cannotPushInfo)
         if not CommonUtil.isNoneOrBlank(successInfo):
-            content += '\n成功的目录如下:\n\t%s' % successInfo
+            content += '\np成功的分支 %s 个:\n %s' % (len(successList), successInfo)
         if not CommonUtil.isNoneOrBlank(unknownInfo):
-            content += '\npush命令结果为空的目录如下, 请自行判断:\n\t%s' % unknownInfo
+            content += '\npush结果为空的分支 %s 个, 请自行判断:\n %s' % (len(unknownList), unknownInfo)
         if not CommonUtil.isNoneOrBlank(nothingCommitInfo):
-            content += '\n代码无变更,无需push的目录如下:\n\t%s' % nothingCommitInfo
+            content += '\n代码无变更,无需push的分支 %s 个:\n %s' % (len(nothingCommitList), nothingCommitInfo)
         if not CommonUtil.isNoneOrBlank(settings['codeReviewUrl']):
             content += '\n代码评审地址:\n%s' % settings['codeReviewUrl']
         print(content)
