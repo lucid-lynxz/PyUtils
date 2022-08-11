@@ -135,16 +135,17 @@ class PushImpl(BaseConfig):
         successInfo = '\n '.join(successList).strip()
         unknownInfo = '\n '.join(unknownList).strip()
         nothingCommitInfo = '\n '.join(nothingCommitList).strip()
-        if not CommonUtil.isNoneOrBlank(failInfo):
-            content += '\n失败的分支 %s 个,请人工处理:\n %s' % (len(failList), failInfo)
-        if not CommonUtil.isNoneOrBlank(cannotPushInfo):
-            content += '\n有未commit的分支 %s 个, 请处理后重试:\n %s' % (len(cannotPushList), cannotPushInfo)
         if not CommonUtil.isNoneOrBlank(successInfo):
             content += '\np成功的分支 %s 个:\n %s' % (len(successList), successInfo)
+        if not CommonUtil.isNoneOrBlank(nothingCommitInfo):
+            content += '\n代码无变更,无需push的分支 %s 个' % len(nothingCommitList)
+            # content += '\n代码无变更,无需push的分支 %s 个:\n %s' % (len(nothingCommitList), nothingCommitInfo)
+        if not CommonUtil.isNoneOrBlank(cannotPushInfo):
+            content += '\n未commit的分支 %s 个,请处理后重试:\n %s' % (len(cannotPushList), cannotPushInfo)
+        if not CommonUtil.isNoneOrBlank(failInfo):
+            content += '\n失败的分支 %s 个,请人工处理:\n %s' % (len(failList), failInfo)
         if not CommonUtil.isNoneOrBlank(unknownInfo):
             content += '\npush结果为空的分支 %s 个, 请自行判断:\n %s' % (len(unknownList), unknownInfo)
-        if not CommonUtil.isNoneOrBlank(nothingCommitInfo):
-            content += '\n代码无变更,无需push的分支 %s 个:\n %s' % (len(nothingCommitList), nothingCommitInfo)
         if not CommonUtil.isNoneOrBlank(settings['codeReviewUrl']):
             content += '\n代码评审地址:\n%s' % settings['codeReviewUrl']
         print(content)

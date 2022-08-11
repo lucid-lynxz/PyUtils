@@ -68,7 +68,7 @@ class GetLogImpl(BaseConfig):
 
         # 依次提取日志
         adbUtil = AdbUtil()
-        targetDeviceId = adbUtil.choosePhone()  # 选择待截图的手机信息
+        targetDeviceId = adbUtil.choosePhone()  # 选择目标手机
         for itemTuple in pendingPullLogList:
             logPath, localLogPath = itemTuple
             if CommonUtil.isNoneOrBlank(localLogPath):

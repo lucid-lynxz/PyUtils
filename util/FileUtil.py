@@ -138,7 +138,7 @@ class FileUtil(object):
             for sub in subFiles:
                 subPath = os.path.join(folderPath, sub)  # 子文件路径
                 if FileUtil.isDirFile(subPath) and curDepth < depth:  # 子文件是目录, 则递归遍历
-                    subList = FileUtil.listAllFilePath(subPath, curDepth, *path_filters)
+                    subList = FileUtil.listAllFilePath(subPath, depth, curDepth, *path_filters)
                     for reSubFile in subList:
                         result.append(reSubFile)
                 else:  # 文件,则记录绝对路径
@@ -208,37 +208,40 @@ class FileUtil(object):
                 pass
 
     @staticmethod
-    def write2File(path: str, msg: str, encoding='utf-8') -> bool:
+    def write2File(path: str, msg: str, encoding='utf-8', autoAppendLineBreak: bool = True) -> bool:
         """
         写入信息到指定文件中,若文件不存在则自动创建,若文件已存在,则覆盖内容
         :param path: 文件路径
         :param msg: 要写入的信息
         :param encoding: 编码, 默认:utf-8
+        :param autoAppendLineBreak: msg行尾不包含换行符时, 是否自动在行尾追加一个换行符
         :return: 是否写入成功
         """
         path = FileUtil.recookPath(path)
-        return FileUtil.__wirte2FileInnner(path, msg, False, encoding)
+        return FileUtil.__wirte2FileInnner(path, msg, False, encoding, autoAppendLineBreak)
 
     @staticmethod
-    def append2File(path: str, msg: str, encoding='utf-8') -> bool:
+    def append2File(path: str, msg: str, encoding='utf-8', autoAppendLineBreak: bool = True) -> bool:
         """
         写入信息到指定文件中,若文件不存在则自动创建,若文件已存在,则覆盖内容
         :param path: 文件路径
         :param msg: 要写入的信息
         :param encoding: 编码
+        :param autoAppendLineBreak: msg行尾不包含换行符时, 是否自动在追加一个换行符
         :return: 是否写入成功
         """
         path = FileUtil.recookPath(path)
-        return FileUtil.__wirte2FileInnner(path, msg, True, encoding)
+        return FileUtil.__wirte2FileInnner(path, msg, True, encoding, autoAppendLineBreak)
 
     @staticmethod
-    def __wirte2FileInnner(path: str, msg: str, append: bool, encoding='utf-8') -> bool:
+    def __wirte2FileInnner(path: str, msg: str, append: bool, encoding='utf-8',
+                           autoAppendLineBreak: bool = True) -> bool:
         path = FileUtil.recookPath(path)
         if msg is None or len(msg) == 0:
             return False
 
-        if not msg.endswith("\n"):
-            msg = "%s\n" % msg
+        if autoAppendLineBreak and not msg.endswith("\n"):
+            msg = '%s\n' % msg
 
         FileUtil.createFile(path, recreateIfExist=False)
         if FileUtil.isDirFile(path):
