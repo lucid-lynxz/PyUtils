@@ -196,7 +196,7 @@ class FileUtil(object):
                 os.makedirs(path)
         else:
             # 按需创建父目录
-            parentPath = os.path.dirname(path) + os.sep
+            parentPath = FileUtil.recookPath('%s/' % os.path.dirname(path))
             if not FileUtil.isDirFile(parentPath):
                 os.makedirs(parentPath)
 

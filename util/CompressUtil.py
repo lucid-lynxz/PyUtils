@@ -25,13 +25,13 @@ class CompressUtil(object):
 
     def compress(self, src: str, dest: str = None, pwd: str = None, excludeDirName: str = None):
         """
-        压缩指定文件成7z
+        压缩指定文件成zip
         :param pwd: 密码
         :param src: 待压缩的目录/文件路径
         :param dest: 生成的压缩文件路径,包括目录路径和文件名,若为空,则默认生成在源文件所在目录
-                            会自动提取文件名后缀作为压缩格式,若为空,则使用默认 .7z 格式压缩
+                            会自动提取文件名后缀作为压缩格式,若为空,则使用默认 .zip 格式压缩
                             支持的后缀主要包括:  .7z .zip .gzip .bzip2 .tar 等
-        :param excludeDirName: 不进行压缩的子目录名
+        :param excludeDirName: 不进行压缩的子目录/文件名信息, 支持通配符,支持多个,使用逗号分隔
         :return: 压缩文件路径, 若压缩失败,则返回 ""
         """
         if CommonUtil.isNoneOrBlank(src):
@@ -44,9 +44,9 @@ class CompressUtil(object):
 
         if CommonUtil.isNoneOrBlank(dest):
             if src.endswith('/') or src.endswith('\\'):
-                dest = '%s.7z' % src[:-1]
+                dest = '%s.zip' % src[:-1]
             else:
-                dest = '%s.7z' % src
+                dest = '%s.zip' % src
 
         _, _, ext = FileUtil.getFileName(dest)
         pCmd = ""
@@ -54,11 +54,13 @@ class CompressUtil(object):
             pCmd = "-p%s -mhe" % pwd
 
         # 需要剔除子文件
-        excludeDirCmd = ""
+        excludeCmd = ""
         if excludeDirName is not None and len(excludeDirName) > 0:
-            excludeDirCmd = "-xr^!%s" % excludeDirName
+            arr = excludeDirName.split(',')
+            excludeCmd = ' -xr^!'.join(arr)
+            excludeCmd = ' -xr^!%s' % excludeCmd
 
-        cmd = "%s a -t%s -r %s %s %s %s" % (self.sevenZipPath, ext, dest, pCmd, src, excludeDirCmd)
+        cmd = "%s a -t%s -r %s %s %s %s" % (self.sevenZipPath, ext, dest, pCmd, src, excludeCmd)
         CommonUtil.exeCmd(cmd)
         return dest
 

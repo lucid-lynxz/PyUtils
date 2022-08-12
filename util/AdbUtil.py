@@ -197,7 +197,7 @@ class AdbUtil(object):
         :param level 日志级别,如 V,D,I,W,E
         :param logcatFileName: 日志文件名
         """
-        log_file = "%s/%s" % (saveDirPath, logcatFileName)
+        log_file = FileUtil.recookPath('%s/%s' % (saveDirPath, logcatFileName))
         # cmd = "adb logcat *:E -d | find \"%s\" > %s" % (app_pkg_name, log_file) # 会漏掉很多信息
         cmd = "%s %s logcat *:%s -d  > %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), level.upper(), log_file)
         CommonUtil.exeCmd(cmd)
