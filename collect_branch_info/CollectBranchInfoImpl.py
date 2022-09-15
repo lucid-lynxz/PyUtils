@@ -26,7 +26,16 @@ class CollectBranchInfoImpl(BaseConfig):
     def run(self):
         repository = self.configParser.getSectionItems('repository')
         setting = self.configParser.getSectionItems('setting')
-        srcBranchInfo = self.configParser.getSectionItems('srcBranchInfo')
+        srcBranchInfo = {}  # key：目标分支名 value:源分支名
+        branchCreateDateInfo = {}  # key：目标分支名 value:目标分支的创建日期(格式：yyyy-mm-dd)
+        for k, v in self.configParser.getSectionItems('srcBranchInfo').items():
+            if CommonUtil.isNoneOrBlank(v):
+                srcBranchInfo[k] = ''
+            else:
+                arr = v.split(',')
+                srcBranchInfo[k] = arr[0]
+                if len(arr) >= 2:
+                    branchCreateDateInfo[k] = arr[1]
 
         outputFile: str = setting['outputResultFile']
         sinceDate: str = setting['sinceDate']
@@ -41,7 +50,9 @@ class CollectBranchInfoImpl(BaseConfig):
         excludeBranch: str = setting['excludeBranch']
         for eBranch in excludeBranch.split(','):
             excludeBranchDict[eBranch.strip()] = ''
-        FileUtil.write2File(outputFile, '分支名,首次提交日期,commitId,最近提交日期,commitId,源分支,总提交数,参与提交的人员')
+        FileUtil.write2File(outputFile,
+                            '分支名,首次提交日期,commitId,最近提交日期,commitId,源分支,总提交数,参与提交的人员',
+                            autoAppendLineBreak=False)
 
         gitUtil = GitUtil(repository['remote'],
                           repository['local'],
@@ -86,10 +97,20 @@ class CollectBranchInfoImpl(BaseConfig):
 
             # 获取最新提交信息
             branchInfo.headCommitInfo = gitUtil.getCommitInfo(targetBranch)
-
-            # 获取分支首次提交信息, 要求源分支信息非空
             if not CommonUtil.isNoneOrBlank(srcBranch):
                 branchInfo.srcBranchName = srcBranch
+
+            # 获取分支首次提交信息
+            # 若用户指定了创建日期，则直接使用创建日期获取首次提交信息
+            createDate = branchCreateDateInfo.get(targetBranch, '')
+            if not CommonUtil.isNoneOrBlank(createDate):
+                commitList = gitUtil.getAllCommitInfo(False, since=createDate)
+                if len(commitList) > 0:
+                    firstCommitId = commitList[-1]
+                    branchInfo.firstCommitInfo = gitUtil.getCommitInfo(firstCommitId)
+
+            # 若有源分支名，且未设置创建日期，则根据分支diff信息获取首次提交时间
+            if CommonUtil.isNoneOrBlank(branchInfo.firstCommitInfo.id) and not CommonUtil.isNoneOrBlank(srcBranch):
                 firstCommitId = gitUtil.getFirstCommitId(srcBranch, targetBranch)
                 branchInfo.firstCommitInfo = gitUtil.getCommitInfo(firstCommitId)
 
@@ -126,7 +147,7 @@ class CollectBranchInfoImpl(BaseConfig):
 
             # 记录分支信息
             # '分支名,创建日期,commitId,最近提交日期,commitId,源分支,总提交数'
-            FileUtil.append2File(outputFile, '%s,%s,%s,%s,%s,%s,%s,%s' % (
+            FileUtil.append2File(outputFile, '\n%s,%s,%s,%s,%s,%s,%s,%s' % (
                 branchInfo.branchNameRemote,
                 TimeUtil.convertFormat(branchInfo.firstCommitInfo.date, gitLogDateFormat, outputDateFormat),
                 branchInfo.firstCommitInfo.id,
@@ -134,7 +155,7 @@ class CollectBranchInfoImpl(BaseConfig):
                 branchInfo.headCommitInfo.id,
                 branchInfo.srcBranchName,
                 commitCount, " ".join(branchInfo.authorList)
-            ))
+            ), autoAppendLineBreak=False)
 
         # 发送钉钉通知
         robotSection = self.configParser.getSectionItems('robot')

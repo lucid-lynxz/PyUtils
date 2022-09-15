@@ -1,8 +1,9 @@
 ## 抽取个人日常工作中常用的脚本工具
 
-1. 将本项目放置于: `D:\workSpace\python\` 目录下
+1. 将本项目放置于: `D:\workSpace\python\PyUtils` 目录中， 则各bat脚本可不改路径直接使用
 2. 修改 `D:\workSpace\python\PyUtils\custom_config_test\*.ini` 配置文件
 3. 执行 `D:\workSpace\python\PyUtils\custom_config_test\bat\*.bat` 脚本
+   P.S. 由于我python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 python.exe 改名为 python3.exe
 
 各脚本的含义见下方说明
 

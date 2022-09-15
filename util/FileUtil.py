@@ -120,6 +120,24 @@ class FileUtil(object):
                 os.remove(path)
 
     @staticmethod
+    def moveFile(src: str, dst: str) -> bool:
+        """
+        移动文件到指定目录
+        :param src: 源文件(或目录)路径
+        :param dst: 目标位置目录路径
+        :return: 是否移动成功
+        """
+        if not FileUtil.isFileExist(src):
+            print('移动文件失败：源文件不存在 %s' % src)
+            return False
+        try:
+            shutil.move(src, dst)
+            return True
+        except (OSError, EnvironmentError) as reason:
+            print('移动文件失败：%s' % reason)
+            return False
+
+    @staticmethod
     def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0, *path_filters) -> list:
         """
         获取指定目录下所有文件的绝对路径

@@ -711,7 +711,7 @@ class GitUtil(object):
     def getAllAuthorName(self, allBranch: bool = False, since: str = '', until: str = '') -> list:
         """
         获取所有author姓名
-        命令: git log --all --format='%aN' --since=xxxx  --unity=xxxx | sort -u
+        命令: git log --all --format='%aN' --since=xxx  --until=xxx | sort -u
         windows cmd中 sort -u 报错, 此处自行去重
         :param allBranch: 是否提取所有分支的commit作者, 默认False,只提取当前分支
         :param since: 起始日期(不包括), 格式与当前仓库的 git config log.date相符,可先触发 formatLogDate() 方法进行指定
@@ -738,4 +738,33 @@ class GitUtil(object):
                 nameDict[line] = ''
             for key in nameDict:
                 resultList.append(key)
+        return resultList
+
+    def getAllCommitInfo(self, allBranch: bool = False, since: str = '', until: str = '') -> list:
+        """
+        获取指定期间内的commitId列表信息
+        命令: git log --all --since=xxx  --until=xxx --oneline
+        windows cmd中 sort -u 报错, 此处自行去重
+        :param allBranch: 是否提取所有分支的commit作者, 默认False,只提取当前分支
+        :param since: 起始日期(不包括), 格式与当前仓库的 git config log.date相符,可先触发 formatLogDate() 方法进行指定
+        :param until: 截止日期(包括)
+        :return: 所有commitId列表
+        """
+        # 由于windows下执行后中文有乱码存在, 未解决, 此处将结果重定向到文件中
+        curDirPath = os.path.abspath(os.path.dirname(__file__))
+        tempResultFile = '%s/tempAllLogInfo.txt' % curDirPath
+        FileUtil.deleteFile(tempResultFile)
+
+        allBranchOpt = '--all' if allBranch else ''
+        sinceOpt = '' if CommonUtil.isNoneOrBlank(since) else '--since %s' % since
+        untilOpt = '' if CommonUtil.isNoneOrBlank(until) else '--until %s' % until
+        gitCmd = "log %s %s %s --oneline > %s" % (allBranchOpt, sinceOpt, untilOpt, tempResultFile)
+        self.exeGitCmd(gitCmd, False)
+        allAutoNameLines = FileUtil.readFile(tempResultFile)
+        FileUtil.deleteFile(tempResultFile)  # 删除无用的临时文件
+        resultList: list = []
+        if len(allAutoNameLines) > 0:
+            for line in allAutoNameLines:
+                line = line.strip().replace('\'', '')
+                resultList.append(line.split(' ')[0])
         return resultList
