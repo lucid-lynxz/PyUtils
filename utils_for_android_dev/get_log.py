@@ -23,6 +23,7 @@ class GetLogImpl(BaseConfig):
         keyCompressFile = 'compress_file'  # 待压缩的本机文件路径key
         keySevenZipPath = 'seven_zip_path'  # 压缩工具路径
         keyExcludeCompressFile = 'exclude_compress_file'  # 压缩工具路径
+        keyExcludeCompressFileLimitSize = 'compress_file_limit'  # 压缩包大小限制
 
         # 非待提取的日志路径参数
         notLogPathKeyList = list()
@@ -31,6 +32,7 @@ class GetLogImpl(BaseConfig):
         notLogPathKeyList.append(keyCompressFile)
         notLogPathKeyList.append(keySevenZipPath)
         notLogPathKeyList.append(keyExcludeCompressFile)
+        notLogPathKeyList.append(keyExcludeCompressFileLimitSize)
 
         save_parent_dir = self.configParser.get(sectionName, keySaveDir)
         if CommonUtil.isNoneOrBlank(save_parent_dir):
@@ -99,9 +101,10 @@ class GetLogImpl(BaseConfig):
         # 压缩子目录
         if not CommonUtil.isNoneOrBlank(compressFile) and not CommonUtil.isNoneOrBlank(sevenZipPath):
             excludeCompressFile = self.configParser.get(sectionName, keyExcludeCompressFile)
+            excludeCompressFileLimitSize = self.configParser.get(sectionName, keyExcludeCompressFileLimitSize)
             compressFile = FileUtil.recookPath('%s/%s' % (saveDirPath, compressFile))
-            CompressUtil(sevenZipPath).compress(compressFile, excludeDirName=excludeCompressFile)
-
+            CompressUtil(sevenZipPath).compress(compressFile, excludeDirName=excludeCompressFile,
+                                                sizeLimit=excludeCompressFileLimitSize)
         print('提取完成, 打开目录: %s' % saveDirPath)
         FileUtil.openDir(saveDirPath)
 

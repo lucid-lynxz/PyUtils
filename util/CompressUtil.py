@@ -23,15 +23,17 @@ class CompressUtil(object):
         # 由于在windows下,软件经常装在 C:/Program Files/ 目录下, 目录名带有空格可能导致执行命令出错,因此包装一层
         self.sevenZipPath = '\"%s\"' % FileUtil.recookPath(sevenZipPath)
 
-    def compress(self, src: str, dest: str = None, pwd: str = None, excludeDirName: str = None):
+    def compress(self, src: str, dst: str = None, pwd: str = None,
+                 excludeDirName: str = None, sizeLimit: str = None):
         """
         压缩指定文件成zip
         :param pwd: 密码
         :param src: 待压缩的目录/文件路径
-        :param dest: 生成的压缩文件路径,包括目录路径和文件名,若为空,则默认生成在源文件所在目录
+        :param dst: 生成的压缩文件路径,包括目录路径和文件名,若为空,则默认生成在源文件所在目录
                             会自动提取文件名后缀作为压缩格式,若为空,则使用默认 .zip 格式压缩
                             支持的后缀主要包括:  .7z .zip .gzip .bzip2 .tar 等
         :param excludeDirName: 不进行压缩的子目录/文件名信息, 支持通配符,支持多个,使用逗号分隔
+        :param sizeLimit: 压缩包大小限制, 支持的单位: b/k/m/g, 如: 100m 表示压缩后单文件最大100M
         :return: 压缩文件路径, 若压缩失败,则返回 ""
         """
         if CommonUtil.isNoneOrBlank(src):
@@ -42,13 +44,13 @@ class CompressUtil(object):
             print("压缩失败:源文件不存在,请检查后再试")
             return ""
 
-        if CommonUtil.isNoneOrBlank(dest):
+        if CommonUtil.isNoneOrBlank(dst):
             if src.endswith('/') or src.endswith('\\'):
-                dest = '%s.zip' % src[:-1]
+                dst = '%s.zip' % src[:-1]
             else:
-                dest = '%s.zip' % src
+                dst = '%s.zip' % src
 
-        _, _, ext = FileUtil.getFileName(dest)
+        _, _, ext = FileUtil.getFileName(dst)
         pCmd = ""
         if pwd is not None and len(pwd) > 0:
             pCmd = "-p%s -mhe" % pwd
@@ -60,9 +62,14 @@ class CompressUtil(object):
             excludeCmd = ' -xr^!'.join(arr)
             excludeCmd = ' -xr^!%s' % excludeCmd
 
-        cmd = "%s a -t%s -r %s %s %s %s" % (self.sevenZipPath, ext, dest, pCmd, src, excludeCmd)
+        # 分包压缩大小
+        sizeLimitCmd = ''
+        if sizeLimit is not None and len(sizeLimit) > 0:
+            sizeLimitCmd = '-v%s' % sizeLimit
+
+        cmd = "%s a -t%s -r %s %s %s %s %s" % (self.sevenZipPath, ext, dst, pCmd, src, excludeCmd, sizeLimitCmd)
         CommonUtil.exeCmd(cmd)
-        return dest
+        return dst
 
     def unzip(self, src7zFile: str, dest: str = None, pwd: str = None):
         """
