@@ -7,6 +7,7 @@ import sys
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import re
 from base.BaseConfig import BaseConfig
 from util.AdbUtil import AdbUtil
 from util.CommonUtil import CommonUtil
@@ -20,6 +21,7 @@ class GetLogImpl(BaseConfig):
         sectionName = 'get_log'
         keySaveDir = 'save_dir'  # 日志保存在本机的路径key
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
+        keyExcludeRemoveFile = 'remove_file'  # 提取日志后, 需要删除的无用日志信息,可多条,逗号分隔
         keyCompressFile = 'compress_file'  # 待压缩的本机文件路径key
         keySevenZipPath = 'seven_zip_path'  # 压缩工具路径
         keyExcludeCompressFile = 'exclude_compress_file'  # 压缩工具路径
@@ -29,6 +31,7 @@ class GetLogImpl(BaseConfig):
         notLogPathKeyList = list()
         notLogPathKeyList.append(keySaveDir)
         notLogPathKeyList.append(keyParentLogDirInPhone)
+        notLogPathKeyList.append(keyExcludeRemoveFile)
         notLogPathKeyList.append(keyCompressFile)
         notLogPathKeyList.append(keySevenZipPath)
         notLogPathKeyList.append(keyExcludeCompressFile)
@@ -98,6 +101,10 @@ class GetLogImpl(BaseConfig):
                 print('删除空目录 %s' % subFilePath)
                 FileUtil.deleteFile(subFilePath)
 
+        # 删除 config.ini 中指定的无用日志信息
+        removeFiles = self.configParser.get(sectionName, keyExcludeRemoveFile)
+        self._removeFiles(saveDirPath, removeFiles)
+
         # 压缩子目录
         if not CommonUtil.isNoneOrBlank(compressFile) and not CommonUtil.isNoneOrBlank(sevenZipPath):
             excludeCompressFile = self.configParser.get(sectionName, keyExcludeCompressFile)
@@ -107,6 +114,26 @@ class GetLogImpl(BaseConfig):
                                                 sizeLimit=excludeCompressFileLimitSize)
         print('提取完成, 打开目录: %s' % saveDirPath)
         FileUtil.openDir(saveDirPath)
+
+    def _removeFiles(self, rootDir: str, removeFiles: str):
+        """
+        删除指定目录下的文件
+        :param rootDir: 父目录,非空
+        :param removeFiles: 待删除的文件信息,支持多条,逗号分隔,每条最后一级文件名支持正则表达式
+        """
+        if CommonUtil.isNoneOrBlank(removeFiles):
+            return
+
+        for removeFile in removeFiles.split(','):
+            tRemoveFile = FileUtil.recookPath('%s/%s' % (rootDir, removeFile))
+            fullName, _, _ = FileUtil.getFileName(tRemoveFile)
+            parentDirPath = FileUtil.getParentPath(tRemoveFile)
+
+            allFiles = FileUtil.listAllFilePath(parentDirPath)
+            for name in allFiles:
+                if re.search(r'%s' % fullName, name) is not None:
+                    path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))
+                    FileUtil.deleteFile(path)
 
 
 if __name__ == '__main__':
