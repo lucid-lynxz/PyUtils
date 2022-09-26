@@ -24,7 +24,7 @@ class CompressUtil(object):
         self.sevenZipPath = '\"%s\"' % FileUtil.recookPath(sevenZipPath)
 
     def compress(self, src: str, dst: str = None, pwd: str = None,
-                 excludeDirName: str = None, sizeLimit: str = None):
+                 excludeDirName: str = None, sizeLimit: str = None) -> str:
         """
         压缩指定文件成zip
         :param pwd: 密码
@@ -34,7 +34,7 @@ class CompressUtil(object):
                             支持的后缀主要包括:  .7z .zip .gzip .bzip2 .tar 等
         :param excludeDirName: 不进行压缩的子目录/文件名信息, 支持通配符,支持多个,使用逗号分隔
         :param sizeLimit: 压缩包大小限制, 支持的单位: b/k/m/g, 如: 100m 表示压缩后单文件最大100M
-        :return: 压缩文件路径, 若压缩失败,则返回 ""
+        :return: 最终压缩文件路径, 若压缩失败,则返回 ""
         """
         if CommonUtil.isNoneOrBlank(src):
             print("压缩失败:参数异常,请确认源文件路径正确")

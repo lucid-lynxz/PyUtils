@@ -110,8 +110,14 @@ class GetLogImpl(BaseConfig):
             excludeCompressFile = self.configParser.get(sectionName, keyExcludeCompressFile)
             excludeCompressFileLimitSize = self.configParser.get(sectionName, keyExcludeCompressFileLimitSize)
             compressFile = FileUtil.recookPath('%s/%s' % (saveDirPath, compressFile))
-            CompressUtil(sevenZipPath).compress(compressFile, excludeDirName=excludeCompressFile,
-                                                sizeLimit=excludeCompressFileLimitSize)
+            dst = CompressUtil(sevenZipPath).compress(compressFile, excludeDirName=excludeCompressFile,
+                                                      sizeLimit=excludeCompressFileLimitSize)
+            # 压缩成功后,若只有一个压缩包,则重命名 'xx.zip.001' 为 'xx.zip'
+            if not CommonUtil.isNoneOrBlank(excludeCompressFileLimitSize) \
+                    and not CommonUtil.isNoneOrBlank(dst) \
+                    and not FileUtil.isFileExist('%s.002' % dst):
+                FileUtil.moveFile('%s.001' % dst, dst)
+
         print('提取完成, 打开目录: %s' % saveDirPath)
         FileUtil.openDir(saveDirPath)
 
