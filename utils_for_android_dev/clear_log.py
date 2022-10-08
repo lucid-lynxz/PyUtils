@@ -20,7 +20,7 @@ from util.FileUtil import FileUtil
 
 class ClearLogImpl(BaseConfig):
 
-    def run(self):
+    def onRun(self):
         sectionName = 'clear_log'
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
 

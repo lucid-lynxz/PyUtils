@@ -35,7 +35,7 @@ class MergeResult(object):
 
 class MergeImpl(BaseConfig):
 
-    def run(self):
+    def onRun(self):
         repository = self.configParser.getSectionItems('repository')
         gitUtil = GitUtil(remotePath=repository['remote'], localPath=repository['local'],
                           branch=repository['initBranch'])

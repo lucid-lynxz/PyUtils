@@ -17,7 +17,8 @@ from util.TimeUtil import TimeUtil
 
 
 class GetLogImpl(BaseConfig):
-    def run(self):
+
+    def onRun(self):
         sectionName = 'get_log'
         keySaveDir = 'save_dir'  # 日志保存在本机的路径key
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
@@ -70,6 +71,7 @@ class GetLogImpl(BaseConfig):
         timeInfo = TimeUtil.getTimeStr('%Y%m%d_%H%M%S')
         saveDirPath = FileUtil.recookPath('%s/%s_log/' % (save_parent_dir, timeInfo))
         FileUtil.makeDir(saveDirPath)
+        self.taskParam.files.append(saveDirPath)  # 将结果目录保存到参数中
 
         # 依次提取日志
         adbUtil = AdbUtil()

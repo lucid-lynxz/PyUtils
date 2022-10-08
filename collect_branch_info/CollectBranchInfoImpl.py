@@ -23,7 +23,7 @@ from base.BaseConfig import BaseConfig
 
 class CollectBranchInfoImpl(BaseConfig):
 
-    def run(self):
+    def onRun(self):
         repository = self.configParser.getSectionItems('repository')
         setting = self.configParser.getSectionItems('setting')
         srcBranchInfo = {}  # key：目标分支名 value:源分支名
@@ -157,6 +157,7 @@ class CollectBranchInfoImpl(BaseConfig):
                 commitCount, " ".join(branchInfo.authorList)
             ), autoAppendLineBreak=False)
 
+        self.taskParam.files.append(outputFile)
         # 发送钉钉通知
         robotSection = self.configParser.getSectionItems('robot')
         content = "%s\n%s" % (robotSection['keyWord'], robotSection['extraInfo'])

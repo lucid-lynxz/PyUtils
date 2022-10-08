@@ -27,7 +27,7 @@ from base.BaseConfig import BaseConfig
 
 class UpdateImpl(BaseConfig):
 
-    def run(self):
+    def onRun(self):
         repository = self.configParser.getSectionItems('repository')
         local_dir_str = repository['local']
 

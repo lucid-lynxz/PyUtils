@@ -11,3 +11,12 @@ class Runnable(object):
     @abstractmethod
     def run(self):
         pass
+
+
+class TagGenerator(metaclass=ABCMeta):
+    @abstractmethod
+    def getTag(self) -> str:
+        """
+        返回当前功能模块的tag信息,用于唯一标志
+        """
+        pass

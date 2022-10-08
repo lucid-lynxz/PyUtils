@@ -8,6 +8,7 @@
 import getopt
 import os
 import sys
+from abc import abstractmethod
 
 # 把当前文件所在文件夹的父文件夹路径加入到 PYTHONPATH,否则在shell中运行会提示找不到util包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
@@ -15,15 +16,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util.ConfigUtil import NewConfigParser
 from util.CommonUtil import CommonUtil
-from base.Runnable import Runnable
+from base.Interfaces import Runnable, TagGenerator
 from util.FileUtil import FileUtil
+from base.TaskManager import TaskManager, TaskParam, TaskLifeCycle
 
 
-class BaseConfig(Runnable):
+class BaseConfig(Runnable, TagGenerator):
     """
     带配置文件的类
     可通过命令 --config 传入配置文件路径, 可以通过  --param sectionName.key=value 来动态修改/新增 参数
     子类可重写 [getPrintConfigSections] 返回一个 set() 来判断是否需要打印 config.ini 中指定 section 的内容
+    子类需实现 [onRun] 方法,在里面实现具体功能
     """
 
     def __init__(self, configPath: str,
@@ -34,7 +37,7 @@ class BaseConfig(Runnable):
                  configItemShortOpt: str = 'p',
                  splitFlag: str = '.'
                  ):
-        f"""
+        """
         支持通过命令参数 --config 传入自定义的配置文件路径,也可以直接通过参数 configPath 传入
         支持通过命令参数 --param 传入配置参数, 优先级高于 config 文件
         :param configPath: 配置文件路径
@@ -90,8 +93,39 @@ class BaseConfig(Runnable):
                 itemValue = '='.join(arr[1:]) if len(arr) >= 2 else ''
                 self.configParser.updateSectonItem(sectionName, itemKey, itemValue)
 
+        self.taskParam = TaskParam()
+        self.taskParam.configParser = self.configParser
+
+        for task in TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.afterConfigInit):
+            task(self.taskParam)
+
         # 按需打印 config.ini 中的信息(注释以及key, value则是实际生效的值(即通过--param注入后的最新值))
         self._printConfigDetail()
+
+    def run(self):
+        taskList = TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.beforeRun)
+        for task in taskList:
+            task(self.taskParam)
+
+        self.onRun()
+
+        taskList = TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.afterRun)
+        for task in taskList:
+            task(self.taskParam)
+
+    @abstractmethod
+    def onRun(self):
+        """"
+        子类实现该方法, 进行功能完成
+        """
+        pass
+
+    def getTag(self) -> str:
+        """
+        实现类的唯一标识信息, 默认为实现类的类名
+        """
+        # print('getTag()=%s' %  type(self).__name__)
+        return type(self).__name__
 
     def getPrintConfigSections(self) -> set:
         """

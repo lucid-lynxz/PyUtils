@@ -42,7 +42,7 @@ class PushImpl(BaseConfig):
             else:
                 targetList.append('%s%s' % (branchName, tRepoPath))
 
-    def run(self):
+    def onRun(self):
         # push成功的字符串匹配模板
         pushSuccessPatternArr = [r'completed with \d+ local objects',
                                  r'Everything up-to-date',

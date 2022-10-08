@@ -20,7 +20,7 @@ from util.TimeUtil import TimeUtil
 
 
 class TakeScreenShotUtil(BaseConfig):
-    def run(self):
+    def onRun(self):
         picFolder = self.configParser.get('screenshot', 'save_dir')
         picFolder = FileUtil.recookPath('%s/' % picFolder)
         FileUtil.createFile(picFolder)
@@ -41,6 +41,7 @@ class TakeScreenShotUtil(BaseConfig):
         adbUtil.pull(screenShotPathInPhone, localShotPngPath, targetDeviceId)
         exist = FileUtil.isFileExist(localShotPngPath)
         if exist:
+            self.taskParam.files.append(localShotPngPath)
             print('截图提取完成,删除手机中的截图...')
             adbUtil.exeShellCmds(['rm -rf %s' % screenShotPathInPhone], targetDeviceId)
             # 打开目录

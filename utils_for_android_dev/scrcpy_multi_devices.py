@@ -21,7 +21,7 @@ scrcpy: https://github.com/Genymobile/scrcpy
 
 
 class ScrcpyMultiDevicesImpl(BaseConfig):
-    def run(self):
+    def onRun(self):
         # 当前只支持windows
         if platform.system() != 'Windows':
             print('当前只支持windows系统')
