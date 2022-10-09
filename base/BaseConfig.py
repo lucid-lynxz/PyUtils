@@ -19,6 +19,7 @@ from util.CommonUtil import CommonUtil
 from base.Interfaces import Runnable, TagGenerator
 from util.FileUtil import FileUtil
 from base.TaskManager import TaskManager, TaskParam, TaskLifeCycle
+from extra_tasks.import_all import *  # 用于触发装饰器
 
 
 class BaseConfig(Runnable, TagGenerator):
