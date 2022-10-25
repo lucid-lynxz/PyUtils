@@ -201,19 +201,19 @@ class AdbUtil(object):
         # cmd = "adb logcat *:E -d | find \"%s\" > %s" % (app_pkg_name, log_file) # 会漏掉很多信息
         cmd = "%s %s logcat *:%s -d  > %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), level.upper(), log_file)
         CommonUtil.exeCmd(cmd)
-        # 提取tombstone信息
-        try:
-            with open(log_file, 'r', encoding='UTF8') as f:
-                while True:
-                    log = f.readline()
-                    if not log:
-                        break
-                    if log.__contains__("Tombstone written to:"):
-                        tmb = log.split(":")
-                        # tombstone_file = tmb[len(tmb) - 1].replace("\n", "").replace(" ", "")
-                        self.pullTombstoneFile(saveDirPath, deviceId)
-        except Exception as e:
-            print('getLogcatInfo try get tombstone info fail: %s' % e)
+        # # 提取tombstone信息
+        # try:
+        #     with open(log_file, 'r', encoding='UTF8') as f:
+        #         while True:
+        #             log = f.readline()
+        #             if not log:
+        #                 break
+        #             if log.__contains__("Tombstone written to:"):
+        #                 tmb = log.split(":")
+        #                 # tombstone_file = tmb[len(tmb) - 1].replace("\n", "").replace(" ", "")
+        #                 self.pullTombstoneFile(saveDirPath, deviceId)
+        # except Exception as e:
+        #     print('getLogcatInfo try get tombstone info fail: %s' % e)
 
     def pullANRFile(self, saveDirPath: str, deviceId: str = None) -> bool:
         """

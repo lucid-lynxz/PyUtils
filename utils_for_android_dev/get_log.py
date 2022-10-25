@@ -94,7 +94,10 @@ class GetLogImpl(BaseConfig):
 
         print('提取logcat信息')
         adbUtil.getLogcatInfo(saveDirPath, level='V', logcatFileName='logcatV.txt', deviceId=targetDeviceId)
-        adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
+        # adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
+
+        print('提取tombstone信息')
+        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId)
 
         print('尝试删除一级空白子目录')
         allSubFiles = FileUtil.listAllFilePath(saveDirPath)
