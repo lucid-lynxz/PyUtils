@@ -79,6 +79,7 @@ class BaseConfig(Runnable, TagGenerator):
         self.configPath = optPath if optFirst else configPath
 
         print('BaseConfig configPath=%s' % configPath)
+        print('content is:\n%s' % ''.join(FileUtil.readFile(self.configPath)))
         self.configParser = NewConfigParser(allow_no_value=True).initPath(self.configPath)
 
         # 更新 config.ini 属性值
@@ -96,6 +97,7 @@ class BaseConfig(Runnable, TagGenerator):
 
         self.taskParam = TaskParam()
         self.taskParam.configParser = self.configParser
+        self.taskParam.implementationObj = self
 
         for task in TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.afterConfigInit):
             task(self.taskParam)
@@ -113,6 +115,13 @@ class BaseConfig(Runnable, TagGenerator):
         taskList = TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.afterRun)
         for task in taskList:
             task(self.taskParam)
+
+    def isTaskExist(self, taskLifeCycle: TaskLifeCycle) -> bool:
+        """
+        判断指定生命周期阶段是否有额外的task需要执行
+        """
+        taskList = TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.afterRun)
+        return taskList is not None and len(taskList) > 0
 
     @abstractmethod
     def onRun(self):

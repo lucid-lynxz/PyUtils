@@ -11,7 +11,7 @@ import openpyxl.utils
 import openpyxl.workbook
 from openpyxl.worksheet import cell_range
 
-from IExcelUtil import IExcelUtil
+from util.IExcelUtil import IExcelUtil
 
 
 class XLUtil(IExcelUtil):

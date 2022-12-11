@@ -51,8 +51,12 @@ class TaskParam(object):
     传递给task函数的参数
     """
 
+    #  运行过程中添加参数到 configParser 中该section, 方便 extra_task 获取
+    runtimeParamSectionName = "runtimeSectionParam"
+
     def __init__(self):
         self.configParser: NewConfigParser = None  # 配置参数对象
+        self.implementationObj = None  # 对应的实现脚本对象, 通常是 BaseConfig 子类
         self.files = list()  # 文件路径信息,可能有多条, 元素是字符串, 表示路径
 
 

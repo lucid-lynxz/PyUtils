@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re
 from base.BaseConfig import BaseConfig
+from base.TaskManager import TaskParam, TaskLifeCycle
 from util.AdbUtil import AdbUtil
 from util.CommonUtil import CommonUtil
 from util.CompressUtil import CompressUtil
@@ -26,6 +27,7 @@ class GetLogImpl(BaseConfig):
         keyCompressFile = 'compress_file'  # 待压缩的本机文件路径key
         keySevenZipPath = 'seven_zip_path'  # 压缩工具路径
         keyExcludeCompressFile = 'exclude_compress_file'  # 压缩工具路径
+        keyExcludeDecrypt = 'auto_decrypt_log'  # 是否解密日志
         keyExcludeCompressFileLimitSize = 'compress_file_limit'  # 压缩包大小限制
 
         # 非待提取的日志路径参数
@@ -37,6 +39,7 @@ class GetLogImpl(BaseConfig):
         notLogPathKeyList.append(keySevenZipPath)
         notLogPathKeyList.append(keyExcludeCompressFile)
         notLogPathKeyList.append(keyExcludeCompressFileLimitSize)
+        notLogPathKeyList.append(keyExcludeDecrypt)
 
         save_parent_dir = self.configParser.get(sectionName, keySaveDir)
         if CommonUtil.isNoneOrBlank(save_parent_dir):
@@ -71,7 +74,10 @@ class GetLogImpl(BaseConfig):
         timeInfo = TimeUtil.getTimeStr('%Y%m%d_%H%M%S')
         saveDirPath = FileUtil.recookPath('%s/%s_log/' % (save_parent_dir, timeInfo))
         FileUtil.makeDir(saveDirPath)
-        self.taskParam.files.append(saveDirPath)  # 将结果目录保存到参数中
+
+        # 将结果目录保存到参数中
+        self.taskParam.files.append(saveDirPath)
+        self.taskParam.configParser.updateSectonItem(TaskParam.runtimeParamSectionName, "saveDirPath", saveDirPath)
 
         # 依次提取日志
         adbUtil = AdbUtil()
@@ -92,12 +98,12 @@ class GetLogImpl(BaseConfig):
         print('提取anr日志')
         adbUtil.pullANRFile(saveDirPath, targetDeviceId)
 
+        print('提取tombstone日志')
+        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId)
+
         print('提取logcat信息')
         adbUtil.getLogcatInfo(saveDirPath, level='V', logcatFileName='logcatV.txt', deviceId=targetDeviceId)
         # adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
-
-        print('提取tombstone信息')
-        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId)
 
         print('尝试删除一级空白子目录')
         allSubFiles = FileUtil.listAllFilePath(saveDirPath)
@@ -123,8 +129,9 @@ class GetLogImpl(BaseConfig):
                     and not FileUtil.isFileExist('%s.002' % dst):
                 FileUtil.moveFile('%s.001' % dst, dst)
 
-        print('提取完成, 打开目录: %s' % saveDirPath)
-        FileUtil.openDir(saveDirPath)
+        if not self.isTaskExist(taskLifeCycle=TaskLifeCycle.afterRun):
+            print('提取完成, 打开目录: %s' % saveDirPath)
+            FileUtil.openDir(saveDirPath)
 
     def _removeFiles(self, rootDir: str, removeFiles: str):
         """
@@ -138,6 +145,7 @@ class GetLogImpl(BaseConfig):
         for removeFile in removeFiles.split(','):
             tRemoveFile = FileUtil.recookPath('%s/%s' % (rootDir, removeFile))
             fullName, _, _ = FileUtil.getFileName(tRemoveFile)
+            fullName = fullName.replace('(', '\\(').replace(')', '\\)')
             parentDirPath = FileUtil.getParentPath(tRemoveFile)
 
             allFiles = FileUtil.listAllFilePath(parentDirPath)
