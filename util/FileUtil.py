@@ -11,15 +11,22 @@ from util.CommonUtil import CommonUtil
 
 class FileUtil(object):
     @staticmethod
-    def recookPath(path: str) -> str:
+    def recookPath(path: str, forceEnableLongPath: bool = False) -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠
         :param path: 路径字符串
+        :param forceEnableLongPath: win下是否强制启用长目录路径格式
         :return: 处理后的路径
         """
         if CommonUtil.isNoneOrBlank(path):
             return path
-        return path.replace("\\", "/").replace("//", "/")
+        path = path.replace("\\", "/").replace("//", "/")
+
+        # win最大文件长度: https://learn.microsoft.com/zh-cn/windows/win32/fileio/naming-a-file?redirectedfrom=MSDN#maxpath
+        if forceEnableLongPath or len(path) >= 256:
+            if platform.system() == 'Windows':
+                path = '\\\\?\\' + os.path.abspath(path)
+        return path
 
     @staticmethod
     def getParentPath(path: str, level: int = 1) -> str:
@@ -114,8 +121,13 @@ class FileUtil(object):
         path = FileUtil.recookPath(path)
         if FileUtil.isFileExist(path):
             if FileUtil.isDirFile(path):  # 目录
-                shutil.rmtree(path)
-                # os.rmdir(path) # 非空目录会报错: WindowsError：[Error 145]
+                try:
+                    shutil.rmtree(path)
+                    # os.rmdir(path) # 非空目录会报错: WindowsError：[Error 145]
+                except WindowsError:
+                    # 对于超长路径,会提示 FileNotFoundError: [WinError 3]
+                    path = FileUtil.recookPath(path, True)
+                    shutil.rmtree(path)
             else:  # 文件
                 os.remove(path)
 
@@ -138,15 +150,19 @@ class FileUtil(object):
             return False
 
     @staticmethod
-    def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0, *path_filters) -> list:
+    def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0,
+                        getAllDepthFileInfo: bool = False, *path_filters) -> list:
         """
-        获取指定目录下所有文件的绝对路径
+        获取指定层级目录下所有文件的绝对路径
         若目录不存在,则返回空数据
         :param folderPath: 目录路径
         :param depth: 递归遍历的深度,默认为一级, 即只获取 folderPath 的下一级子文件
         :param curDepth: 当前目录(folderPath)所在层级
+        :param getAllDepthFileInfo: 是否返回所有层级的文件路径, 默认False
+                True表示只要不大于depth指定的层级文件均要添加到结果列表中
+                False表示仅返回curDepth=depth的文件
         :param path_filters 文件路径过滤函数,可多个
-        :return:
+        :return: 结果列表
         """
         folderPath = FileUtil.recookPath(folderPath)
         result = list()
@@ -154,9 +170,11 @@ class FileUtil(object):
             subFiles = os.listdir(folderPath)  # 返回的是子文件的相对路径
             curDepth = curDepth + 1
             for sub in subFiles:
-                subPath = os.path.join(folderPath, sub)  # 子文件路径
+                subPath = FileUtil.recookPath(os.path.join(folderPath, sub))  # 子文件路径
                 if FileUtil.isDirFile(subPath) and curDepth < depth:  # 子文件是目录, 则递归遍历
-                    subList = FileUtil.listAllFilePath(subPath, depth, curDepth, *path_filters)
+                    if getAllDepthFileInfo:
+                        result.append(subPath)
+                    subList = FileUtil.listAllFilePath(subPath, depth, curDepth, getAllDepthFileInfo, *path_filters)
                     for reSubFile in subList:
                         result.append(reSubFile)
                 else:  # 文件,则记录绝对路径

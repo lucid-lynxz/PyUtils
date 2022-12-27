@@ -67,7 +67,8 @@ class CompressUtil(object):
         if sizeLimit is not None and len(sizeLimit) > 0:
             sizeLimitCmd = '-v%s' % sizeLimit
 
-        cmd = "%s a -t%s -r %s %s %s %s %s" % (self.sevenZipPath, ext, dst, pCmd, src, excludeCmd, sizeLimitCmd)
+        # 原路径和压缩包路径增加双引号,兼容路径中带空格的情形
+        cmd = "%s a -t%s -r \"%s\" %s \"%s\" %s %s" % (self.sevenZipPath, ext, dst, pCmd, src, excludeCmd, sizeLimitCmd)
         CommonUtil.exeCmd(cmd)
         return dst
 
