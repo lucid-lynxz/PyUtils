@@ -15,9 +15,10 @@ class AdbUtil(object):
         """
         self.adbPath = 'adb' if CommonUtil.isNoneOrBlank(adbPath) else adbPath
 
-    def getAllDeviceId(self) -> tuple:
+    def getAllDeviceId(self, onlineOnly: bool = False) -> tuple:
         """
         通过adb devices -l 命令获取所有设备id(未判断offline等特殊情况)
+        :param onlineOnly: 是否只显示在线的设备(不包含 offline 和 unauthorized 的设备)
         :return: tuple(设备序列号列表,设备model名称列表)
         """
         device_ids_list = []
@@ -28,9 +29,12 @@ class AdbUtil(object):
             if 'List of devices attached' in line:
                 continue
             if 'device:' in line:
+                if onlineOnly and ('offline' in line or 'unauthorized' in line):
+                    continue
                 split = line.split()  # 多空格切分
                 device_ids_list.append(split[0])
                 device_name = ""
+
                 for info in split:
                     if 'model:' in info:
                         device_name = info.split(":")[1]

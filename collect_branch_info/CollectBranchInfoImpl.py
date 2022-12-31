@@ -16,7 +16,7 @@ from util.GitUtil import GitUtil, BranchInfo, CommitInfo
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
-from util import NetUtil
+from util.NetUtil import NetUtil
 
 from base.BaseConfig import BaseConfig
 

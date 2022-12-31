@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util.GitUtil import GitUtil
 from util.CommonUtil import CommonUtil
-from util.NetUtil import push_ding_talk_robot
+from util.NetUtil import NetUtil
 from util.FileUtil import FileUtil
 
 from base.BaseConfig import BaseConfig
@@ -68,5 +68,5 @@ class UpdateImpl(BaseConfig):
             print('accessToken为空, 无需发送通知')
         else:
             atPhoneList = robotSection['atPhone'].split(',')
-            print(push_ding_talk_robot(content, token, False, atPhoneList))
+            print(NetUtil.push_ding_talk_robot(content, token, False, atPhoneList))
         print('自动更新代码结束')

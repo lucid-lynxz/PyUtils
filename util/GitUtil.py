@@ -43,14 +43,20 @@ class BranchInfo(object):
         # 最近一次commitId
         self.headCommitInfo: CommitInfo = CommitInfo()
 
+        # 分支创建日期
+        self.createDate: str = ''
+
         # {srcBranchName} 存在时可获取分支首次提交记录
         # 假设已知是从 branchA checkout 出了 branchB, 当前分支为: branchB, 则获取本分支的特有提交记录如下, 找到最早的一次提交即可:
         # git log branchA..branchB
-        # 分支第一次commitId
+        # 分支第一次commitId(若用户指定了sinceDate,则表示sinceDate之后的首次提交信息)
         self.firstCommitInfo: CommitInfo = CommitInfo()
 
         # 参与代码提价的author名称列表
         self.authorList: list = []
+
+        # 分支额外信息,如备注,由用户主动填写,与git无关
+        self.extraInfo: str = ''
 
 
 class GitUtil(object):
@@ -748,7 +754,7 @@ class GitUtil(object):
         :param allBranch: 是否提取所有分支的commit作者, 默认False,只提取当前分支
         :param since: 起始日期(不包括), 格式与当前仓库的 git config log.date相符,可先触发 formatLogDate() 方法进行指定
         :param until: 截止日期(包括)
-        :return: 所有commitId列表
+        :return: 所有commitId信息(元素0表示最新一次提交)
         """
         # 由于windows下执行后中文有乱码存在, 未解决, 此处将结果重定向到文件中
         curDirPath = os.path.abspath(os.path.dirname(__file__))
@@ -760,11 +766,13 @@ class GitUtil(object):
         untilOpt = '' if CommonUtil.isNoneOrBlank(until) else '--until %s' % until
         gitCmd = "log %s %s %s --oneline > %s" % (allBranchOpt, sinceOpt, untilOpt, tempResultFile)
         self.exeGitCmd(gitCmd, False)
-        allAutoNameLines = FileUtil.readFile(tempResultFile)
+        allLines = FileUtil.readFile(tempResultFile)
         FileUtil.deleteFile(tempResultFile)  # 删除无用的临时文件
-        resultList: list = []
-        if len(allAutoNameLines) > 0:
-            for line in allAutoNameLines:
+
+        resultList: list = []  # 所有的commitId
+        if len(allLines) > 0:
+            for line in allLines:
                 line = line.strip().replace('\'', '')
-                resultList.append(line.split(' ')[0])
+                commitId = line.split(' ')[0]
+                resultList.append(commitId)
         return resultList

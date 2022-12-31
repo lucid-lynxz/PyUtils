@@ -244,20 +244,26 @@ class FileUtil(object):
                 pass
 
     @staticmethod
-    def write2File(path: str, msg: str, encoding='utf-8', autoAppendLineBreak: bool = True) -> bool:
+    def write2File(path: str, msg: str, encoding='utf-8',
+                   autoAppendLineBreak: bool = True,
+                   enableEmptyMsg: bool = False) -> bool:
         """
         写入信息到指定文件中,若文件不存在则自动创建,若文件已存在,则覆盖内容
         :param path: 文件路径
         :param msg: 要写入的信息
         :param encoding: 编码, 默认:utf-8
         :param autoAppendLineBreak: msg行尾不包含换行符时, 是否自动在行尾追加一个换行符
+        :param enableEmptyMsg: 是否允许msg为空白内容
         :return: 是否写入成功
         """
         path = FileUtil.recookPath(path)
-        return FileUtil.__wirte2FileInnner(path, msg, False, encoding, autoAppendLineBreak)
+        return FileUtil.__wirte2FileInnner(path, msg, False, encoding, autoAppendLineBreak,
+                                           enableEmptyMsg=enableEmptyMsg)
 
     @staticmethod
-    def append2File(path: str, msg: str, encoding='utf-8', autoAppendLineBreak: bool = True) -> bool:
+    def append2File(path: str, msg: str, encoding='utf-8',
+                    autoAppendLineBreak: bool = True,
+                    enableEmptyMsg: bool = False) -> bool:
         """
         写入信息到指定文件中,若文件不存在则自动创建,若文件已存在,则覆盖内容
         :param path: 文件路径
@@ -267,13 +273,18 @@ class FileUtil(object):
         :return: 是否写入成功
         """
         path = FileUtil.recookPath(path)
-        return FileUtil.__wirte2FileInnner(path, msg, True, encoding, autoAppendLineBreak)
+        return FileUtil.__wirte2FileInnner(path, msg, True, encoding, autoAppendLineBreak,
+                                           enableEmptyMsg=enableEmptyMsg)
 
     @staticmethod
     def __wirte2FileInnner(path: str, msg: str, append: bool, encoding='utf-8',
-                           autoAppendLineBreak: bool = True) -> bool:
+                           autoAppendLineBreak: bool = True,
+                           enableEmptyMsg: bool = False) -> bool:
+        """
+        :param enableEmptyMsg: 是否允许写入空白内容,默认 False
+        """
         path = FileUtil.recookPath(path)
-        if msg is None or len(msg) == 0:
+        if not enableEmptyMsg and CommonUtil.isNoneOrBlank(msg):
             return False
 
         if autoAppendLineBreak and not msg.endswith("\n"):

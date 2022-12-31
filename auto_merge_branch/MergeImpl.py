@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from util.GitUtil import GitUtil
 from util.CommonUtil import CommonUtil
-from util import NetUtil
+from util.NetUtil import NetUtil
 
 from base.BaseConfig import BaseConfig
 
