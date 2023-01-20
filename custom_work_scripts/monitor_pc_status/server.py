@@ -7,9 +7,12 @@ import sys
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import threading
+import time
 from util.CommonUtil import CommonUtil
 from util.AdbUtil import AdbUtil
 from util.NetUtil import NetUtil
+from custom_work_scripts.monitor_pc_status.MonitorUtil import MonitorUtil
 
 """
 运行于待被监控的pc端,可以通过get请求查看本机连接的手机设备信息
@@ -47,9 +50,7 @@ class RequestHandlerImpl(http.server.BaseHTTPRequestHandler):
 
         resp = 'hello %s' % self.path
         if "/adb_devices_online" == self.path:
-            # resp = CommonUtil.exeCmd('adb devices -l')
-            names = AdbUtil().getAllDeviceId(onlineOnly=True)[0]
-            resp = ', '.join(names)
+            resp = PcServerImpl.getAllDeviceIdInfo()
 
         # 1. 发送响应code
         self.send_response(200)
@@ -97,12 +98,65 @@ class PcServerImpl(BaseConfig):
             atPhoneList = robotSection['atPhone'].split(',')
             print(NetUtil.push_ding_talk_robot(content, token, False, atPhoneList))
 
+    @staticmethod
+    def getAllDeviceIdInfo() -> str:
+        """
+        获取本机连接的可用手机列表信息,使用逗号连接, 格式: 序列号1,序列号2,....
+        """
+        names = AdbUtil().getAllDeviceId(onlineOnly=True)[0]
+        return ', '.join(names)
+
+    def check(self, duration_sec: int, log_path: str):
+        """
+        进行一次自检, 检查当前连接的手机信息, 与本地缓存的上一次信息之间的变化
+        :param duration_sec: 间隔指定时长后,再次自检,单位:s
+        :param log_path:本地日志路径
+        :return str:手机列表变化结果,若为空,则表示无变化,不需要发送钉钉通知
+        """
+        # 首次启动自检,即使设备无变更也发送一次钉钉通知
+        startup_check = True
+        while True:
+            deviceIdInfo = PcServerImpl.getAllDeviceIdInfo()
+            failMsg = MonitorUtil.checkPhoneList(deviceIdInfo, log_path)
+            FileUtil.write2File(log_path, deviceIdInfo, autoAppendLineBreak=False, enableEmptyMsg=True)
+
+            if not CommonUtil.isNoneOrBlank(failMsg):
+                self.notifyDingding('server端自检结果:\n%s' % failMsg)
+            elif startup_check:
+                self.notifyDingding('server端首次自检正常,当前连接的设备为:\n%s' % deviceIdInfo)
+            else:
+                print('server和adb devices列表正常, 与上一次无差别')
+            startup_check = False
+            if duration_sec <= 0:
+                break
+            else:
+                time.sleep(duration_sec)
+
+    def scheduleCheck(self, duration_sec: int, logPath: str):
+        """
+        定期发起自检, 检测本机连接的手机列表信息
+        """
+        if duration_sec <= 0:
+            self.check(duration_sec, logPath)
+            return
+        thread = threading.Thread(target=self.check, args=[duration_sec, logPath])
+        thread.start()
+
     def onRun(self):
         ip = NetUtil.getIp()
         port = -1
         try:
             port = int(self.configParser.get('server', 'port'))
             self.notifyDingding('正在启动Server...\n本机ip: %s\n端口: %s' % (ip, port))
+
+            # 查看定期轮询时间间隔,单位:min,若小于等于0,则不作轮询, 仅启动一次
+            check_duration = int(self.configParser.get('server', 'check_duration'))
+            log_dir_path = self.configParser.get('server', 'log_dir_path')
+            if CommonUtil.isNoneOrBlank(log_dir_path):
+                log_dir_path = '%s/log' % os.path.dirname(__file__)
+            log_dir_path = FileUtil.recookPath(log_dir_path)
+            logPath = '%s/last_devices_server.txt' % log_dir_path
+            self.scheduleCheck(check_duration * 60, logPath)
 
             # 服务器绑定的地址和端口
             server_address = ("", port)
