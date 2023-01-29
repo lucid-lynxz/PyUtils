@@ -1,0 +1,66 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.42">
+    <actions>
+        <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction
+                plugin="pipeline-model-definition@1.9.3"/>
+        <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction
+                plugin="pipeline-model-definition@1.9.3">
+            <jobProperties/>
+            <triggers/>
+            <parameters/>
+            <options/>
+        </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+    </actions>
+    <description></description>
+    <keepDependencies>false</keepDependencies>
+    <properties>
+        <hudson.model.ParametersDefinitionProperty>
+            <parameterDefinitions>
+                <hudson.model.StringParameterDefinition>
+                    <name>repo_abs_path</name>
+                    <description>本地PyUtils项目根目录</description>
+                    <defaultValue>D:\workSpace\python\PyUtils</defaultValue>
+                    <trim>true</trim>
+                </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>shell_script_rel_path</name>
+                    <description>待执行的shell脚本相对路径, 相对于项目根目录, 如: b/c.sh 表示 {repo_abs_path}/b/c.sh
+                    </description>
+                    <defaultValue>shell_scripts/sh/common_shell.sh</defaultValue>
+                    <trim>true</trim>
+                </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>other_param</name>
+                    <description>可以传入其他定制化参数, 会透传给shell脚本,默认放空即可</description>
+                    <trim>true</trim>
+                </hudson.model.StringParameterDefinition>
+            </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+    </properties>
+    <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2633.v6baeedc13805">
+        <script>import java.lang.String
+
+            pipeline {
+            agent any
+
+            environment{
+            sh_abs_path=&quot;$repo_abs_path/$shell_script_rel_path&quot;.replace(&quot;\\&quot;,&quot;/&quot;)
+            }
+
+            stages {
+            stage(&apos;Hello&apos;) {
+            steps {
+            sh&quot;&quot;&quot;
+            echo $sh_abs_path
+            $sh_abs_path $other_param
+            &quot;&quot;&quot;
+            }
+            }
+            }
+            }
+        </script>
+        <sandbox>true</sandbox>
+    </definition>
+    <triggers/>
+    <disabled>false</disabled>
+</flow-definition>

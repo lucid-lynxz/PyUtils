@@ -95,6 +95,7 @@ class BaseConfig(Runnable, TagGenerator):
                 itemValue = '='.join(arr[1:]) if len(arr) >= 2 else ''
                 self.configParser.updateSectonItem(sectionName, itemKey, itemValue)
 
+        self.configParser.updateSectonItem(TaskParam.runtimeParamSectionName, "", "")
         self.taskParam = TaskParam()
         self.taskParam.configParser = self.configParser
         self.taskParam.implementationObj = self
