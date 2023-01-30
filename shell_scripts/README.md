@@ -45,6 +45,22 @@
     P.S. 当前脚本仅适配了Windows端
 12. `take_screenshot.sh` 通过adb命令对手机屏幕进行截图并保存到特定目录中
 
+## `sh/` 目录下各shell脚本功能说明
+
+1. `auto_merge_dev.sh` 分支代码合并, 支持多个同一仓库下得多个不同分支间的代码合并
+2. `auto_push_dev.sh` 自动提交指定目录下的特定分支代码, 支持多个不同目录/分支的提交
+3. `clear_log.sh` 清除Android手机中的特定文件, 要求adb命令已在环境变量中
+4. `get_log.sh` 提取Android收集中的特定文件
+5. `get_log_descrypted.sh` 提取Android收集中的特定文件,并解密,解密脚本需要自行编写,各公司不同
+6. `collect_branch_info.sh` 收集指定时间段内,有提交记录的分支信息,包括分支名,创建日期,最后提交日期等信息
+7. `compress_backup_logs.sh` 使用7z对指定目录下的所有子目录进行压缩
+8. `compress_backup_logs_then_delete.sh` 使用7z对指定目录下的所有子目录进行压缩,压缩完成后删除源文件
+9. `monitor_pc_status_server.sh` 开启服务器功能,可以监听本机连接的Android设备变化情况
+10. `monitor_pc_status_client.sh` 向server端发起请求,定期轮询获取server端连接的Android设备变化情况
+11. `scrcpy_multi_devices.sh` 基于 [scrcpy](https://github.com/Genymobile/scrcpy/releases) 项目, 支持显示多台Android手机的投屏
+    P.S. 当前脚本仅适配了Windows端
+12. `take_screenshot.sh` 通过adb命令对手机屏幕进行截图并保存到特定目录中
+
 ## 创建新的shell脚本
 
 在 `sh/` 目录下新建脚本文件, 如: `a.sh`, 触发同目录下的 `common_shell.sh` 脚本, 内容如下:
