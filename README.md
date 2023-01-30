@@ -1,11 +1,12 @@
 ## 抽取个人日常工作中常用的脚本工具
 
-1. 将本项目放置于: `D:\workSpace\python\PyUtils` 目录中， 则各bat脚本可不改路径直接使用
-2. 修改 `D:\workSpace\python\PyUtils\custom_config_test\*.ini` 配置文件
-3. 执行 `D:\workSpace\python\PyUtils\custom_config_test\bat\*.bat` 脚本
-   P.S. 由于我python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 python.exe 改名为 python3.exe
+**由于我python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 `python.exe` 改名为 `python3.exe`**
 
-各脚本的含义见下方说明
+## shell脚本及配置文件的使用
+
+父目录为: `shell_scripts/`, 其中脚本文件位于 `sh/` 子目录中, 对应的配置文件在 `config/` 子目录中,
+各shell脚本用途机具体用法见[该文档](shell_scripts/README.md)
+对于需要定时/定期触发的脚本, 请结合jenkins实现, 具体也是见上方见[该文档](shell_scripts/README.md)
 
 ## 基础工具:
 
@@ -44,17 +45,29 @@ def isDirFileExist(path: str) -> bool
 ## util/GitUtil.py  git操作工具类,包括: clone/pull/merge/reset/获取commitId 等内容
 ```
 
-## 业务脚本:
+## python业务脚本:
 
 ### `auto_merge_branch`
-
 功能: 合并指定分支代码, 合并成功后按需push到远程仓库 要求: 本地代码已全部commit, 合并发生冲突时默认以源分支代码为准
 
 ### `auto_push_branch`
-
 功能: 自动提交指定git目录下指定分支的代码 要求: 本地代码已全部commit, 若存在未commit的代码,则不进行push操作
 
-### 1. `auto_update_reposity`
-
+### `auto_update_reposity`
 功能: 自动更新指定目录(或其一级子目录下)下各git仓库代码 要求: 本地代码已全部commit, 若存在未commit的代码,则不进行pull操作
- 
+
+### `collect_branch_info`
+功能：收集分支信息,包括首次提交时间, commitId,最新提交时间及commitId, commitAuthor列表等
+
+### `custom_work_scripts/batch_compress/`
+功能：使用7zip 批量压缩指定父目录下所有子目录
+
+### `custom_work_scripts/monitor_pc_status/`
+功能：监听指定pc上连接的android手机变化情况
+
+### `uitls_for_android_dev`
+功能：基于adb功能，实现：
+1. `clear_log.py` 删除指定文件
+2. `get_log.py` 从手机中提取多文件保存到本机中
+3. `scrcpy_multi_devices.py` 基于scrcpy项目，实现多手机投屏功能(当前仅支持windows)
+4. `take_screenshot.py` 通过adb screenshot进行截屏并保存文件到本机中
