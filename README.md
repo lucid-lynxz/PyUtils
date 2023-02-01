@@ -1,6 +1,12 @@
-## 抽取个人日常工作中常用的脚本工具
+# 抽取个人日常工作中常用的脚本工具
 
-**由于我python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 `python.exe` 改名为 `python3.exe`**
+## 注意事项：
+**由于我在window上python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 `python.exe` 改名为 `python3.exe`**
+* 2023.02.03更新：
+  * 对于windows用户，当前本项目已内置了python3.10程序，因此可无需再自行安装
+  * 对于linux/macos系统用户，可能需要自行安装python3并配置环境变量，同时需要提供命令: `python3`，经测试：
+    * Ubuntu22.10/Fedora37均已内置了 python3， 无需再手动安装
+    * macos 10.13 内置的是 python2，从 [官网](https://www.python.org/downloads/macos/) 下载 [3.10.9](https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg) 版本一路next安装完成后， 无需再手动配置环境变量即可生效
 
 ## shell脚本及配置文件的使用
 

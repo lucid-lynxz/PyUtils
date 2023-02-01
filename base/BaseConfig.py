@@ -78,8 +78,8 @@ class BaseConfig(Runnable, TagGenerator):
 
         self.configPath = optPath if optFirst else configPath
 
-        print('BaseConfig configPath=%s' % configPath)
-        print('content is:\n%s' % ''.join(FileUtil.readFile(self.configPath)))
+        print('\nconfigPath=%s' % configPath)
+        print(''.join(FileUtil.readFile(self.configPath)))
         self.configParser = NewConfigParser(allow_no_value=True).initPath(self.configPath)
 
         # 更新 config.ini 属性值
@@ -107,6 +107,7 @@ class BaseConfig(Runnable, TagGenerator):
         self._printConfigDetail()
 
     def run(self):
+        print('\n')
         taskList = TaskManager.getTaskList(self.getTag(), taskLifeCycle=TaskLifeCycle.beforeRun)
         for task in taskList:
             task(self.taskParam)

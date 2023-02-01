@@ -32,12 +32,12 @@ class TakeScreenShotUtil(BaseConfig):
         adbUtil = AdbUtil()
         targetDeviceId = adbUtil.choosePhone()  # 选择待截图的手机信息
         # 手机中执行adb截图命令, 保存到sdcard/下
-        picName = '/screenshot_%s_%s.png' % (TimeUtil.getTimeStr('%Y%m%d%H%M%S'), targetDeviceId)
+        picName = 'screenshot_%s_%s.png' % (TimeUtil.getTimeStr('%Y%m%d%H%M%S'), targetDeviceId)
         screenShotPathInPhone = FileUtil.recookPath('/sdcard/%s' % picName)
         adbUtil.exeShellCmds(['screencap -p %s' % screenShotPathInPhone], targetDeviceId)
 
         # 提取截图文件到本机中
-        localShotPngPath = '%s/%s' % (picFolder, picName)
+        localShotPngPath = FileUtil.recookPath('%s/%s' % (picFolder, picName))
         adbUtil.pull(screenShotPathInPhone, localShotPngPath, targetDeviceId)
         exist = FileUtil.isFileExist(localShotPngPath)
         if exist:

@@ -20,6 +20,11 @@ class FileUtil(object):
         """
         if CommonUtil.isNoneOrBlank(path):
             return path
+
+        if path.startswith("~"):
+            path = '%s%s' % (os.path.expanduser("~"), path[1:])
+            return FileUtil.recookPath(path)
+
         path = path.replace("\\", "/").replace("//", "/")
 
         # win最大文件长度: https://learn.microsoft.com/zh-cn/windows/win32/fileio/naming-a-file?redirectedfrom=MSDN#maxpath
@@ -326,7 +331,7 @@ class FileUtil(object):
             cmd = CommonUtil.changeSep('explorer.exe %s' % path)
         else:
             cmd = CommonUtil.changeSep('open %s' % path)
-        CommonUtil.exeCmd(cmd)
+        CommonUtil.exeCmd(cmd, printCmdInfo=False)
 
 
 if __name__ == '__main__':

@@ -65,12 +65,57 @@ echo config_abs_path is:$config_abs_path
 echo python_script_path is:$python_script_path
 echo all shell params:$@
 
-# 执行脚本
-pythonCmd="python3"
-if [ $OSTYPE=="msys" ]; then
+# 确认系统是否有可用的 python 或  python3命令
+# 检测命令对应的python命令是否是python3
+# 输入的参数1为： “python” 或者 “python3”
+# 会自动拼接为：python --version 2>&1 并对结果做检测
+# 方法执行后，通过 $hitPython3 获取结果， 1表示当前命令可用且表示python3
+function testPython3(){
+    hitPython3=0
+    cmd="$1 --version 2>&1 >/dev/null"
+    result=$($cmd)
+    if [[ "$result" =~ "command not found" ]]; then
+        hitPython3=0
+    else
+        if [[ "$result" == *"Python 3"* ]]; then
+            hitPython3=1
+        fi
+    fi
+}
+
+# 依次检测系统 'python3' 和 ‘python’ 命令是否可用
+finalPythonCmd=""
+pythonCmd="python"
+python3Cmd="python3"
+python3CmdInner="" # 本项目内置的python3命令(仅有windows版)
+if [ "$OSTYPE" = "msys" ]; then
   echo windows
-  pythonCmd="python3.exe"
+  pythonCmd="python.exe"
+  python3Cmd="python3.exe"
+  python3CmdInner="$root_dir_path/third_tools/python3/windows/python3.exe"
 fi
+
+testPython3 $python3Cmd # 检测 'python3' 命令
+if [[ $hitPython3 == "1" ]]; then
+    finalPythonCmd=$python3Cmd
+else
+  testPython3 $pythonCmd # 检测 'python' 命令
+  if [[ $hitPython3 == "1" ]]; then
+    finalPythonCmd=$pythonCmd
+  fi
+fi
+
+# 若系统不支持python3，则尝试使用内置的命令
+if [ -z "$finalPythonCmd" ]; then
+  finalPythonCmd=$python3CmdInner
+fi
+
+# 未找到python3命令，报错并退出
+if [ -z "$finalPythonCmd" ]; then
+    echo "当前未找到python3命令,取消执行,请确保已安装并配置了系统环境变量"
+    exit 1
+fi
+echo "最终python3命令为:$finalPythonCmd"
 
 # 获取其他参数(剔除有特定含义的参数1和2)并透传到python脚本中
 otherParams=${@/$1/}
@@ -84,11 +129,12 @@ else
   cmdContent="$python_script_path $otherParams"
 fi
 
-echo "$pythonCmd $cmdContent"
-$pythonCmd $cmdContent
+# 执行命令
+echo "$finalPythonCmd $cmdContent"
+$finalPythonCmd $cmdContent
 
 #$SHELL
-secs=3
+secs=5
 echo will exit after $secs secs
 sleep $secs
 exit

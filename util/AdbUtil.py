@@ -11,9 +11,12 @@ from util.FileUtil import FileUtil
 class AdbUtil(object):
     def __init__(self, adbPath: str = ''):
         """
-        :param adbPath: adb应用程序的路径,若为空,则请确保已添加到环境变量中
+        :param adbPath: adb应用程序的路径,若为空,则：
+        1. 查看本工程是否已內置adb工具
+        2. 若未內置，则使用环境变量中的adb(请自行确保系统已支持adb命令)
         """
-        self.adbPath = 'adb' if CommonUtil.isNoneOrBlank(adbPath) else adbPath
+        self.adbPath = 'third_tools/android_platform_tools/*/adb.exe' if CommonUtil.isNoneOrBlank(adbPath) else adbPath
+        self.adbPath = CommonUtil.checkThirdToolPath(self.adbPath, 'adb')
 
     def getAllDeviceId(self, onlineOnly: bool = False) -> tuple:
         """
@@ -23,7 +26,7 @@ class AdbUtil(object):
         """
         device_ids_list = []
         device_names_list = []
-        out = CommonUtil.exeCmd("%s devices -l" % self.adbPath)
+        out = CommonUtil.exeCmd("%s devices -l" % self.adbPath, printCmdInfo=False)
         devices_info_list = "" if out is None else out.splitlines()
         for line in devices_info_list:
             if 'List of devices attached' in line:
@@ -88,11 +91,12 @@ class AdbUtil(object):
             device_opt = '-s %s' % deviceId
         return device_opt
 
-    def exeShellCmds(self, cmdArr: list, deviceId: str = None) -> tuple:
+    def exeShellCmds(self, cmdArr: list, deviceId: str = None, printCmdInfo: bool = True) -> tuple:
         """
         在 adb shell 中执行cmd列表命令
         :param cmdArr: 命令列表,如 ["su","ls","exit"], 会自动拼接成 adb -s deviceId shell ***
         :param deviceId: 若同时连接多台设备,则需要给出设备id
+        :param printCmdInfo:执行命令时是否打印命令内容
         :return: tuple(stdout,stderr)
         """
         cmd_adb_shell = '%s %s shell' % (self.adbPath, self._getDeviceIdOpt(deviceId))
@@ -101,29 +105,31 @@ class AdbUtil(object):
         cmds_str = '\n'.join(cmdArr)
         cmds_str = '%s\n' % cmds_str
         stdout, stderr = pipe.communicate(cmds_str.encode())
-        print("%s shell\n%sstdout=%s,stderr=%s" % (self.adbPath, cmds_str, stdout, stderr))
+        if printCmdInfo:
+            print("%s shell\n%sstdout=%s,stderr=%s" % (self.adbPath, cmds_str, stdout, stderr))
         return stdout, stderr
 
-    def pull(self, src: str, dest: str = ".", deviceId: str = None):
+    def pull(self, src: str, dst: str = ".", deviceId: str = None, printCmdInfo: bool = True):
         """
         通过adb从手机中pull出特定文件到指定位置
         :param deviceId: 设备id,多台设备共存时需要指定
         :param src: 手机中源文件路径
-        :param dest: 存储到本机的目录路径,若路径以 "/" 结尾,则提取源文件到该目录下,保持同名,请自行确保本机目录存在
+        :param dst: 存储到本机的目录路径,若路径以 "/" 结尾,则提取源文件到该目录下,保持同名,请自行确保本机目录存在
+        :param printCmdInfo:执行命令时是否打印命令内容
         :return: 本机存储文件路径,若pull失败,则返回 ""
         """
         path, src_file_name = os.path.split(src)
 
-        if CommonUtil.isNoneOrBlank(dest):
-            dest = "./"
+        if CommonUtil.isNoneOrBlank(dst):
+            dst = "./"
 
-        cmd = "%s %s pull %s %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), src, dest)
-        result = CommonUtil.exeCmd(cmd)
+        cmd = "%s %s pull %s %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), src, dst)
+        result = CommonUtil.exeCmd(cmd, printCmdInfo)
         if result is not None and "adb: error: " in result:
             return ""
-        if dest.endswith("/"):
-            dest = "%s/%s" % (dest, src_file_name)  # 本机文件路径
-        return dest
+        if dst.endswith("/"):
+            dst = "%s/%s" % (dst, src_file_name)  # 本机文件路径
+        return dst
 
     def push(self, src: str,
              dest: str,
@@ -194,17 +200,19 @@ class AdbUtil(object):
     def getLogcatInfo(self, saveDirPath: str,
                       level: str = "E",
                       logcatFileName: str = "logcat.txt",
-                      deviceId: str = None):
+                      deviceId: str = None,
+                      printCmdInfo: bool = True):
         """
         抓取指定级别的日志,并存入 save_folder 中, 若有 tombstone 文件, 则尝试 pull
         :param saveDirPath: 日志文件保存目录
         :param level 日志级别,如 V,D,I,W,E
         :param logcatFileName: 日志文件名
+        :param printCmdInfo:执行命令时是否打印命令内容
         """
         log_file = FileUtil.recookPath('%s/%s' % (saveDirPath, logcatFileName))
         # cmd = "adb logcat *:E -d | find \"%s\" > %s" % (app_pkg_name, log_file) # 会漏掉很多信息
         cmd = "%s %s logcat *:%s -d  > %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), level.upper(), log_file)
-        CommonUtil.exeCmd(cmd)
+        CommonUtil.exeCmd(cmd, printCmdInfo=printCmdInfo)
         # # 提取tombstone信息
         # try:
         #     with open(log_file, 'r', encoding='UTF8') as f:
@@ -219,14 +227,27 @@ class AdbUtil(object):
         # except Exception as e:
         #     print('getLogcatInfo try get tombstone info fail: %s' % e)
 
-    def pullANRFile(self, saveDirPath: str, deviceId: str = None) -> bool:
+    def isFileExist(self, pathInPhone: str, deviceId: str = None) -> bool:
+        """
+        判断手机中的文件是否存在
+        """
+        if CommonUtil.isNoneOrBlank(pathInPhone):
+            return False
+        # '2>&1' 表示把标准错误 stderr 重定向到标准输出 stdout
+        cmd = "%s %s shell ls %s 2>&1" % (self.adbPath, self._getDeviceIdOpt(deviceId), pathInPhone)
+        result = CommonUtil.exeCmd(cmd, printCmdInfo=False)
+        # print('isFileExist %s' % result)
+        return not CommonUtil.isNoneOrBlank(result) and 'No such file or directory' not in result
+
+    def pullANRFile(self, saveDirPath: str, deviceId: str = None, printCmdInfo: bool = True) -> bool:
         """
         提取anr日志,由于位于 /data/anr/ ,无法直接pull,因此中转到 /sdcard/anr/ 下再 pull
         :param saveDirPath:  要提取到本机位置,如 d:/log/, 提取后实际目录为 d:/log/anr/
-        :param deviceId:
+        :param deviceId:设备序列号(通过 adb devices -l 获取)
+        :param printCmdInfo:执行命令时是否打印命令内容
         :return: true-成功 false-失败
         """
-        print('pull_anr_files save_folder=%s' % saveDirPath)
+        # print('pull_anr_files save_folder=%s' % saveDirPath)
         FileUtil.makeDir(saveDirPath)
 
         src_anr_folder = '/data/anr/'
@@ -234,11 +255,11 @@ class AdbUtil(object):
         move_to_file = '/sdcard/anr/'
 
         cmd_copy = ["su", "cp -r %s %s" % (src_anr_folder, sdcard_path)]
-        cmd_delete = ["su", "rm -r %s/*" % src_anr_folder, "rm -r %s" % move_to_file]
+        cmd_delete = ["su", "rm -r %s*" % src_anr_folder, "rm -r %s" % move_to_file]
 
-        self.exeShellCmds(cmd_copy, deviceId)
-        self.pull(move_to_file, saveDirPath, deviceId)
-        self.exeShellCmds(cmd_delete, deviceId)
+        self.exeShellCmds(cmd_copy, deviceId, printCmdInfo=printCmdInfo)
+        self.pull(move_to_file, saveDirPath, deviceId, printCmdInfo=printCmdInfo)
+        self.exeShellCmds(cmd_delete, deviceId, printCmdInfo=printCmdInfo)
 
         # 检测本机是否存在anr目录,若存在表示提取成功
         local_anr_log_folder_path = FileUtil.recookPath('%s/anr/' % saveDirPath)
@@ -254,7 +275,7 @@ class AdbUtil(object):
         # todo bugReport
         return True
 
-    def pullTombstoneFile(self, saveDirPath: str, deviceId: str = None):
+    def pullTombstoneFile(self, saveDirPath: str, deviceId: str = None, printCmdInfo: bool = True):
         """
         提取tombstone文件 srcPath 到本机目录save_folder中
         由于 adb pull 无法直接提取 /data/tombstone/*** 文件,因此采用如下操作:
@@ -262,6 +283,7 @@ class AdbUtil(object):
         2. pull 到本机 save_folder 目录下
         3. 删除 /sdcard/ 下的临时中转文件
         :param saveDirPath: 要保存在本机的目录路径, 如 D:/log/
+        :param printCmdInfo:执行命令时是否打印命令内容
         :return:
         """
         FileUtil.makeDir(saveDirPath)
@@ -270,9 +292,9 @@ class AdbUtil(object):
         cmd_copy = ["su", "cp -r /data/tombstones /sdcard/"]
         cmd_delete = ["rm -rf %s" % move_to_file]
 
-        self.exeShellCmds(cmd_copy, deviceId)
-        self.pull(move_to_file, saveDirPath, deviceId)
-        self.exeShellCmds(cmd_delete, deviceId)
+        self.exeShellCmds(cmd_copy, deviceId, printCmdInfo=printCmdInfo)
+        self.pull(move_to_file, saveDirPath, deviceId, printCmdInfo=printCmdInfo)
+        self.exeShellCmds(cmd_delete, deviceId, printCmdInfo=printCmdInfo)
 
     def deleteFromPhone(self, absPath: str, deviceId: str = None) -> str:
         """
@@ -281,8 +303,11 @@ class AdbUtil(object):
         :param deviceId: 设备id,当前有多台设备连接时需要指定
         :return:
         """
-        cmd = "%s %s shell rm -r %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), absPath)
-        return CommonUtil.exeCmd(cmd)
+        if self.isFileExist(absPath, deviceId):
+            cmd = "%s %s shell rm -r %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), absPath)
+            return CommonUtil.exeCmd(cmd, printCmdInfo=False)
+        else:
+            return '文件不存在 %s' % absPath
 
     def installApk(self, apkPath: str, deviceId: str = None, onlyForTest: bool = False) -> bool:
         """

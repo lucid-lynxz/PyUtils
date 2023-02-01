@@ -21,10 +21,11 @@ class CompressUtil(object):
         :param sevenZipPath: 7z.exe 可自行执行路径
         """
         # 由于在windows下,软件经常装在 C:/Program Files/ 目录下, 目录名带有空格可能导致执行命令出错,因此包装一层
-        self.sevenZipPath = '\"%s\"' % FileUtil.recookPath(sevenZipPath)
+        self.sevenZipPath = '\"%s\"' % CommonUtil.checkThirdToolPath(FileUtil.recookPath(sevenZipPath), "7z")
 
     def compress(self, src: str, dst: str = None, pwd: str = None,
-                 excludeDirName: str = None, sizeLimit: str = None) -> str:
+                 excludeDirName: str = None, sizeLimit: str = None,
+                 printCmdInfo: bool = True) -> str:
         """
         压缩指定文件成zip
         :param pwd: 密码
@@ -34,6 +35,7 @@ class CompressUtil(object):
                             支持的后缀主要包括:  .7z .zip .gzip .bzip2 .tar 等
         :param excludeDirName: 不进行压缩的子目录/文件名信息, 支持通配符,支持多个,使用逗号分隔
         :param sizeLimit: 压缩包大小限制, 支持的单位: b/k/m/g, 如: 100m 表示压缩后单文件最大100M
+        :param printCmdInfo:执行命令时是否打印命令内容
         :return: 最终压缩文件路径, 若压缩失败,则返回 ""
         """
         if CommonUtil.isNoneOrBlank(src):
@@ -59,8 +61,12 @@ class CompressUtil(object):
         excludeCmd = ""
         if excludeDirName is not None and len(excludeDirName) > 0:
             arr = excludeDirName.split(',')
-            excludeCmd = ' -xr^!'.join(arr)
-            excludeCmd = ' -xr^!%s' % excludeCmd
+            if CommonUtil.isWindows():
+                excludeCmd = ' -xr^!'.join(arr)
+                excludeCmd = ' -xr^!%s' % excludeCmd
+            else:
+                for item in arr:
+                    excludeCmd = '%s \'-xr!%s\'' % (excludeCmd, item)
 
         # 分包压缩大小
         sizeLimitCmd = ''
@@ -69,7 +75,7 @@ class CompressUtil(object):
 
         # 原路径和压缩包路径增加双引号,兼容路径中带空格的情形
         cmd = "%s a -t%s -r \"%s\" %s \"%s\" %s %s" % (self.sevenZipPath, ext, dst, pCmd, src, excludeCmd, sizeLimitCmd)
-        CommonUtil.exeCmd(cmd)
+        CommonUtil.exeCmd(cmd, printCmdInfo=printCmdInfo)
         return dst
 
     def unzip(self, src7zFile: str, dest: str = None, pwd: str = None):

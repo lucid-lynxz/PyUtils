@@ -74,6 +74,7 @@ class GetLogImpl(BaseConfig):
         timeInfo = TimeUtil.getTimeStr('%Y%m%d_%H%M%S')
         saveDirPath = FileUtil.recookPath('%s/%s_log/' % (save_parent_dir, timeInfo))
         FileUtil.makeDir(saveDirPath)
+        print('提取的日志会保存到:%s' % saveDirPath)
 
         # 将结果目录保存到参数中
         self.taskParam.files.append(saveDirPath)
@@ -93,23 +94,25 @@ class GetLogImpl(BaseConfig):
                 FileUtil.makeDir(localLogPath)
 
             print('正在提取日志:%s' % logPath)
-            adbUtil.pull(logPath, localLogPath, targetDeviceId)
+            adbUtil.pull(logPath, localLogPath, targetDeviceId, printCmdInfo=False)
 
         print('提取anr日志')
-        adbUtil.pullANRFile(saveDirPath, targetDeviceId)
+        adbUtil.pullANRFile(saveDirPath, targetDeviceId, printCmdInfo=False)
 
         print('提取tombstone日志')
-        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId)
+        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId, printCmdInfo=False)
 
         print('提取logcat信息')
-        adbUtil.getLogcatInfo(saveDirPath, level='V', logcatFileName='logcatV.txt', deviceId=targetDeviceId)
+        adbUtil.getLogcatInfo(saveDirPath, level='V', logcatFileName='logcatV.txt',
+                              deviceId=targetDeviceId,
+                              printCmdInfo=False)
         # adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
 
         print('尝试删除一级空白子目录')
         allSubFiles = FileUtil.listAllFilePath(saveDirPath)
         for subFilePath in allSubFiles:
             if FileUtil.isDirFile(subFilePath) and len(FileUtil.listAllFilePath(subFilePath)) == 0:
-                print('删除空目录 %s' % subFilePath)
+                print('  删除 %s' % subFilePath)
                 FileUtil.deleteFile(subFilePath)
 
         # 删除 config.ini 中指定的无用日志信息
@@ -118,6 +121,7 @@ class GetLogImpl(BaseConfig):
 
         # 压缩子目录
         if not CommonUtil.isNoneOrBlank(compressFile) and not CommonUtil.isNoneOrBlank(sevenZipPath):
+            print('提取完成，尝试压缩文件')
             excludeCompressFile = self.configParser.get(sectionName, keyExcludeCompressFile)
             excludeCompressFileLimitSize = self.configParser.get(sectionName, keyExcludeCompressFileLimitSize)
             compressFile = FileUtil.recookPath('%s/%s' % (saveDirPath, compressFile))
@@ -130,7 +134,7 @@ class GetLogImpl(BaseConfig):
                 FileUtil.moveFile('%s.001' % dst, dst)
 
         if not self.isTaskExist(taskLifeCycle=TaskLifeCycle.afterRun):
-            print('提取完成, 打开目录: %s' % saveDirPath)
+            print('完成所有提取日志操作, 打开目录: %s' % saveDirPath)
             FileUtil.openDir(saveDirPath)
 
     def _removeFiles(self, rootDir: str, removeFiles: str):

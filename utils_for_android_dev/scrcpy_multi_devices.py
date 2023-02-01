@@ -1,7 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 import os
-import platform
 import sys
 
 # 把当前文件所在文件夹的父文件夹路径加入到 PYTHONPATH,否则在shell中运行会提示找不到util包
@@ -23,7 +22,7 @@ scrcpy: https://github.com/Genymobile/scrcpy
 class ScrcpyMultiDevicesImpl(BaseConfig):
     def onRun(self):
         # 当前只支持windows
-        if platform.system() != 'Windows':
+        if not CommonUtil.isWindows():
             print('当前只支持windows系统')
             return
 
