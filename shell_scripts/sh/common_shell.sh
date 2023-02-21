@@ -115,7 +115,7 @@ if [ -z "$finalPythonCmd" ]; then
     echo "当前未找到python3命令,取消执行,请确保已安装并配置了系统环境变量"
     exit 1
 fi
-echo "最终python3命令为:$finalPythonCmd"
+echo "final python3 command:$finalPythonCmd"
 
 # 获取其他参数(剔除有特定含义的参数1和2)并透传到python脚本中
 otherParams=${@/$1/}

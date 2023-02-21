@@ -190,14 +190,16 @@ class FileUtil(object):
         return result
 
     @staticmethod
-    def getFileName(path: str) -> tuple:
+    def getFileName(path: str, autoRecookPath: bool = True) -> tuple:
         """
         根据所给文件名或者文件路径,去除目录信息后, 得到文件名和扩展名, 如输入 a.txt 返回 ("a.txt","a","txt")
         若当前就以斜杠结尾,则先删除斜杠
         :param path: 文件名或者路径
+        :param autoRecookPath: 是否需要对路径进行格式化(反斜杠转为斜杠等),默认true
         :return: tuple (fileName+ext, fileName, ext)
         """
-        path = FileUtil.recookPath(path)
+        if autoRecookPath:
+            path = FileUtil.recookPath(path)
         if path.endswith('/'):  # 目录路径则提取目录名信息
             # print("getFileName oriPath=%s, curPath=%s" % (path, path[:-1]))
             path = path[:-1]

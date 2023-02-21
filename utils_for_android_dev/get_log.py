@@ -54,16 +54,39 @@ class GetLogImpl(BaseConfig):
         pullLogDict = self.configParser.getSectionItems(sectionName)
 
         # 待提取的日志路径, 元素是 tuple(源日志路径, 提取后的存储路径)
-        pendingPullLogList = list()
+        pendingPullLogList = list()  # 普通路径信息
+        pendingPullLogRegexList = list()  # 正则路径信息
+        regexPrefix = '(regex)'  # 正则路径信息的前缀标志符号
+        regexIndex = len(regexPrefix)
         for key in pullLogDict:
             if key in notLogPathKeyList:
                 continue
 
-            key = FileUtil.recookPath(key)
-            value = pullLogDict.get(key, None)
+            oriKey = key
+            targetList = pendingPullLogList
+            if key.startswith(regexPrefix):
+                targetList = pendingPullLogRegexList
+                key = key[regexIndex:]
+            else:
+                key = FileUtil.recookPath(key)
+
+            value = pullLogDict.get(oriKey, None)
             if not key.startswith('/') and not CommonUtil.isNoneOrBlank(parent_log_dir_in_phone):
                 key = FileUtil.recookPath('%s/%s' % (parent_log_dir_in_phone, key))
-            pendingPullLogList.append((key, value))
+            targetList.append((key, value))
+
+        # 对正则路径进行识别, 转化为待提取的绝对路径信息并追加到 pendingPullLogList 中
+        adbUtil = AdbUtil()
+        targetDeviceId = adbUtil.choosePhone()  # 选择目标手机
+        if len(pendingPullLogRegexList) > 0:
+            for itemTuple in pendingPullLogRegexList:
+                logPath, localLogPath = itemTuple
+                arr = logPath.split('/')
+                regexName = arr[-1]
+                parentDirPath = '/'.join(arr[:-1])
+                fileList = adbUtil.getFileList(parentDirPath, regexFileName=regexName, deviceId=targetDeviceId)
+                for item in fileList:
+                    pendingPullLogList.append((item, localLogPath))
 
         if len(pendingPullLogList) == 0:
             print('待提取的日志路径列表为空, 请检查后再试')
@@ -81,8 +104,6 @@ class GetLogImpl(BaseConfig):
         self.taskParam.configParser.updateSectonItem(TaskParam.runtimeParamSectionName, "saveDirPath", saveDirPath)
 
         # 依次提取日志
-        adbUtil = AdbUtil()
-        targetDeviceId = adbUtil.choosePhone()  # 选择目标手机
         for itemTuple in pendingPullLogList:
             logPath, localLogPath = itemTuple
             if CommonUtil.isNoneOrBlank(localLogPath):

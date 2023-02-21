@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os
+import re
 import subprocess
 
 from util.CommonUtil import CommonUtil
@@ -238,6 +239,40 @@ class AdbUtil(object):
         result = CommonUtil.exeCmd(cmd, printCmdInfo=False)
         # print('isFileExist %s' % result)
         return not CommonUtil.isNoneOrBlank(result) and 'No such file or directory' not in result
+
+    def getFileList(self, parentPathInPhone: str, regexFileName: str = None, deviceId: str = None) -> list:
+        """
+        获取满足条件的文件路径列表
+        :param parentPathInPhone 目录绝对路径
+        :param regexFileName: 正则表达式文件名, 若为空,则不作过滤,仅获取指定目录下的文件列表信息
+        :param deviceId: 手机设备序列号
+        """
+        result = list()
+        if not self.isFileExist(parentPathInPhone):
+            return result
+
+        cmd = "%s %s shell ls %s 2>&1" % (self.adbPath, self._getDeviceIdOpt(deviceId), parentPathInPhone)
+        cmdResult = CommonUtil.exeCmd(cmd, printCmdInfo=False)
+
+        if 'no devices/emulators found' in cmdResult:
+            return result
+
+        lines = cmdResult.splitlines()
+        for line in lines:
+            absPath = line
+            if not line.startswith('/'):
+                absPath = FileUtil.recookPath('%s/%s' % (parentPathInPhone, line))
+
+            # if not self.isFileExist(absPath):
+            #     continue
+
+            fullName, _, _ = FileUtil.getFileName(absPath)
+            if not CommonUtil.isNoneOrBlank(regexFileName):
+                if re.search(r'%s' % regexFileName, fullName) is not None:
+                    result.append(absPath)
+            else:
+                result.append(absPath)
+        return result
 
     def pullANRFile(self, saveDirPath: str, deviceId: str = None, printCmdInfo: bool = True) -> bool:
         """
