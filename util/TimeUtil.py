@@ -1,6 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
+import random
 import time
 from datetime import datetime
 
@@ -40,7 +41,13 @@ class TimeUtil(object):
         return "%s时%s分%s秒" % (hours, minutes, seconds)
 
     @classmethod
-    def sleep(cls, sec: int):
+    def sleep(self, sec: float, minSec: float = 1, maxSec: float = 10):
+        """
+        等待一会
+        :param sec: 等待指定的秒数，大于0有效，若小于0，则会在 [minSec,maxSec) 中随机算一个
+        """
+        if sec < 0:
+            sec = round(minSec + random.random() * (maxSec - minSec), 1)  # 保留一位小数
         time.sleep(sec)
 
     @classmethod

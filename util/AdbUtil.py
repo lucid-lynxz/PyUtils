@@ -10,14 +10,16 @@ from util.FileUtil import FileUtil
 
 
 class AdbUtil(object):
-    def __init__(self, adbPath: str = ''):
+    def __init__(self, adbPath: str = '', defaultDeviceId: str = None):
         """
+        :param defaultDeviceId:默认的设备号，用于各方法未指定deviceId时，默认使用的值
         :param adbPath: adb应用程序的路径,若为空,则：
         1. 查看本工程是否已內置adb工具
         2. 若未內置，则使用环境变量中的adb(请自行确保系统已支持adb命令)
         """
         self.adbPath = 'third_tools/android_platform_tools/*/adb.exe' if CommonUtil.isNoneOrBlank(adbPath) else adbPath
         self.adbPath = CommonUtil.checkThirdToolPath(self.adbPath, 'adb')
+        self.defaultDeviceId = defaultDeviceId
 
     def getAllDeviceId(self, onlineOnly: bool = False) -> tuple:
         """
@@ -83,16 +85,12 @@ class AdbUtil(object):
     def _getDeviceIdOpt(self, deviceId: str = None) -> str:
         """
         按需生成adb命令设备号参数信息  -s {deviceId}
-        :param deviceId:  设备号
-        :return:
+        :param deviceId:  设备号,若为空，则使用 adbUtil对象默认的 defaultDeviceId
         """
-        if deviceId is None or len(deviceId) == 0:
-            device_opt = ''
-        else:
-            device_opt = '-s %s' % deviceId
-        return device_opt
+        deviceId = self.defaultDeviceId if CommonUtil.isNoneOrBlank(deviceId) else deviceId
+        return '' if CommonUtil.isNoneOrBlank(deviceId) else '-s %s' % deviceId
 
-    def exeShellCmds(self, cmdArr: list, deviceId: str = None, printCmdInfo: bool = True) -> tuple:
+    def exeShellCmds(self, cmdArr: list, deviceId: str = None, printCmdInfo: bool = False) -> tuple:
         """
         在 adb shell 中执行cmd列表命令
         :param cmdArr: 命令列表,如 ["su","ls","exit"], 会自动拼接成 adb -s deviceId shell ***
@@ -100,14 +98,21 @@ class AdbUtil(object):
         :param printCmdInfo:执行命令时是否打印命令内容
         :return: tuple(stdout,stderr)
         """
+        cmds_str_ori = ' '.join(cmdArr)
+
         cmd_adb_shell = '%s %s shell' % (self.adbPath, self._getDeviceIdOpt(deviceId))
         cmdArr.append('exit')
         pipe = subprocess.Popen(cmd_adb_shell, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
         cmds_str = '\n'.join(cmdArr)
         cmds_str = '%s\n' % cmds_str
-        stdout, stderr = pipe.communicate(cmds_str.encode())
         if printCmdInfo:
-            print("%s shell\n%sstdout=%s,stderr=%s" % (self.adbPath, cmds_str, stdout, stderr))
+            print('exeAdbCmd: %s' % cmds_str_ori)
+        stdout, stderr = pipe.communicate(cmds_str.encode())
+        stdout = None if stdout is None else stdout.decode().strip()
+        stderr = None if stderr is None else stderr.decode().strip()
+        result: str = stderr if CommonUtil.isNoneOrBlank(stdout) else stdout
+        if printCmdInfo:
+            print(result)
         return stdout, stderr
 
     def pull(self, src: str, dst: str = ".", deviceId: str = None, printCmdInfo: bool = True):
@@ -415,8 +420,158 @@ class AdbUtil(object):
             resultList.append(out.strip())
         return resultList
 
+    def getCurrentActivity(self, deviceId: str = None) -> str:
+        """
+        获取当前activity信息, 命令：adb shell dumpsys window | grep mCurrentFocus
+        得到结果如：mCurrentFocus=Window{bcb5ed0 u0 org.lynxz.demo/org.lynxz.demo.activity.HomeActivity}
+        :return: activity路径信息，如：org.lynxz.demo.activity.HomeActivity
+        """
+        out, err = self.exeShellCmds(['dumpsys window | grep mCurrentFocus'], deviceId)
+        if CommonUtil.isNoneOrBlank(out):
+            return ''
+        tArr = out.split('{')
+        if tArr is not None and len(tArr) >= 2:
+            arr = tArr[1].replace('}', '').split(' ')
+            pkgName, actPath = arr[len(arr) - 1].split('/')
+            if actPath.startswith('.'):
+                actPath = '%s.%s' % (pkgName, actPath)
+            return actPath.strip()
+        return ''
+
+    def startApp(self, appPkgName: str, actvitiyPath: str, deviceId: str = None):
+        """
+        启动app指定activity
+        可通过 adb shell dumpsys window | grep mCurrentFocus 查看到当前activity信息
+        :param appPkgName:包名，如： org.lynxz.demo
+        :param actvitiyPath: 主activity完整路径，如： org.lynxz.demo.activity.mainActivity
+        """
+        self.exeShellCmds(['am start %s/%s' % (appPkgName, actvitiyPath)], deviceId)
+
+    def killApp(self, appPkgName, deviceId: str = None):
+        """
+        kill掉指定的app进程
+        """
+        self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId)
+
+    def isAppRunning(self, appPkgName: str, deviceId: str = None):
+        """
+        判断手机中指定app进程是否存在
+        :param appPkgName: 包名
+        :param deviceId: 设备号
+        :return: bool
+        """
+        # 命令中不能使用windows cmd不支持的命令, 如: grep
+        # 运行结果格式示例:
+        # u0_a457      25439   736 4002152 118904 0                   0 S org.lynxz.test
+        try:
+            cmd = ['ps | grep %s' % appPkgName]
+            msg, stderr = self.exeShellCmds(cmd, deviceId)
+            if CommonUtil.isNoneOrBlank(msg):
+                return False
+            for line in msg.splitlines():
+                if appPkgName == line.split()[-1]:
+                    return True
+            return False
+        except Exception as e:
+            print('checkAppRunning exception: %s' % e)
+            return False
+
+    def tapByTuple(self, posTuple: tuple, deviceId: str = None):
+        self.tap(posTuple[0], posTuple[1], deviceId)
+
+    def tap(self, x: int, y: int, deviceId: str = None, printCmdInfo: bool = False):
+        """
+        点击设备的指定位置
+        :param x: 点击坐标x，屏幕左上角为0
+        :param y: 点击坐标y，屏幕左上角为0
+        """
+        self.exeShellCmds(['input tap %s %s' % (x, y)], deviceId, printCmdInfo)
+
+    def swipe(self, from_x: int, from_y: int, to_x: int, to_y: int, deviceId: str = None, printCmdInfo: bool = False):
+        """
+        在手机屏幕上滑动
+        :param from_x: 起始点击坐标x，屏幕左上角为0
+        :param from_y: 起始点击坐标y，屏幕左上角为0
+        """
+        self.exeShellCmds(['input swipe %s %s %s %s' % (from_x, from_y, to_x, to_y)], deviceId, printCmdInfo)
+
+    def back(self, times: int = 1):
+        """
+        按下返回键
+        :param times: 返回次数，默认是一次
+        """
+        for index in range(1, 1 + times):
+            self.exeShellCmds(['input keyevent BACK'])
+
+    def updateVolume(self, up: bool = True, mute: bool = False, deviceId: str = None):
+        """
+        音量调节
+        这个是系统根据当前应用判断调节的是哪个音量，比如媒体、通话等
+        :param up: 是否调大音量
+        :param mute: 是否静音
+        """
+        event = 164 if mute else 24 if up else 25
+        self.exeShellCmds(['input keyevent %s' % event], deviceId)
+
+    def updateDeviceSzie(self, width: int, height: int, deviceId: str = None, printCmdInfo: bool = False):
+        """
+        修改设备分辨率
+        ：param width: 宽度
+        ：param height: 高度
+        """
+        self.exeShellCmds(['wm size %sx%s' % (width, height)], deviceId, printCmdInfo)
+
+    def getDeviceInfo(self, deviceId: str = None) -> dict:
+        """
+        获取设备的其他信息,当前支持的key如下：
+        imei:设备imei,高版本可能无法获取到
+        mac:设备mac地址
+        android_id: androidId字符串，重置手机后会变
+        model:机型，如：pixel 5
+        android_version:系统版本， 如: 12， 表示 android 12
+        api_version:系统api版本， 如: 32
+        size: 设备的原始物理尺寸像素，如：1080x2340
+        width: 设备宽度像素， 如： 1080
+        height： 设备长度像素，如： 2340
+        override_size: 设备通过adb修改后的像素，如：1080x1920,若未修改过，则等同于上方的size
+        ov_width: 设备当前宽度像素， 如： 1080， 若未修改过，则等同于上方的 width
+        ov_height： 设备当前长度像素，如： 1920，若未修改过，则等同于上方的 height
+        """
+        result = dict()
+        result['imei'] = self.getImeiInfo(deviceId)
+        result['mac'] = self.getMacAddress(deviceId)
+        result['android_id'], _ = self.exeShellCmds(['settings get secure android_id'], deviceId)
+        result['model'], _ = self.exeShellCmds(['getprop ro.product.model'], deviceId)
+        result['android_version'], _ = self.exeShellCmds(['getprop ro.build.version.release'], deviceId)
+        result['api_version'], _ = self.exeShellCmds(['getprop ro.build.version.sdk'], deviceId)
+
+        # 获取屏幕物理尺寸，结果示例:
+        # Physical size: 1080x2340
+        # Override size: 1080x1920
+        out, err = self.exeShellCmds(['wm size'], deviceId)
+        if ':' in out:
+            for line in out.splitlines():
+                if 'Physical size:' in line:
+                    size = line.split(':')[1]
+                    result['size'] = size  # 如： 1080x2340
+                    result['width'], result['height'] = size.split('x')
+
+                    result['override_size'] = size  # 如： 1080x2340
+                    result['ov_width'], result['ov_height'] = result['width'], result['height']
+                elif 'Override size:' in line:
+                    size = line.split(':')[1]
+                    result['override_size'] = size  # 如： 1080x2340
+                    result['ov_width'], result['ov_height'] = size.split('x')
+        return result
+
 
 if __name__ == '__main__':
     adbUtil = AdbUtil()
-    print(adbUtil.getImeiInfo())
-    print(adbUtil.getMacAddress())
+    # print(adbUtil.getImeiInfo())
+    # print(adbUtil.getMacAddress())
+
+    # import pprint
+    #
+    # pprint.PrettyPrinter(indent=2)
+    # pprint.pprint(adbUtil.getDeviceInfo())
+    adbUtil.back()

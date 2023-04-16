@@ -9,8 +9,6 @@ import sys
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from base.BaseConfig import NewConfigParser
-
 from enum import Enum
 
 
@@ -55,6 +53,7 @@ class TaskParam(object):
     runtimeParamSectionName = "runtimeSectionParam"
 
     def __init__(self):
+        from base.BaseConfig import NewConfigParser
         self.configParser: NewConfigParser = None  # 配置参数对象
         self.implementationObj = None  # 对应的实现脚本对象, 通常是 BaseConfig 子类
         self.files = list()  # 文件路径信息,可能有多条, 元素是字符串, 表示路径
