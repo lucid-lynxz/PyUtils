@@ -29,6 +29,7 @@ class GetLogImpl(BaseConfig):
         keyExcludeCompressFile = 'exclude_compress_file'  # 压缩工具路径
         keyExcludeDecrypt = 'auto_decrypt_log'  # 是否解密日志
         keyExcludeCompressFileLimitSize = 'compress_file_limit'  # 压缩包大小限制
+        keyPrintLog = 'print_log'  # 是否打印日志
 
         # 非待提取的日志路径参数
         notLogPathKeyList = list()
@@ -40,6 +41,8 @@ class GetLogImpl(BaseConfig):
         notLogPathKeyList.append(keyExcludeCompressFile)
         notLogPathKeyList.append(keyExcludeCompressFileLimitSize)
         notLogPathKeyList.append(keyExcludeDecrypt)
+        notLogPathKeyList.append(keyPrintLog)
+        print_log = 'True' == self.configParser.get(sectionName, keyPrintLog)
 
         save_parent_dir = self.configParser.get(sectionName, keySaveDir)
         if CommonUtil.isNoneOrBlank(save_parent_dir):
@@ -115,18 +118,18 @@ class GetLogImpl(BaseConfig):
                 FileUtil.makeDir(localLogPath)
 
             print('正在提取日志:%s' % logPath)
-            adbUtil.pull(logPath, localLogPath, targetDeviceId, printCmdInfo=False)
+            adbUtil.pull(logPath, localLogPath, targetDeviceId, printCmdInfo=print_log)
 
         print('提取anr日志')
-        adbUtil.pullANRFile(saveDirPath, targetDeviceId, printCmdInfo=False)
+        adbUtil.pullANRFile(saveDirPath, targetDeviceId, printCmdInfo=print_log)
 
         print('提取tombstone日志')
-        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId, printCmdInfo=False)
+        adbUtil.pullTombstoneFile(saveDirPath, targetDeviceId, printCmdInfo=print_log)
 
         print('提取logcat信息')
         adbUtil.getLogcatInfo(saveDirPath, level='V', logcatFileName='logcatV.txt',
                               deviceId=targetDeviceId,
-                              printCmdInfo=False)
+                              printCmdInfo=print_log)
         # adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
 
         print('尝试删除一级空白子目录')
