@@ -50,6 +50,15 @@ class NewConfigParser(configparser.RawConfigParser):
             resultDict[item[0]] = item[1]
         return resultDict
 
+    def getSectionKeyList(self, sectionName: str) -> list:
+        """获取指定section中的所有key列表"""
+        result = list()
+        map = self.getSectionItems(sectionName)
+        if map is not None:
+            for key in map:
+                result.append(key)  # 保持原始的key,包括前后的空格
+        return result
+
     def updateSectonItem(self, sectionName: str, key: str, value: str):
         """
         更新section属性值

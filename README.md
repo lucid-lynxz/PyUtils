@@ -1,12 +1,21 @@
 # 抽取个人日常工作中常用的脚本工具
 
+```shell
+# 使用wool脚本需要安装以下内容, -i参数是表示使用镜像源
+pip3 install zstd airtest pocoui -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
 ## 注意事项：
+
 **由于我在window上python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 `python.exe` 改名为 `python3.exe`**
+
 * 2023.02.03更新：
-  * 对于windows用户，当前本项目已内置了python3.10程序，因此可无需再自行安装
-  * 对于linux/macos系统用户，可能需要自行安装python3并配置环境变量，同时需要提供命令: `python3`，经测试：
-    * Ubuntu22.10/Fedora37均已内置了 python3， 无需再手动安装
-    * macos 10.13 内置的是 python2，从 [官网](https://www.python.org/downloads/macos/) 下载 [3.10.9](https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg) 版本一路next安装完成后， 无需再手动配置环境变量即可生效
+    * 对于windows用户，当前本项目已内置了python3.10程序，因此可无需再自行安装
+    * 对于linux/macos系统用户，可能需要自行安装python3并配置环境变量，同时需要提供命令: `python3`，经测试：
+        * Ubuntu22.10/Fedora37均已内置了 python3， 无需再手动安装
+        * macos 10.13 内置的是 python2，从 [官网](https://www.python.org/downloads/macos/)
+          下载 [3.10.9](https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg) 版本一路next安装完成后，
+          无需再手动配置环境变量即可生效
 
 ## shell脚本及配置文件的使用
 
@@ -54,25 +63,33 @@ def isDirFileExist(path: str) -> bool
 ## python业务脚本:
 
 ### `auto_merge_branch`
+
 功能: 合并指定分支代码, 合并成功后按需push到远程仓库 要求: 本地代码已全部commit, 合并发生冲突时默认以源分支代码为准
 
 ### `auto_push_branch`
+
 功能: 自动提交指定git目录下指定分支的代码 要求: 本地代码已全部commit, 若存在未commit的代码,则不进行push操作
 
 ### `auto_update_reposity`
+
 功能: 自动更新指定目录(或其一级子目录下)下各git仓库代码 要求: 本地代码已全部commit, 若存在未commit的代码,则不进行pull操作
 
 ### `collect_branch_info`
+
 功能：收集分支信息,包括首次提交时间, commitId,最新提交时间及commitId, commitAuthor列表等
 
 ### `custom_work_scripts/batch_compress/`
+
 功能：使用7zip 批量压缩指定父目录下所有子目录
 
 ### `custom_work_scripts/monitor_pc_status/`
+
 功能：监听指定pc上连接的android手机变化情况
 
 ### `uitls_for_android_dev`
+
 功能：基于adb功能，实现：
+
 1. `clear_log.py` 删除指定文件
 2. `get_log.py` 从手机中提取多文件保存到本机中
 3. `scrcpy_multi_devices.py` 基于scrcpy项目，实现多手机投屏功能(当前仅支持windows)

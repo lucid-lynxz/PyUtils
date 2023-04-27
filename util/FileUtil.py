@@ -3,7 +3,6 @@
 
 import os
 import platform
-import re
 import shutil
 
 from util.CommonUtil import CommonUtil
@@ -16,10 +15,10 @@ class FileUtil(object):
         路径字符串处理: 替换 反斜杠 为 斜杠
         :param path: 路径字符串
         :param forceEnableLongPath: win下是否强制启用长目录路径格式
-        :return: 处理后的路径
+        :return: 处理后的路径,为避免空指针,返回值均为非None
         """
         if CommonUtil.isNoneOrBlank(path):
-            return path
+            return ''
 
         if path.startswith("~"):
             path = '%s%s' % (os.path.expanduser("~"), path[1:])
@@ -54,6 +53,47 @@ class FileUtil(object):
         return FileUtil.recookPath('%s/' % pPath)
 
     @staticmethod
+    def getFileSize(filePath: str) -> tuple:
+        """
+        获取文件大小, 返回tuple(int,str) 依次表示字节数和带单位的字符串描述,如 1024,1K
+        """
+        fsize = os.path.getsize(filePath)  # 返回的是字节大小
+        return fsize, FileUtil._formatByteSize(fsize)
+
+    @staticmethod
+    def _formatByteSize(fsize: int) -> str:
+        """将所给字节数转换为带单位的字符串, 支持B/K/M/G"""
+        if fsize < 1024:
+            return '%sB' % fsize
+        else:
+            KBX = fsize / 1024
+            if KBX < 1024:
+                return '%sK' % round(KBX, 2)
+            else:
+                MBX = KBX / 1024
+                if MBX < 1024:
+                    return '%sM' % round(MBX, 2)
+                else:
+                    return '%sG' % round(MBX / 1024)
+
+    @staticmethod
+    def getDirSize(dirPath: str, depth: int = 10, includeDirSelf: bool = False) -> tuple:
+        """
+        统计目录大小(包括子目录文件)
+        :param depth: 统计深度
+        :param includeDirSelf:是否统计文件夹本身的大小,默认不统计
+        :return: tuple(int,str) 依次表示字节数和带单位的可读结果, B/K/M/G
+        """
+        allSubFiles = FileUtil.listAllFilePath(dirPath, depth=depth, getAllDepthFileInfo=True)
+        allByteSize = 0
+        for subFilePath in allSubFiles:
+            if not includeDirSelf and FileUtil.isDirFile(subFilePath):
+                continue
+            byteSize, _ = FileUtil.getFileSize(subFilePath)
+            allByteSize = allByteSize + byteSize
+        return allByteSize, FileUtil._formatByteSize(allByteSize)
+
+    @staticmethod
     def isFileExist(path: str) -> bool:
         """
         文件是否存在
@@ -61,9 +101,7 @@ class FileUtil(object):
         :return: bool
         """
         path = FileUtil.recookPath(path)
-        if path is None or len(path) == 0:
-            return False
-        return os.path.exists(path)
+        return not CommonUtil.isNoneOrBlank(path) and os.path.exists(path)
 
     @staticmethod
     def isDirFile(path: str) -> bool:
@@ -188,6 +226,11 @@ class FileUtil(object):
             for path_filter in path_filters:
                 result = list(filter(path_filter, result))
         return result
+
+    @staticmethod
+    def isDirEmpty(path: str) -> bool:
+        """判断目录是否为空(目录不存在或者path表示普通文件时,也都返回True)"""
+        return CommonUtil.isNoneOrBlank(FileUtil.listAllFilePath(path))
 
     @staticmethod
     def getFileName(path: str, autoRecookPath: bool = True) -> tuple:
@@ -337,22 +380,27 @@ class FileUtil(object):
 
 
 if __name__ == '__main__':
-    tPath = "/Users/lynxz/temp/a.txt"
-    print(FileUtil.getParentPath(tPath, 1))
-    print(FileUtil.getParentPath(tPath, 2))
-    print(FileUtil.getParentPath(tPath, 3))
-    print(FileUtil.getParentPath(tPath, 4))
-    print(FileUtil.getParentPath(tPath, 30))
-    FileUtil.createFile(tPath, True)
-    FileUtil.write2File(tPath, "hello")
-    lines = FileUtil.readFile(tPath)
-    for line in lines:
-        print(line)
-
-
-    def filterLog(path: str) -> bool:
-        pattern = 'log_*'
-        return re.search(r'%s' % pattern, path) is not None
-
-
-    print(FileUtil.listAllFilePath('/Users/lynxz/temp/', 1, 0, filterLog))
+    # tPath = "/Users/lynxz/temp/a.txt"
+    # print(FileUtil.getParentPath(tPath, 1))
+    # print(FileUtil.getParentPath(tPath, 2))
+    # print(FileUtil.getParentPath(tPath, 3))
+    # print(FileUtil.getParentPath(tPath, 4))
+    # print(FileUtil.getParentPath(tPath, 30))
+    # FileUtil.createFile(tPath, True)
+    # FileUtil.write2File(tPath, "hello")
+    # lines = FileUtil.readFile(tPath)
+    # for line in lines:
+    #     print(line)
+    #
+    #
+    # def filterLog(path: str) -> bool:
+    #     pattern = 'log_*'
+    #     return re.search(r'%s' % pattern, path) is not None
+    #
+    #
+    # print(FileUtil.listAllFilePath('/Users/lynxz/temp/', 1, 0, filterLog))
+    b, info = FileUtil.getFileSize('H:/Workspace/Python/wool/temp.air/tpl1682432948047.png')
+    print('file size=%s,size1=%s' % (b, info))
+    # b, info = FileUtil.getDirSize('H:/Workspace/Python/wool/temp.air/')
+    b, info = FileUtil.getDirSize('D:/Downloads/Tencent/斗破苍穹666')
+    print('dir size=%s,size1=%s' % (b, info))

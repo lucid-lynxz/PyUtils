@@ -9,7 +9,7 @@ class Runnable(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def run(self):
+    def run(self, **kwargs):
         pass
 
 

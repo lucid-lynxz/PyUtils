@@ -10,14 +10,19 @@ from util.FileUtil import FileUtil
 
 
 class AdbUtil(object):
-    def __init__(self, adbPath: str = '', defaultDeviceId: str = None):
+    def __init__(self, adbPath: str = 'adb', defaultDeviceId: str = None):
         """
         :param defaultDeviceId:默认的设备号，用于各方法未指定deviceId时，默认使用的值
         :param adbPath: adb应用程序的路径,若为空,则：
         1. 查看本工程是否已內置adb工具
         2. 若未內置，则使用环境变量中的adb(请自行确保系统已支持adb命令)
         """
-        self.adbPath = 'third_tools/android_platform_tools/*/adb.exe' if CommonUtil.isNoneOrBlank(adbPath) else adbPath
+        hit = False
+        if not CommonUtil.isNoneOrBlank(adbPath):
+            result = CommonUtil.exeCmd('%s version' % adbPath)
+            if 'version' in result:
+                hit = True
+        self.adbPath = 'third_tools/android_platform_tools/*/adb.exe' if not hit else adbPath
         self.adbPath = CommonUtil.checkThirdToolPath(self.adbPath, 'adb')
         self.defaultDeviceId = defaultDeviceId
 
@@ -98,20 +103,19 @@ class AdbUtil(object):
         :param printCmdInfo:执行命令时是否打印命令内容
         :return: tuple(stdout,stderr)
         """
-        cmds_str_ori = ' '.join(cmdArr)
-
         cmd_adb_shell = '%s %s shell' % (self.adbPath, self._getDeviceIdOpt(deviceId))
+        ori_cmd = '%s %s' % (cmd_adb_shell, ' '.join(cmdArr))
         cmdArr.append('exit')
         pipe = subprocess.Popen(cmd_adb_shell, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
         cmds_str = '\n'.join(cmdArr)
         cmds_str = '%s\n' % cmds_str
         if printCmdInfo:
-            print('exeAdbCmd: %s' % cmds_str_ori)
+            print('exeAdbCmd: %s' % ori_cmd)
         stdout, stderr = pipe.communicate(cmds_str.encode())
         stdout = None if stdout is None else stdout.decode().strip()
         stderr = None if stderr is None else stderr.decode().strip()
         result: str = stderr if CommonUtil.isNoneOrBlank(stdout) else stdout
-        if printCmdInfo:
+        if printCmdInfo and not CommonUtil.isNoneOrBlank(result):
             print(result)
         return stdout, stderr
 
@@ -232,6 +236,7 @@ class AdbUtil(object):
         #                 self.pullTombstoneFile(saveDirPath, deviceId)
         # except Exception as e:
         #     print('getLogcatInfo try get tombstone info fail: %s' % e)
+        return self
 
     def isFileExist(self, pathInPhone: str, deviceId: str = None) -> bool:
         """
@@ -335,6 +340,7 @@ class AdbUtil(object):
         self.exeShellCmds(cmd_copy, deviceId, printCmdInfo=printCmdInfo)
         self.pull(move_to_file, saveDirPath, deviceId, printCmdInfo=printCmdInfo)
         self.exeShellCmds(cmd_delete, deviceId, printCmdInfo=printCmdInfo)
+        return self
 
     def deleteFromPhone(self, absPath: str, deviceId: str = None) -> str:
         """
@@ -438,22 +444,26 @@ class AdbUtil(object):
             return actPath.strip()
         return ''
 
-    def startApp(self, appPkgName: str, actvitiyPath: str, deviceId: str = None):
+    def startApp(self, appPkgName: str, activityPath: str, deviceId: str = None):
         """
         启动app指定activity
         可通过 adb shell dumpsys window | grep mCurrentFocus 查看到当前activity信息
         :param appPkgName:包名，如： org.lynxz.demo
-        :param actvitiyPath: 主activity完整路径，如： org.lynxz.demo.activity.mainActivity
+        :param activityPath: 主activity完整路径，如： org.lynxz.demo.activity.mainActivity
         """
-        self.exeShellCmds(['am start %s/%s' % (appPkgName, actvitiyPath)], deviceId)
+        self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
+        return self
 
     def killApp(self, appPkgName, deviceId: str = None):
         """
         kill掉指定的app进程
         """
+        if CommonUtil.isNoneOrBlank(appPkgName):
+            return self
         self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId)
+        return self
 
-    def isAppRunning(self, appPkgName: str, deviceId: str = None):
+    def isAppRunning(self, appPkgName: str, deviceId: str = None) -> bool:
         """
         判断手机中指定app进程是否存在
         :param appPkgName: 包名
@@ -476,8 +486,41 @@ class AdbUtil(object):
             print('checkAppRunning exception: %s' % e)
             return False
 
+    def getAllPkgs(self, opt: str = None, deviceId: str = None, printCmdInfo: bool = False) -> list:
+        """
+        获取手机上的所有app包名列表
+        使用的命令: adb shell pm list packages [-3/-s]
+        :param opt: 参数,默认为None表示获取所有包
+                    3: 表示金获取三方包
+                    s: 表示仅获取系统包
+        """
+        extOpt = '' if CommonUtil.isNoneOrBlank(opt) else '-%s' % opt
+        out, _ = self.exeShellCmds(['pm list packages %s' % extOpt], deviceId, printCmdInfo)
+        result = list()
+        if CommonUtil.isNoneOrBlank(out):
+            return result
+
+        for line in out.splitlines():
+            l: str = line.strip()
+            if ':' in l:
+                arr = l.split(':')
+                size = len(arr)
+                if size >= 2:
+                    result.append(arr[1])
+        return result
+
+    def isPkgExist(self, pkgName: str, deviceId: str = None, printCmdInfo: bool = False) -> bool:
+        """
+        手机上是有安装有指定的包
+        :param pkgName: 目标app包名
+        """
+        if CommonUtil.isNoneOrBlank(pkgName):
+            return False
+        return pkgName in self.getAllPkgs(deviceId=deviceId, printCmdInfo=printCmdInfo)
+
     def tapByTuple(self, posTuple: tuple, deviceId: str = None):
         self.tap(posTuple[0], posTuple[1], deviceId)
+        return self
 
     def tap(self, x: int, y: int, deviceId: str = None, printCmdInfo: bool = False):
         """
@@ -486,14 +529,20 @@ class AdbUtil(object):
         :param y: 点击坐标y，屏幕左上角为0
         """
         self.exeShellCmds(['input tap %s %s' % (x, y)], deviceId, printCmdInfo)
+        return self
 
-    def swipe(self, from_x: int, from_y: int, to_x: int, to_y: int, deviceId: str = None, printCmdInfo: bool = False):
+    def swipe(self, from_x: int, from_y: int, to_x: int, to_y: int,
+              durationMs: int = 500, deviceId: str = None,
+              printCmdInfo: bool = False):
         """
         在手机屏幕上滑动
         :param from_x: 起始点击坐标x，屏幕左上角为0
         :param from_y: 起始点击坐标y，屏幕左上角为0
+        :param durationMs: 滑动时长, 单位:ms
         """
-        self.exeShellCmds(['input swipe %s %s %s %s' % (from_x, from_y, to_x, to_y)], deviceId, printCmdInfo)
+        self.exeShellCmds(['input swipe %s %s %s %s %s' % (from_x, from_y, to_x, to_y, durationMs)], deviceId,
+                          printCmdInfo)
+        return self
 
     def back(self, times: int = 1):
         """
@@ -502,6 +551,12 @@ class AdbUtil(object):
         """
         for index in range(1, 1 + times):
             self.exeShellCmds(['input keyevent BACK'])
+        return self
+
+    def power(self, deviceId: str = None):
+        # 按下power键
+        self.exeShellCmds(['input keyevent 26'], deviceId)
+        return self
 
     def updateVolume(self, up: bool = True, mute: bool = False, deviceId: str = None):
         """
@@ -512,6 +567,7 @@ class AdbUtil(object):
         """
         event = 164 if mute else 24 if up else 25
         self.exeShellCmds(['input keyevent %s' % event], deviceId)
+        return self
 
     def updateDeviceSzie(self, width: int, height: int, deviceId: str = None, printCmdInfo: bool = False):
         """
@@ -520,6 +576,7 @@ class AdbUtil(object):
         ：param height: 高度
         """
         self.exeShellCmds(['wm size %sx%s' % (width, height)], deviceId, printCmdInfo)
+        return self
 
     def getDeviceInfo(self, deviceId: str = None) -> dict:
         """

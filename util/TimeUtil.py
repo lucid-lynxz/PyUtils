@@ -41,14 +41,16 @@ class TimeUtil(object):
         return "%s时%s分%s秒" % (hours, minutes, seconds)
 
     @classmethod
-    def sleep(self, sec: float, minSec: float = 1, maxSec: float = 10):
+    def sleep(cls, sec: float, minSec: float = 1, maxSec: float = 10) -> float:
         """
         等待一会
         :param sec: 等待指定的秒数，大于0有效，若小于0，则会在 [minSec,maxSec) 中随机算一个
+        :return 最终使用的时长,单位:s
         """
         if sec < 0:
             sec = round(minSec + random.random() * (maxSec - minSec), 1)  # 保留一位小数
         time.sleep(sec)
+        return sec
 
     @classmethod
     def dateDiff(cls, date1: str, date2: str, dateFormat: str = '%Y-%m-%d', valueOnError: int = 0) -> int:

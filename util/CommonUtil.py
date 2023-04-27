@@ -50,14 +50,16 @@ class CommonUtil(object):
         os.system(cmd)
 
     @classmethod
-    def isNoneOrBlank(cls, info: str) -> bool:
+    def isNoneOrBlank(cls, info) -> bool:
         """
-        判断所给字符串是否为None或者空(都是空白字符),若是则返回True
-        :param info: 待判定的字符串
+        判断所给字符串或其他带有len()方法的对象是否为None或者空(空白字符),若是则返回True
+        :param info: 待判断的带有len()方法的对象, 若是字符串,则会进行strip()后再处理
         :return:
         """
-        if info is None or len(info.strip()) == 0:
+        if info is None or len(info) == 0:
             return True
+        elif isinstance(info, str):
+            return len(info.strip()) == 0
         else:
             return False
 
@@ -85,22 +87,9 @@ class CommonUtil(object):
 
     @staticmethod
     def recookPath(path: str, forceEnableLongPath: bool = False) -> str:
-        """
-        与 FileUtil.recookPath() 功能一致，为避免互相引用导致 ImportError，此处复制一个冗余方法
-        功能： 路径字符串处理: 替换 反斜杠 为 斜杠
-        :param path: 路径字符串
-        :param forceEnableLongPath: win下是否强制启用长目录路径格式
-        :return: 处理后的路径
-        """
-        if CommonUtil.isNoneOrBlank(path):
-            return path
-        path = path.replace("\\", "/").replace("//", "/")
-
-        # win最大文件长度: https://learn.microsoft.com/zh-cn/windows/win32/fileio/naming-a-file?redirectedfrom=MSDN#maxpath
-        if forceEnableLongPath or len(path) >= 256:
-            if platform.system() == 'Windows':
-                path = '\\\\?\\' + os.path.abspath(path)
-        return path
+        """未避免循环导包,此处改为方法内import"""
+        from util.FileUtil import FileUtil
+        return FileUtil.recookPath(path, forceEnableLongPath)
 
     @staticmethod
     def isFileExist(path: str) -> bool:
