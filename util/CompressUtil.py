@@ -16,7 +16,7 @@ from util.FileUtil import FileUtil
 
 class CompressUtil(object):
 
-    def __init__(self, sevenZipPath: str):
+    def __init__(self, sevenZipPath: str = None):
         """
         :param sevenZipPath: 7z.exe 可自行执行路径
         """
@@ -78,17 +78,18 @@ class CompressUtil(object):
         CommonUtil.exeCmd(cmd, printCmdInfo=printCmdInfo)
         return dst
 
-    def unzip(self, src7zFile: str, dest: str = None, pwd: str = None):
+    def unzip(self, src7zFile: str, dest: str = None, pwd: str = None, printCmdInfo: bool = False) -> tuple:
         """
         解压缩指定7z文件
         :param pwd: 密码
         :param src7zFile: 要解压的7z文件
         :param dest: 解压目录路径, 若为空,则解压到源压缩文件同级目录下
-        :return: 解压目录路径,若失败,则返回 None
+        :param printCmdInfo:是否打印日志
+        :return: (bool,str) 前者表示是否解压成功, 后者表示解压目录路径,若失败,则返回 None
         """
         if not os.path.exists(src7zFile):
             print("压缩文件不存在,请检查后重试: ", src7zFile)
-            return
+            return False, dest
 
         src7zFile = src7zFile.replace("\\", "/")
         if CommonUtil.isNoneOrBlank(dest):
@@ -103,9 +104,17 @@ class CompressUtil(object):
         FileUtil.makeDir(dest)
 
         pCmd = ""
-        if pwd is not None and len(pwd) > 0:
+        if not CommonUtil.isNoneOrBlank(pwd):
             pCmd = "-p%s -mhe" % pwd
         # 注意 -o 与后面的解压目录之间不要有空格
-        CommonUtil.exeCmd("%s x %s -y -aos -o%s %s" % (
-            self.sevenZipPath, src7zFile, dest, pCmd))
-        return dest
+        result = CommonUtil.exeCmd(
+            "echo %s | %s x %s -y -aos -o%s %s" % (pCmd, self.sevenZipPath, src7zFile, dest, pCmd), printCmdInfo)
+        print('result=%s' % result)
+        success = "Can't open as archive" not in result
+        return success, dest
+
+
+if __name__ == '__main__':
+    p = 'D:/temp/log_123456.7z'
+    dest = CompressUtil().unzip(p, pwd='123')
+    print('dest=%s' % dest)
