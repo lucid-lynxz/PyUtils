@@ -105,13 +105,14 @@ class WoolManager(BaseConfig):
             t.join()
 
         duration = time.time() - start
-        print('测试完成, 耗时: %s 秒' % duration)
+        secs_duration = TimeUtil.convertSecsDuration(duration)
+        print('测试完成, 耗时: %s ' % secs_duration)
 
         # 电脑是否需要休眠
         willSleepPcAfter = CommonUtil.isWindows() and sleepPcAfterAll
 
         # 发送通知到钉钉/飞书
-        NetUtil.push_to_robot('完成挂机,耗时:%s秒,电脑休眠:%s' % (duration, willSleepPcAfter), robotSection)
+        NetUtil.push_to_robot('完成挂机\n耗时:%s\n电脑休眠:%s' % (secs_duration, willSleepPcAfter), robotSection)
 
         # 电脑进行休眠省电
         if willSleepPcAfter:

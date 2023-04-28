@@ -24,6 +24,19 @@ class TimeUtil(object):
             result = dateStr
         return result
 
+    @staticmethod
+    def convertSecsDuration(totalSecs: float) -> str:
+        """
+        将所给的秒数转换为易读的字符串, 格式: x小时y分钟z秒
+        """
+        totalSecs = int(totalSecs)
+        hour = int(totalSecs // 3600)
+        rest = totalSecs % 3600
+        minutes = int(rest // 60)
+        secs = int(rest % 60)
+        result = '%s小时%s分钟%d秒' % (hour, minutes, secs)
+        return result.replace('0小时', '').replace('0分钟', '').replace('0秒', '')
+
     @classmethod
     def currentTimeMillis(cls) -> int:
         """获取当前时间戳,单位:ms"""
@@ -72,3 +85,7 @@ class TimeUtil(object):
             print('dateDiff exception %s' % e)
             print(e)
             return valueOnError
+
+
+if __name__ == '__main__':
+    print(TimeUtil.convertSecsDuration(59.5))

@@ -58,7 +58,7 @@ class BathUncompressImpl(BaseConfig):
 
         srcPath = FileUtil.recookPath('%s' % srcPath)
         srcSize, _ = FileUtil.getFileSize(srcPath)  # 获取压缩包文件大小,单位:byte
-        # print('正在准备解压 %s' % srcPath)
+        print('正在准备解压 %s' % srcPath)
 
         if pwds is None:
             pwds = list()
@@ -66,7 +66,7 @@ class BathUncompressImpl(BaseConfig):
 
         tSuccess = False
         for pwd in pwds:
-            success, dest = compressUtil.unzip(srcPath, pwd=pwd)
+            success, dest = compressUtil.unzip(srcPath, pwd=pwd, printCmdInfo=True)
             if success and not FileUtil.isDirEmpty(dest):  # 解压成功: 未报错并且目录非空
                 allSize, _ = FileUtil.getDirSize(dest)  # 获取解压后的文件总大小,单位:byte
                 if allSize > 0 and allSize >= srcSize * minRatio:
