@@ -52,7 +52,7 @@ class BaseConfig(Runnable, TagGenerator):
         :param configItemShortOpt: 短参数名, 默认为: 'p'
         :param splitFlag: 连接符,默认用点连接
         """
-
+        CommonUtil.updateStdOutEncoding()  # 修改stdout为utf8编码
         # 优先提取外部传入的config.ini配置文件路径,若未设置,则使用当前目录下的默认值
         optPath: str = ''
         sectionItemValues = list()

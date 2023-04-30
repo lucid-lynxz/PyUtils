@@ -2,7 +2,8 @@
 
 ```shell
 # 使用wool脚本需要安装以下内容, -i参数是表示使用镜像源
-pip3 install zstd airtest pocoui -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 其中 airtest pocoui 必装
+pip3 install airtest pocoui psutil zstd -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ## 注意事项：

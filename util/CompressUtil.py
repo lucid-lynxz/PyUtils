@@ -105,7 +105,7 @@ class CompressUtil(object):
 
         pCmd = ""
         if not CommonUtil.isNoneOrBlank(pwd):
-            pCmd = "-p%s -mhe" % pwd
+            pCmd = "-p%s" % pwd
         # 注意 -o 与后面的解压目录之间不要有空格
         result = CommonUtil.exeCmd(
             "echo %s | %s x %s -y -aos -o%s %s" % (pCmd, self.sevenZipPath, src7zFile, dest, pCmd), printCmdInfo)

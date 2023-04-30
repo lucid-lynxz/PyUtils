@@ -63,11 +63,12 @@ class WoolManager(BaseConfig):
         deviceIds = settingDict.get('deviceIds', '')
         deviceList = self._getDeviceList(deviceIds=deviceIds)
         if CommonUtil.isNoneOrBlank(deviceList):
-            print('可用设备列表为空, 请检查')
+            NetUtil.push_to_robot('可用设备列表为空,退出挂机,请检查', robotSection)
             return
 
         # 挂机完成后是否休眠本机电脑
         sleepPcAfterAll = settingDict.get('sleepPcAfterAll', 'False') == 'True'
+        forceRestartApp = settingDict.get('forceRestartApp', 'False') == 'True'
 
         start = time.time()
         threadList = []
@@ -85,22 +86,38 @@ class WoolManager(BaseConfig):
                     appName = arr[0] if size >= 1 else ''  # app名称
                     totalSec = int(arr[1]) if size >= 2 else 180  # 默认刷3min
                     homeActPath = arr[2] if size >= 3 else ''  # app首页路径
+                    print('appName=%s,totalSec=%s' % (appName, totalSec))
 
                     if KsjsbTask.PKG_NAME == pkgName:
-                        ksjsb = KsjsbTask(totalSec=totalSec)
+                        ksjsb = KsjsbTask(totalSec=totalSec, forceRestart=forceRestartApp)
                         project = ksjsb if project is None else project.setNext(ksjsb)
                     elif DyjsbTask.PKG_NAME == pkgName:
-                        dyjsb = DyjsbTask(totalSec=totalSec)
+                        dyjsb = DyjsbTask(totalSec=totalSec, forceRestart=forceRestartApp)
                         project = dyjsb if project is None else project.setNext(dyjsb)
                     else:
                         simpleProject = WoolProjectImpl(pkgName=pkgName, homeActPath=homeActPath,
+                                                        forceRestart=forceRestartApp,
                                                         appName=appName, totalSec=totalSec)
                         project = simpleProject if project is None else project.setNext(simpleProject)
 
-                t = WoolThread(project.updateDeviceId(deviceId).updateDim(dim))
+                t = WoolThread(project.updateDeviceId(deviceId).updateDim(dim).setnotificationRobotDict(robotSection))
                 t.start()
                 threadList.append(t)
 
+        # 发送开始挂机通知
+        # 检查当前笔记本电量,依赖 psutil 库
+        pc_info = 'unknown'
+        try:
+            import psutil
+            battery = psutil.sensors_battery()
+            pc_info = '电量%s%%,%s' % (battery.percent, '已接通电源' if battery.power_plugged else '未接通电源')
+        except:
+            print("can't import psutil, please run 'pip install psutil' to install")
+
+        NetUtil.push_to_robot('开始挂机\n本机信息:%s\n设备列表:%s' % (
+            pc_info, [adbUtil.getDeviceInfo(x).get('model', x) for x in deviceList]), robotSection)
+
+        # 等待所有子线程执行完毕
         for t in threadList:
             t.join()
 
@@ -112,7 +129,9 @@ class WoolManager(BaseConfig):
         willSleepPcAfter = CommonUtil.isWindows() and sleepPcAfterAll
 
         # 发送通知到钉钉/飞书
-        NetUtil.push_to_robot('完成挂机\n耗时:%s\n电脑休眠:%s' % (secs_duration, willSleepPcAfter), robotSection)
+        sleepTip = '\n若想取消休眠,请在5min内终止程序' if willSleepPcAfter else ''
+        NetUtil.push_to_robot('完成挂机\n耗时:%s\n电脑休眠:%s%s' % (secs_duration, willSleepPcAfter, sleepTip),
+                              robotSection)
 
         # 电脑进行休眠省电
         if willSleepPcAfter:

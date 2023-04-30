@@ -13,12 +13,13 @@ if proj_dir not in sys.path:
 from abc import ABC, abstractmethod, ABCMeta
 import random
 import time
+import logging
 import traceback
+from base.Interfaces import Runnable
 from util.AdbUtil import AdbUtil
 from util.TimeUtil import TimeUtil
 from util.CommonUtil import CommonUtil
-from base.Interfaces import Runnable
-import logging
+from util.NetUtil import NetUtil
 
 logger = logging.getLogger("airtest")
 logger.setLevel(logging.WARN)
@@ -60,6 +61,7 @@ class AbsWoolProject(ABC, Runnable):
         self.forceRestart: bool = forceRestart  # 执行时是否要强制重启app
         self.appName: str = appName
         self.adbUtil: AdbUtil = AdbUtil(defaultDeviceId=deviceId)  # adb工具类
+        self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
         self.dim: int = -1  # 挂机时的屏幕亮度值, 非正数时表示不做调整
         self.dimOri: int = -1  # 设备初始的亮度
         self.next: AbsWoolProject = None  # 下一个需要执行的项目
@@ -70,6 +72,13 @@ class AbsWoolProject(ABC, Runnable):
         if isinstance(woolProject, AbsWoolProject) and CommonUtil.isNoneOrBlank(woolProject.deviceId):
             woolProject.updateDeviceId(deviceId=self.deviceId)
         self.next = woolProject
+        return self
+
+    def setnotificationRobotDict(self, robotSettings: dict):
+        """
+        设置消息推送配置信息
+        """
+        self.notificationRobotDict = robotSettings
         return self
 
     def startApp(self, forceRestart: bool = False):
@@ -166,7 +175,7 @@ class AbsWoolProject(ABC, Runnable):
         return self
 
     def informationStreamPageAction(self, totalSec: float = -1, minSec: float = 3, maxSec: float = 6,
-                                    maxRatio: float = 1.5, func=None):
+                                    maxRatio: float = 1.1, func=None):
         """
         信息流页面操作，比如视频流页面的不断刷视频，直到达到指定时长
         :param totalSec: 预期刷视频的总时长,单位: s, 若为非正数,则使用 self.totalSec 替代
@@ -240,17 +249,49 @@ class AbsWoolProject(ABC, Runnable):
         except Exception as e:
             traceback.print_exc()
             print('run task exception: %s(%s) %s' % (self.appName, self.pkgName, e))
+            model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
+            NetUtil.push_to_robot('%s设备异常,退出%s挂机\nerrorDetail:%s' % (model, self.appName, e),
+                                  self.notificationRobotDict)
 
         # 测试完成后, kill调进程,并开始下一个task的执行
         self.adbUtil.killApp(appPkgName=self.pkgName, deviceId=self.deviceId)
         print('self.next=%s' % self.next)
         if isinstance(self.next, AbsWoolProject):
-            self.next.updateDeviceId(self.deviceId).updateDim(self.dim, self.dimOri).run()
+            self.next.updateDeviceId(self.deviceId).updateDim(self.dim, self.dimOri).setnotificationRobotDict(
+                self.notificationRobotDict).run()
         else:
             if self.dimOri > 0:
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness_mode 1'])  # 开启自动亮度
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness %s' % self.dimOri])  # 恢复原屏幕亮度
             self.adbUtil.power(deviceId=self.deviceId)  # 关闭手机屏幕
+
+    def convert2RelPos(self, x: int, y: int, digits: int = 3) -> tuple:
+        """
+        将本机绝对坐标转为相对坐标
+        如本机宽高为:1080*1920
+        则将(x,y)=(300,500)转为相对坐标得到: (300/1080,500/1920)=(0.27,0.26)
+        :param x:x轴绝对坐标
+        :param y:y轴绝对坐标
+        :param digits:保留的小数位数
+        """
+        infoDict = self.adbUtil.getDeviceInfo(self.deviceId)
+        width = infoDict['ov_width']
+        height = infoDict['ov_height']
+        return round(x / width, digits), round(y / height, digits)
+
+    def convert2AbsPos(self, x: float, y: float) -> tuple:
+        """
+        将本机相对坐标转为绝对坐标
+        如本机宽高为:1080*1920
+        则将(x,y)=(0.27,0.26)转为相对坐标得到: (0.27*1080,0.26*1920)=(291,499)
+        :param x:x轴相对坐标 [0,1]
+        :param y:y轴相对坐标 [0,1]
+        :return (int,int)
+        """
+        infoDict = self.adbUtil.getDeviceInfo(self.deviceId)
+        width = infoDict['ov_width']
+        height = infoDict['ov_height']
+        return round(x / width), round(y / height)
 
     @abstractmethod
     def onRun(self, **kwargs):

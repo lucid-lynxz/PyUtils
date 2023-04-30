@@ -19,6 +19,15 @@ class CommonUtil(object):
     #     """
     #     return srcStr.decode(srcEncode).encode(toEncode)
 
+    @staticmethod
+    def updateStdOutEncoding(encoding: str = 'utf8'):
+        """
+        修改标准输出的编码为utf8,可解决部分终端中文乱码问题
+        """
+        import io
+        import sys
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
+
     @classmethod
     def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
         """
