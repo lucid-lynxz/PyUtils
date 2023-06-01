@@ -10,11 +10,12 @@ from util.CommonUtil import CommonUtil
 
 class FileUtil(object):
     @staticmethod
-    def recookPath(path: str, forceEnableLongPath: bool = False) -> str:
+    def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = '') -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠
         :param path: 路径字符串
         :param forceEnableLongPath: win下是否强制启用长目录路径格式
+        :param replaceBlank: 回车空格字符要替换为指定的值, None表示不处理
         :return: 处理后的路径,为避免空指针,返回值均为非None
         """
         if CommonUtil.isNoneOrBlank(path):
@@ -25,6 +26,8 @@ class FileUtil(object):
             return FileUtil.recookPath(path)
 
         path = path.replace("\\", "/").replace("//", "/")
+        if replaceBlank is not None:
+            path = path.replace(' ', replaceBlank).replace('\n', replaceBlank)
 
         # win最大文件长度: https://learn.microsoft.com/zh-cn/windows/win32/fileio/naming-a-file?redirectedfrom=MSDN#maxpath
         if forceEnableLongPath or len(path) >= 256:
@@ -169,8 +172,9 @@ class FileUtil(object):
                     # os.rmdir(path) # 非空目录会报错: WindowsError：[Error 145]
                 except WindowsError:
                     # 对于超长路径,会提示 FileNotFoundError: [WinError 3]
-                    path = FileUtil.recookPath(path, True)
-                    shutil.rmtree(path)
+                    if len(path) >= 256:
+                        path = FileUtil.recookPath(path, True)
+                        shutil.rmtree(path)
             else:  # 文件
                 os.remove(path)
 

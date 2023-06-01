@@ -25,6 +25,7 @@ class AdbUtil(object):
         self.adbPath = 'third_tools/android_platform_tools/*/adb.exe' if not hit else adbPath
         self.adbPath = CommonUtil.checkThirdToolPath(self.adbPath, 'adb')
         self.defaultDeviceId = defaultDeviceId
+        self.deviceInfoCacheMap: dict = dict()  # 设备信息, key是deviceId value是dict
 
     def getAllDeviceId(self, onlineOnly: bool = False) -> tuple:
         """
@@ -426,13 +427,14 @@ class AdbUtil(object):
             resultList.append(out.strip())
         return resultList
 
-    def getCurrentActivity(self, deviceId: str = None) -> str:
+    def getCurrentActivity(self, deviceId: str = None, printCmdInfo: bool = False) -> str:
         """
         获取当前activity信息, 命令：adb shell dumpsys window | grep mCurrentFocus
         得到结果如：mCurrentFocus=Window{bcb5ed0 u0 org.lynxz.demo/org.lynxz.demo.activity.HomeActivity}
         :return: activity路径信息，如：org.lynxz.demo.activity.HomeActivity
         """
-        out, err = self.exeShellCmds(['dumpsys window | grep mCurrentFocus'], deviceId)
+        out, err = self.exeShellCmds(['dumpsys window | grep mCurrentFocus'], deviceId, printCmdInfo=printCmdInfo)
+        print(f'getCurrentActivity out={out},err={err}')
         if CommonUtil.isNoneOrBlank(out):
             return ''
         tArr = out.split('{')
@@ -451,6 +453,8 @@ class AdbUtil(object):
         :param appPkgName:包名，如： org.lynxz.demo
         :param activityPath: 主activity完整路径，如： org.lynxz.demo.activity.mainActivity
         """
+        if CommonUtil.isNoneOrBlank(appPkgName):
+            return self
         self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
         return self
 
@@ -518,18 +522,54 @@ class AdbUtil(object):
             return False
         return pkgName in self.getAllPkgs(deviceId=deviceId, printCmdInfo=printCmdInfo)
 
-    def tapByTuple(self, posTuple: tuple, deviceId: str = None):
-        self.tap(posTuple[0], posTuple[1], deviceId)
+    def text(self, inputText: str, enter: bool = False,
+             search: bool = False, deviceId: str = None, printCmdInfo: bool = False):
+        """
+        输入指定文本
+        建议仅在输入asaii字符时才使用本方法, 直接使用adb输入中文等会报错,可以使用输入法: https://github.com/senzhk/ADBKeyBoard
+        下载仓库的输入法apk安装后,在手机 '设置'  - '语言和输入法' 中启用 adb keyboard
+        P.S. 经测试,在pixel 5 android12手机上,经常提示该输入胡停止运行, 太不稳定了...
+        adb shell ime enable com.android.adbkeyboard/.AdbIME # 启用该输入法
+        adb shell ime set com.android.adbkeyboard/.AdbIME  #设置系统默认输入法
+        adb shell am broadcast -a ADB_INPUT_TEXT --es msg '中文测试chinese2*89' # 使用adbIme输入中文
+
+        #  其他常用的输入法相关命令
+        adb shell ime list -s #显示系统安装的输入法列表
+        adb shell settings get secure default_input_method #获取系统默认输入法
+        adb shell ime reset # 恢复系统默认的输入法
+
+        :param inputText:待输入的文本
+        :param enter:文本输入结束后,是否触发enter键
+        :param search:文本输入结束后,是否触发search键
+        """
+        self.exeShellCmds(['input text %s' % inputText], deviceId, printCmdInfo)
+        if enter:
+            self.exeShellCmds(['input keyevent KEYCODE_ENTER'], deviceId, printCmdInfo)
+        if search:
+            self.exeShellCmds(['input keyevent KEYCODE_SEARCH'], deviceId, printCmdInfo)
         return self
 
-    def tap(self, x: int, y: int, deviceId: str = None, printCmdInfo: bool = False):
+    def tapByTuple(self, posTuple: tuple, deviceId: str = None,
+                   times: int = 1, sleepSec: float = 2, printCmdInfo: bool = False) -> bool:
+        if posTuple is None or len(posTuple) < 2:
+            return False
+        return self.tap(posTuple[0], posTuple[1], deviceId, times=times, sleepSec=sleepSec, printCmdInfo=printCmdInfo)
+
+    def tap(self, x: int, y: int, deviceId: str = None, times: int = 1, sleepSec: float = 2,
+            printCmdInfo: bool = False) -> bool:
         """
         点击设备的指定位置
         :param x: 点击坐标x，屏幕左上角为0
         :param y: 点击坐标y，屏幕左上角为0
+        :param times: 需要点击几次, 默认一次
+        :param sleepSec: 连续两次点击之间的间隔,单位: s
         """
-        self.exeShellCmds(['input tap %s %s' % (x, y)], deviceId, printCmdInfo)
-        return self
+        for i in range(times):
+            self.exeShellCmds(['input tap %s %s' % (x, y)], deviceId, printCmdInfo)
+            if sleepSec > 0:
+                import time
+                time.sleep(sleepSec)
+        return True
 
     def swipe(self, from_x: int, from_y: int, to_x: int, to_y: int,
               durationMs: int = 500, deviceId: str = None,
@@ -544,19 +584,43 @@ class AdbUtil(object):
                           printCmdInfo)
         return self
 
-    def back(self, times: int = 1):
+    def back(self, times: int = 1, sleepSec: int = 2):
         """
         按下返回键
         :param times: 返回次数，默认是一次
+        :param sleepSec: 多次返回时, 每次要间隔的时长,单位:s
         """
-        for index in range(1, 1 + times):
+        for index in range(times):
             self.exeShellCmds(['input keyevent BACK'])
+            if times > 1:
+                import time
+                time.sleep(sleepSec)
         return self
 
     def power(self, deviceId: str = None):
         # 按下power键
         self.exeShellCmds(['input keyevent 26'], deviceId)
         return self
+
+    def pointerLocation(self, value: int = 1, deviceId: str = None, printCmdInfo: bool = False) -> int:
+        """
+        开启/关闭 开发者选项 -> 指针位置选项
+        对应的adb命令:
+          adb shell settings get system pointer_location
+          adb shell settings put system pointer_location 0/1
+        :param value: 0-关闭指针位置 1-开启指针位置 其他值,仅获取当前指针位置开关状态
+        :return 当前是否开启指针位置选项 0-关闭 1-开启, 其他值-未知状态
+        """
+        getCmd = 'settings get system pointer_location'
+        putCmd = 'settings put system pointer_location %s' % value
+        if value == 0 or value == 1:
+            self.exeShellCmds([putCmd], deviceId=deviceId, printCmdInfo=printCmdInfo)
+        out, _ = self.exeShellCmds([getCmd], deviceId=deviceId, printCmdInfo=printCmdInfo)
+        result = -1
+        try:
+            result = -1 if CommonUtil.isNoneOrBlank(out) else int(out.strip())
+        finally:
+            return result
 
     def updateVolume(self, up: bool = True, mute: bool = False, deviceId: str = None):
         """
@@ -578,7 +642,7 @@ class AdbUtil(object):
         self.exeShellCmds(['wm size %sx%s' % (width, height)], deviceId, printCmdInfo)
         return self
 
-    def getDeviceInfo(self, deviceId: str = None) -> dict:
+    def getDeviceInfo(self, deviceId: str = None, forceGet: bool = False) -> dict:
         """
         获取设备的其他信息,当前支持的key如下：
         imei:设备imei,高版本可能无法获取到
@@ -594,6 +658,17 @@ class AdbUtil(object):
         ov_width: 设备当前宽度像素， 如： 1080， 若未修改过，则等同于上方的 width
         ov_height： 设备当前长度像素，如： 1920，若未修改过，则等同于上方的 height
         """
+        if CommonUtil.isNoneOrBlank(deviceId):
+            device_ids_list, _ = self.getAllDeviceId(True)
+            if len(device_ids_list) == 1:
+                deviceId = device_ids_list[0]
+            else:
+                return dict()
+
+        cacheItem = self.deviceInfoCacheMap.get(deviceId, None)
+        if not CommonUtil.isNoneOrBlank(cacheItem) and not forceGet:
+            return cacheItem
+
         result = dict()
         result['imei'] = self.getImeiInfo(deviceId)
         result['mac'] = self.getMacAddress(deviceId)
@@ -619,6 +694,7 @@ class AdbUtil(object):
                     size = line.split(':')[1]
                     result['override_size'] = size  # 如： 1080x2340
                     result['ov_width'], result['ov_height'] = size.split('x')
+        self.deviceInfoCacheMap[deviceId] = result
         return result
 
 
@@ -631,4 +707,6 @@ if __name__ == '__main__':
     #
     # pprint.PrettyPrinter(indent=2)
     # pprint.pprint(adbUtil.getDeviceInfo())
-    adbUtil.back()
+    # adbUtil.back()
+    # print('--->%s' % adbUtil.pointerLocation(0))
+    print(f'curAct={adbUtil.getCurrentActivity(deviceId="7b65fc7a")}')

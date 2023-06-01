@@ -14,13 +14,16 @@ if proj_dir not in sys.path:
 import threading
 import typing
 from base.BaseConfig import BaseConfig
-from wool_tasks.ksjsb.wool import KsjsbTask
-from wool_tasks.dyjsb.wool import DyjsbTask
+from wool_tasks.ksjsb.main import KsAir
+from wool_tasks.dyjsb.main import DyAir
+from wool_tasks.dragon_read.dragon_read import DragonRead
 from wool_tasks.WoolProject import AbsWoolProject, WoolProjectImpl
 from util.AdbUtil import AdbUtil
 from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
+from util.FileUtil import FileUtil
+from util.log_handler import LogHandlerSetting, DefaultCustomLog
 
 
 class WoolThread(threading.Thread):
@@ -69,6 +72,16 @@ class WoolManager(BaseConfig):
         # 挂机完成后是否休眠本机电脑
         sleepPcAfterAll = settingDict.get('sleepPcAfterAll', 'False') == 'True'
         forceRestartApp = settingDict.get('forceRestartApp', 'False') == 'True'
+        sleepSec = settingDict.get('sleepSec', 0)
+
+        cacheDir = settingDict.get('cacheDir', '')  # 缓存目录路径
+        clearCache = settingDict.get('clearCache', 'False') == 'True'
+        logName = settingDict.get('logName', '')  # 日志文件名
+        FileUtil.createFile('%s/' % cacheDir, clearCache)  # 按需创建缓存目录
+
+        LogHandlerSetting.save_log_dir_path = cacheDir
+        DefaultCustomLog.default_log_path = FileUtil.recookPath(f'{cacheDir}/{logName}')
+        print(f'default_log_path={DefaultCustomLog.default_log_path}')
 
         start = time.time()
         threadList = []
@@ -81,6 +94,7 @@ class WoolManager(BaseConfig):
                 # 获取待挂机的app信息,并拼接最终task
                 project: typing.Optional[AbsWoolProject] = None
                 for pkgName, value in appInfoDict.items():
+                    pkgName = pkgName.split('__more__')[0]
                     arr = [] if CommonUtil.isNoneOrBlank(value) else value.split(',')
                     size = len(arr)
                     appName = arr[0] if size >= 1 else ''  # app名称
@@ -88,19 +102,27 @@ class WoolManager(BaseConfig):
                     homeActPath = arr[2] if size >= 3 else ''  # app首页路径
                     print('appName=%s,totalSec=%s' % (appName, totalSec))
 
-                    if KsjsbTask.PKG_NAME == pkgName:
-                        ksjsb = KsjsbTask(totalSec=totalSec, forceRestart=forceRestartApp)
+                    if KsAir.PKG_NAME == pkgName:
+                        ksjsb = KsAir(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
                         project = ksjsb if project is None else project.setNext(ksjsb)
-                    elif DyjsbTask.PKG_NAME == pkgName:
-                        dyjsb = DyjsbTask(totalSec=totalSec, forceRestart=forceRestartApp)
+                    elif DyAir.PKG_NAME == pkgName:
+                        dyjsb = DyAir(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
                         project = dyjsb if project is None else project.setNext(dyjsb)
+                    elif DragonRead.PKG_NAME == pkgName:
+                        dragonRead = DragonRead(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
+                        project = dragonRead if project is None else project.setNext(dragonRead)
                     else:
-                        simpleProject = WoolProjectImpl(pkgName=pkgName, homeActPath=homeActPath,
+                        simpleProject = WoolProjectImpl(deviceId=deviceId, pkgName=pkgName, homeActPath=homeActPath,
                                                         forceRestart=forceRestartApp,
                                                         appName=appName, totalSec=totalSec)
                         project = simpleProject if project is None else project.setNext(simpleProject)
 
-                t = WoolThread(project.updateDeviceId(deviceId).updateDim(dim).setnotificationRobotDict(robotSection))
+                t = WoolThread(project.updateCacheDir(cacheDir)
+                               .updateLogPath(logName=logName)
+                               .updateDeviceId(deviceId).updateDim(dim)
+                               .setNotificationRobotDict(robotSection)
+                               .setDefaultIme(settingDict.get('ime', ''))
+                               )
                 t.start()
                 threadList.append(t)
 
@@ -123,15 +145,16 @@ class WoolManager(BaseConfig):
 
         duration = time.time() - start
         secs_duration = TimeUtil.convertSecsDuration(duration)
-        print('测试完成, 耗时: %s ' % secs_duration)
+        print('测试完成, 耗时: %s ,duration=%s' % (secs_duration, duration))
 
         # 电脑是否需要休眠
         willSleepPcAfter = CommonUtil.isWindows() and sleepPcAfterAll
 
         # 发送通知到钉钉/飞书
         sleepTip = '\n若想取消休眠,请在5min内终止程序' if willSleepPcAfter else ''
-        NetUtil.push_to_robot('完成挂机\n耗时:%s\n电脑休眠:%s%s' % (secs_duration, willSleepPcAfter, sleepTip),
-                              robotSection)
+        NetUtil.push_to_robot(
+            '完成挂机\n耗时:%s\n总秒数:%s\n电脑休眠:%s%s' % (secs_duration, int(duration), willSleepPcAfter, sleepTip),
+            robotSection)
 
         # 电脑进行休眠省电
         if willSleepPcAfter:

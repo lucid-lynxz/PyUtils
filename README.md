@@ -3,7 +3,9 @@
 ```shell
 # 使用wool脚本需要安装以下内容, -i参数是表示使用镜像源
 # 其中 airtest pocoui 必装
-pip3 install airtest pocoui psutil zstd -i https://pypi.tuna.tsinghua.edu.cn/simple
+# psutil是检测笔记本电脑电量以及是否插电,用于提醒用户,避免挂机失败
+# cnocr 是因为部分页面使用pocoui/airtest无法识别,需要文字识别
+pip3 install airtest pocoui psutil cnocr -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ## 注意事项：
@@ -11,7 +13,7 @@ pip3 install airtest pocoui psutil zstd -i https://pypi.tuna.tsinghua.edu.cn/sim
 **由于我在window上python2/3均有安装，默认使用python2，因此需要将 python3 安装目录下的 `python.exe` 改名为 `python3.exe`**
 
 * 2023.02.03更新：
-    * 对于windows用户，当前本项目已内置了python3.10程序，因此可无需再自行安装
+    * 对于windows用户，当前本项目已内置了python3.10程序，因此可无需再自行安装(内置版本不包含pip,未安装相关依赖库)
     * 对于linux/macos系统用户，可能需要自行安装python3并配置环境变量，同时需要提供命令: `python3`，经测试：
         * Ubuntu22.10/Fedora37均已内置了 python3， 无需再手动安装
         * macos 10.13 内置的是 python2，从 [官网](https://www.python.org/downloads/macos/)

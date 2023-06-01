@@ -178,6 +178,20 @@ class CommonUtil(object):
         print('checkThirdToolPath result=%s' % path)
         return path
 
+    @staticmethod
+    def convertStr2Float(src: str, defaultValue: float) -> float:
+        try:
+            return float(src)
+        except ValueError:
+            return defaultValue
+
+    @staticmethod
+    def convertStr2Int(src: str, defaultValue: int) -> int:
+        try:
+            return int(src)
+        except ValueError:
+            return defaultValue
+
 
 if __name__ == "__main__":
     result = CommonUtil.exeCmd('git --git-dir=D:/D/987/.git/ --work-tree=D:\D\987 log -1')

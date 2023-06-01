@@ -57,8 +57,10 @@ class ScrcpyMultiDevicesImpl(BaseConfig):
         scrypy_dir_path = self.configParser.get('scrcpy', 'scrcpy_dir_path')
 
         # 在 scrcpy 目录下创建最终的 vbs 脚本
-        vbsFilePath = "%stemp.vbs" % scrypy_dir_path
+        vbsName: str = 'temp.vbs'
+        vbsFilePath = "%s%s" % (scrypy_dir_path, vbsName)
         FileUtil.deleteFile(vbsFilePath)
+        diskInfo: str = scrypy_dir_path.split(':')[0]  # 目录所在盘符,如: D
 
         vbsCmd = "Set WshShell=Wscript.CreateObject(\"Wscript.Shell\")\n"
         print(vbsCmd)
@@ -79,7 +81,8 @@ class ScrcpyMultiDevicesImpl(BaseConfig):
         # 执行vbs脚本
         # vbsContent = file_util.readFile(vbsFilePath)
         # print(vbsContent)
-        CommonUtil.exeCmd("cd %s && %s" % (scrypy_dir_path, vbsFilePath))
+        # CommonUtil.exeCmd("cd %s && %s" % (scrypy_dir_path, vbsFilePath))
+        CommonUtil.exeCmd("%s: && cd %s && wscript.exe %s" % (diskInfo, scrypy_dir_path, vbsName))
         # file_util.deleteFile(vbsFilePath)
 
     def getPrintConfigSections(self) -> set:

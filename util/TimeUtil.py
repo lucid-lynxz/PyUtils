@@ -34,7 +34,7 @@ class TimeUtil(object):
         rest = totalSecs % 3600
         minutes = int(rest // 60)
         secs = int(rest % 60)
-        result = '%s小时%s分%d秒' % (hour, minutes, secs)
+        result = '%s小时%s分%s秒' % (hour, minutes, secs)
         return result.replace('0小时', '').replace('0分', '').replace('0秒', '')
 
     @classmethod
@@ -62,7 +62,12 @@ class TimeUtil(object):
         """
         if sec < 0:
             sec = round(minSec + random.random() * (maxSec - minSec), 1)  # 保留一位小数
-        time.sleep(sec)
+
+        if sec < 0:
+            sec = 1
+
+        if sec > 0:
+            time.sleep(sec)
         return sec
 
     @classmethod
@@ -88,4 +93,7 @@ class TimeUtil(object):
 
 
 if __name__ == '__main__':
+    print(TimeUtil.convertSecsDuration(8))
     print(TimeUtil.convertSecsDuration(59.5))
+    print(TimeUtil.convertSecsDuration(61))
+    print(TimeUtil.convertSecsDuration(3600 + 358))

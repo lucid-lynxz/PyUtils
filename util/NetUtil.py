@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 import json
 import socket
+import traceback
 import urllib.request as urllib2
 
 from util.CommonUtil import CommonUtil
@@ -108,10 +109,15 @@ class NetUtil(object):
         request = urllib2.Request(url='https://open.feishu.cn/open-apis/bot/v2/hook/%s' % access_token,
                                   data=json_data_obj,
                                   headers=headers, method="POST")
-        response = urllib2.urlopen(request)
-        fsResult = response.read().decode('utf-8')
-        print('push_feishu_robot result=%s' % fsResult)
-        return fsResult
+        try:
+            response = urllib2.urlopen(request)
+            fsResult = response.read().decode('utf-8')
+            print('push_feishu_robot result=%s' % fsResult)
+            return fsResult
+        except Exception as e:
+            traceback.print_exc()
+            print(f'push_feishu_robot fail url={request.full_url} {e}')
+            return 'fail'
 
     @staticmethod
     def getIp() -> str:
