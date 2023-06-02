@@ -89,6 +89,12 @@ class AbsBaseAir(AbsWoolProject):
         """
         pass
 
+    def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
+                          max_sec: int = 60,  # 每个直播最多需要观看的时长
+                          zhiboHomePageTitle: str = r'^看直播领金.',  # 直播列表首页的标题名,用于判断是否跳转到直播详情成功
+                          autoBack2Home: bool = True):
+        pass
+
     def continue_watch_ad_videos(self, max_secs: int = 90,  # 最多要观看的时长, 之后会通过检测 '已领取' / '已成功领取奖励' 来决定是否继续观看
                                  min_secs: int = 30,
                                  maxVideos: int = 5,
@@ -117,6 +123,55 @@ class AbsBaseAir(AbsWoolProject):
         :return tuple:(float,float) 表示匹配到的按钮坐标值, 若为空,则表示未匹配到
         """
         pass
+
+    def search_by_input(self, keyword: str, hintListKeyword: str = r'搜索有奖', viewSec: int = 20) -> bool:
+        """
+        要求当前已在搜索页面,且光标已定位到搜索输入框
+        则会自动输入部分keyword,并尝试匹配:
+         1. '搜索有奖'
+         2. 入参的 'keyword' 完整内容
+         3. 比输入的部分keyword更长的提示项
+         返回是否输入搜索成功
+         :param keyword: 完整的搜索关键字
+         :param hintListKeyword: 输入keyword后可能会弹出提示列表,点选带有 hintListKeyword 的item
+         :param viewSec: 若搜索成功,则浏览搜索结果的时长,单位:s, 大于0有效,浏览完成后仍在当前页面
+         :return bool:是否搜索成功
+        """
+        # 由于使用 yosemite 等输入直接键入文本时,获得金币约等于无,此处尝试只输入一半内容,然后通过下拉提示列表进行点击触发关键字输入
+        inputKWIndex: int = int(len(keyword) / 2)
+        inputKW: str = keyword[0:inputKWIndex]  # 实际输入的关键字内容
+        self.logWarn(f'尝试输入搜索关键字: {inputKW}  完整的关键字为:{keyword}')
+        self.text(inputKW, search=False)  # 输入关键字,进行搜索
+        self.sleep(2)
+
+        # 检测下拉提示列表
+        success: bool = False
+        for checkIndex in range(3):
+            pos, ocrStr, ocrResList = self.findTextByOCR(hintListKeyword, height=800, maxSwipeRetryCount=1)
+            success = self.tapByTuple(self.calcCenterPos(pos))
+            if not success:  # 未找到 '搜索有奖' 时,表明对关键字无要求,直接点击比输入值更长的文本即可
+                pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, keyword)
+                success = self.tapByTuple(self.calcCenterPos(pos))
+                if not success:
+                    pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'%s.+' % inputKW)
+                    success = self.tapByTuple(self.calcCenterPos(pos))
+
+            if not success:
+                self.sleep(3)
+            else:
+                self.logWarn(f'search input kw success:{inputKW}, ocrStr={ocrStr}')
+                break
+
+        # 浏览指定的时长
+        if success and viewSec > 0:
+            totalSec: float = 0
+            while True:
+                self.sleep(4)
+                self.swipeUp(durationMs=1000)
+                totalSec = totalSec + 4
+                if totalSec > viewSec:
+                    break
+        return success
 
     @logwrap
     def snapshot(self, filename=None, msg="", quality=None, max_size=None):
@@ -638,6 +693,16 @@ class AbsBaseAir(AbsWoolProject):
                                       targetPageKeyword=earnPageKeyword,
                                       sleepSecsInPage=sleepSecsInPage,
                                       enableByRestartApp=enableByRestartApp)
+
+    def back_until(self, targetText: str, prefixText: str = None, ocrResList=None, retry_count: int = 10) -> bool:
+        """不断返回知道检测到指定文本"""
+        for _ in range(retry_count):
+            if self.check_if_in_page(targetText=targetText, prefixText=prefixText, ocrResList=ocrResList):
+                return True
+            self.adbUtil.back()  # 返回一次
+            self.check_coin_dialog()  # 关闭弹框
+            self.closeDialog()
+        return False
 
 
 if __name__ == '__main__':

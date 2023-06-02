@@ -713,52 +713,8 @@ class BDJsbBaseAir(AbsBaseAir):
         self.goto_home_information_tab()  # 返回首页继续刷视频
 
     @log_wrap()
-    def search_by_input(self, keyword: str, viewSec: int = 4) -> bool:
-        """
-        要求当前已在搜索页面,且光标已定位到搜索输入框
-        则会自动输入部分keyword,并尝试匹配:
-         1. '搜索有奖'
-         2. 入参的 'keyword' 完整内容
-         3. 比输入的部分keyword更长的提示项
-         返回是否输入搜索成功
-         :param keyword: 完整的搜索关键字
-         :param viewSec: 若搜索成功,则浏览搜索结果的时长,单位:s, 大于0有效,浏览完成后仍在当前页面
-         :return bool:是否搜索成功
-        """
-        # 由于使用 yosemite 等输入直接键入文本时,获得金币约等于无,此处尝试只输入一半内容,然后通过下拉提示列表进行点击触发关键字输入
-        inputKWIndex: int = int(len(keyword) / 2)
-        inputKW: str = keyword[0:inputKWIndex]  # 实际输入的关键字内容
-        self.logWarn(f'尝试输入搜索关键字: {inputKW}  完整的关键字为:{keyword}')
-        self.text(inputKW, search=False)  # 输入关键字,进行搜索
-
-        # 检测下拉提示列表
-        success: bool = False
-        for checkIndex in range(3):
-            pos, ocrStr, ocrResList = self.findTextByOCR('搜索有奖', height=800, maxSwipeRetryCount=1)
-            success = self.tapByTuple(self.calcCenterPos(pos))
-            if not success:  # 未找到 '搜索有奖' 时,表明对关键字无要求,直接点击比输入值更长的文本即可
-                pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, keyword)
-                success = self.tapByTuple(self.calcCenterPos(pos))
-                if not success:
-                    pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'%s.+' % inputKW)
-                    success = self.tapByTuple(self.calcCenterPos(pos))
-
-            if not success:
-                self.sleep(3)
-            else:
-                self.logWarn(f'search input kw success:{inputKW}, ocrStr={ocrStr}')
-                break
-
-        # 浏览指定的时长
-        if success and viewSec > 0:
-            totalSec: float = 0
-            while True:
-                self.sleep(4)
-                self.swipeUp(durationMs=1000)
-                totalSec = totalSec + 4
-                if totalSec > viewSec:
-                    break
-        return success
+    def search_by_input(self, keyword: str, hintListKeyword: str = r'搜索有奖', viewSec: int = 20) -> bool:
+        return super().search_by_input(keyword, hintListKeyword, viewSec)
 
     @log_wrap()
     def kan_xiaoshuo(self, jump2NovelHomeBtnText: str = r'(^看小说$|^看更多$)',
@@ -1114,10 +1070,4 @@ class BDJsbBaseAir(AbsBaseAir):
     def back2HomePage(self, funcDoAfterPressBack=None):
         # super().back2HomePage(funcDoAfterPressBack)
         name, keyword = self.get_home_tab_name()
-        for _ in range(10):
-            if self.check_if_in_page(targetText=keyword):
-                break
-            self.adbUtil.back()
-            self.sleep(2)
-            self.check_coin_dialog()
-        self.closeDialog()
+        super().back_until(targetText=keyword)

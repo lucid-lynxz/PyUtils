@@ -172,17 +172,12 @@ class GetLogImpl(BaseConfig):
         if CommonUtil.isNoneOrBlank(removeFiles):
             return
 
-        for removeFile in removeFiles.split(','):
-            tRemoveFile = FileUtil.recookPath('%s/%s' % (rootDir, removeFile))
-            fullName, _, _ = FileUtil.getFileName(tRemoveFile)
-            fullName = fullName.replace('(', '\\(').replace(')', '\\)')
-            parentDirPath = FileUtil.getParentPath(tRemoveFile)
-
-            allFiles = FileUtil.listAllFilePath(parentDirPath)
-            for name in allFiles:
-                if re.search(r'%s' % fullName, name) is not None:
-                    path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))
-                    FileUtil.deleteFile(path)
+        allFilePathList: list = FileUtil.listAllFilePath(rootDir, depth=10, getAllDepthFileInfo=True)
+        for removeFile in removeFiles.split(';'):
+            removePattern = re.compile(removeFile)
+            for absPath in allFilePathList:
+                if not CommonUtil.isNoneOrBlank(removePattern.findall(absPath)):
+                    FileUtil.deleteFile(absPath)
 
 
 if __name__ == '__main__':
