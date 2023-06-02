@@ -23,7 +23,7 @@ from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
 from util.FileUtil import FileUtil
-from util.log_handler import LogHandlerSetting, DefaultCustomLog
+from util.log_handler import LogHandlerSetting
 
 
 class WoolThread(threading.Thread):
@@ -76,12 +76,9 @@ class WoolManager(BaseConfig):
 
         cacheDir = settingDict.get('cacheDir', '')  # 缓存目录路径
         clearCache = settingDict.get('clearCache', 'False') == 'True'
-        logName = settingDict.get('logName', '')  # 日志文件名
         FileUtil.createFile('%s/' % cacheDir, clearCache)  # 按需创建缓存目录
 
         LogHandlerSetting.save_log_dir_path = cacheDir
-        DefaultCustomLog.default_log_path = FileUtil.recookPath(f'{cacheDir}/{logName}')
-        print(f'default_log_path={DefaultCustomLog.default_log_path}')
 
         start = time.time()
         threadList = []
@@ -118,8 +115,7 @@ class WoolManager(BaseConfig):
                         project = simpleProject if project is None else project.setNext(simpleProject)
 
                 t = WoolThread(project.updateCacheDir(cacheDir)
-                               .updateLogPath(logName=logName)
-                               .updateDeviceId(deviceId).updateDim(dim)
+                               .updateDim(dim)
                                .setNotificationRobotDict(robotSection)
                                .setDefaultIme(settingDict.get('ime', ''))
                                )

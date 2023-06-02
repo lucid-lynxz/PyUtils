@@ -38,9 +38,9 @@ class TbAir(BDJsbBaseAir):
         """
         pass
 
-    def closeDialog(self, extraTpl: Template = Template(r"tpl1684931855744.png", record_pos=(-0.002, 0.452),
-                                                        resolution=(1080, 2400))) -> bool:
-        return super().closeDialog(extraTpl=extraTpl)
+    def closeDialog(self, extraImg: str = None, autoClick: bool = True,
+                    minX: int = 200, minY: int = 200, maxX: int = 0, maxY: int = 0) -> tuple:
+        return super().closeDialog(extraImg='tpl1684931855744.png')
 
     def qiandao(self):
         """首页左上角 -> '签到' """

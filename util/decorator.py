@@ -4,6 +4,7 @@ import concurrent
 import functools
 import inspect
 import os
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,13 +13,15 @@ from util.log_handler import DefaultCustomLog
 logger = DefaultCustomLog.get_log(os.path.basename(__file__))
 
 
-def log_wrap(loggerObj=logger, exclude_arg='self',
-             out_attr: str = None):
+def log_wrap(loggerObj=logger, exclude_arg=('self',), print_caller: bool = False,
+             out_attr: str = None, print_out_obj: bool = True):
     """
     装饰器函数，用来记录方法的输入和输出
     :param loggerObj: 日志输出所使用的 logger
     :param exclude_arg: 排除参数，默认为 None
+    :param print_caller: 是否打印当前函数的调用方信息(函数名+行号),默认False
     :param out_attr: 输出结果对象的属性，如果为 None 则直接输出对象，如 'json'
+    :param print_out_obj: out_attr为None时,增加判断是否打印整个结果对象,默认为True
     """
 
     if not exclude_arg:
@@ -53,12 +56,23 @@ def log_wrap(loggerObj=logger, exclude_arg='self',
             }
             start_ts = time.time()
 
-            msg = f"{func.__module__}#{func.__qualname__} args: {params} "
+            caller_info = ''
+            if print_caller:
+                try:
+                    frame = sys._getframe()
+                    file_name = frame.f_code.co_filename  # 调用方法所在文件路径
+                    func_name = frame.f_back.f_code.co_name  # 调用方方法名
+                    line_no = frame.f_back.f_lineno  # 行号
+                    caller_info = f'call by:{func_name}:{line_no} '
+                finally:
+                    pass
+
+            msg = f"{func.__module__}#{func.__qualname__} args: {params} {caller_info}"
             log_msg(msg)
 
             result = func(*args, **kwargs)
-            duration_sec = time.time() - start_ts
-            msg = f"{func.__module__}#{func.__qualname__} 耗时:{duration_sec}秒,result={result}"
+            duration_sec = round(time.time() - start_ts, 2)
+            msg = f"{func.__module__}#{func.__qualname__} 耗时:{duration_sec}秒,result={result if print_out_obj else ''}"
             if out_attr and hasattr(result, out_attr):
                 attr = getattr(result, out_attr)
                 attr = attr() if callable(attr) else attr

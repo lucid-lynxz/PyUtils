@@ -35,7 +35,7 @@ class DragonRead(BDJsbBaseAir):
     def get_earn_monkey_tab_name(self) -> tuple:
         return '福利', r'(金币收益|开宝箱得金币|日常任务)'
 
-    def get_home_tab_name(self) -> tuple:
+    def get_info_stream_tab_name(self) -> tuple:
         return '书城', r'(排行榜|书荒广场|热门书签|^推荐|猜你喜欢)'
 
     def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:

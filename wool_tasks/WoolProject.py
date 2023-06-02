@@ -14,7 +14,6 @@ if proj_dir not in sys.path:
 from abc import ABC, abstractmethod, ABCMeta
 import random
 import time
-import logging
 import traceback
 from base.Interfaces import Runnable
 from util.AdbUtil import AdbUtil
@@ -22,6 +21,7 @@ from util.TimeUtil import TimeUtil
 from util.CommonUtil import CommonUtil
 from util.NetUtil import NetUtil
 from util.FileUtil import FileUtil
+from util.log_handler import DefaultCustomLog
 
 
 class AbsWoolProject(ABC, Runnable):
@@ -66,20 +66,23 @@ class AbsWoolProject(ABC, Runnable):
         self.appName: str = appName
         self.forceRestart: bool = forceRestart  # 执行时是否要强制重启app
 
+        self.stateDict: dict = {}  # 用于子类按需存储一些状态信息
+        self.initStateDict()
+
         self.cacheDir: str = cacheDir
-        self.logName: str = ''
         self.updateCacheDir(cacheDir)
 
         # 自定义日志,参考: https://zhuanlan.zhihu.com/p/445411809
-        self.logger = logging.getLogger("wool")
-        self.logger.handlers = []  # 将当前文件的handlers 清空后再添加,否则可能会多次打印日志
-        self.logger.setLevel(logging.INFO)
-        # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-        # handler = logging.StreamHandler()
-        # handler.setFormatter(formatter)
-        # handler.setLevel(logging.INFO)
-        # self.logger.addHandler(handler)
-        self.fileLoggerHandler: logging.FileHandler = None
+        self.logger = DefaultCustomLog.get_log('wool', use_file_handler=True)
+        # self.logger = logging.getLogger("wool")
+        # self.logger.handlers = []  # 将当前文件的handlers 清空后再添加,否则可能会多次打印日志
+        # self.logger.setLevel(logging.INFO)
+        # # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+        # # handler = logging.StreamHandler()
+        # # handler.setFormatter(formatter)
+        # # handler.setLevel(logging.INFO)
+        # # self.logger.addHandler(handler)
+        # self.fileLoggerHandler: logging.FileHandler = None
 
         # 设备相关配置
         self.deviceId: str = deviceId  # Android设备序列号
@@ -93,6 +96,16 @@ class AbsWoolProject(ABC, Runnable):
         self.totalSec: int = totalSec
         self.sleepSecBetweenProjects: int = sleepSecBetweenProjects
         self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
+
+    def initStateDict(self):
+        pass
+
+    def updateStateKV(self, key: str, value: object):
+        self.stateDict[key] = value
+        return self
+
+    def getStateValue(self, key: str, default_value: object = None):
+        return self.stateDict.get(key, default_value)
 
     def logInfo(self, msg, printCmdInfo: bool = True):
         if not printCmdInfo:
@@ -108,7 +121,7 @@ class AbsWoolProject(ABC, Runnable):
         if not printCmdInfo:
             return self
         try:
-            self.logger.warning('%s %s:%s,deviceId=%s' % (self.model, self.appName, msg, self.deviceId))
+            self.logger.warning(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId}')
         except Exception as e:
             traceback.print_exc()
         finally:
@@ -158,21 +171,21 @@ class AbsWoolProject(ABC, Runnable):
         :param logPath: 日志绝对路径,优先使用
         :param logName: 日志文件名, 会自动拼接得到: {self.cacheDir}/{logName}
         """
-        if CommonUtil.isNoneOrBlank(logPath):
-            if CommonUtil.isNoneOrBlank(logName) or CommonUtil.isNoneOrBlank(self.cacheDir):
-                return self
-            else:
-                logPath = FileUtil.recookPath('%s/%s' % (self.cacheDir, logName))
-        self.logName, _, _ = FileUtil.getFileName(logPath)
-        if self.fileLoggerHandler is not None:
-            self.logger.removeHandler(self.fileLoggerHandler)
-
-        self.fileLoggerHandler = logging.FileHandler(filename=logPath, encoding='utf-8')
-        formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-        self.fileLoggerHandler.setFormatter(formatter)
-        self.fileLoggerHandler.setLevel(logging.WARN)
-        self.logger.addHandler(self.fileLoggerHandler)
-        self.logError('updateLogPath....%s' % logPath)
+        # if CommonUtil.isNoneOrBlank(logPath):
+        #     if CommonUtil.isNoneOrBlank(logName) or CommonUtil.isNoneOrBlank(self.cacheDir):
+        #         return self
+        #     else:
+        #         logPath = FileUtil.recookPath('%s/%s' % (self.cacheDir, logName))
+        # self.logName, _, _ = FileUtil.getFileName(logPath)
+        # if self.fileLoggerHandler is not None:
+        #     self.logger.removeHandler(self.fileLoggerHandler)
+        #
+        # self.fileLoggerHandler = logging.FileHandler(filename=logPath, encoding='utf-8')
+        # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+        # self.fileLoggerHandler.setFormatter(formatter)
+        # self.fileLoggerHandler.setLevel(logging.WARN)
+        # self.logger.addHandler(self.fileLoggerHandler)
+        # self.logError('updateLogPath....%s' % logPath)
         return self
 
     def setNext(self, woolProject):
@@ -396,7 +409,7 @@ class AbsWoolProject(ABC, Runnable):
 
         self.deviceId = deviceId
         self.adbUtil = AdbUtil(defaultDeviceId=deviceId)
-        self.model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
+        self.model = self.adbUtil.exeShellCmds(['getprop ro.product.model'], deviceId)[0]
         self.adbUtil.pointerLocation(1)  # 打开指针位置,方便调试
         self.adbUtil.exeShellCmds(['settings put system show_touches 1'], deviceId=deviceId)  # 显示点按位置
         return self
@@ -444,9 +457,42 @@ class AbsWoolProject(ABC, Runnable):
         if dimOri > 0:
             self.dimOri = int(round(dimOri))
         elif not CommonUtil.isNoneOrBlank(self.deviceId):  # 获取当前屏幕亮度
+            if self.adbUtil is None:
+                self.updateDeviceId(self.deviceId)
             out, _ = self.adbUtil.exeShellCmds(['settings get system screen_brightness'], deviceId=self.deviceId)
             self.dimOri = -1 if CommonUtil.isNoneOrBlank(out) else int(out)
         return self
+
+    def check_dialog(self, ocrResList: list = None, fromX: int = 0, fromY: int = 0, retryCount: int = 6,
+                     breakIfHitText: str = None, *args, **kwargs) -> list:
+        """
+        检测当前界面的弹框,并统一处理:
+        1. 对于领取红包的, 直接领取
+        2. 对于看广告视频的, 点击进行跳转观看, 观看结束后返回当前页面
+        :param ocrResList: cnorcr识别结果,避免重复截图识别,若为None则会重新截图及ocr
+        :param fromX: ocrResList 非 None 时有效, 用于表示 ocrResList 的在屏幕上的偏移量
+        :param fromY: 同上
+        :param retryCount: 检测次数
+        :param breakIfHitText: 观看广告视频返回到指定页面时,要停止继续返回,默认是None表示返回到 '任务中心'
+        :param kwargs: 目前支持: 'canDoOtherAction'
+        :return list: 最后一次cnocr识别结果
+        """
+        return ocrResList
+
+    def check_if_in_page(self, targetText: str, prefixText: str = None, ocrResList=None, height: int = 0,
+                         maxRetryCount: int = 2, autoCheckDialog: bool = True, minOcrLen: int = 30) -> bool:
+        """
+        检测当前是否在指定的页面
+        :param targetText:页面上必须存在的信息,正则表达式,若为空,则直接返回True
+        :param prefixText: 特定信息前面必须存在的字符串,支持正则
+        :param ocrResList: cnocr识别结果,若为空,则会进行一次ocr识别
+        :param height: 若需要进行截图ocr,则ocr的高度是多少
+        :param maxRetryCount: 识别重试次数, 若当前识别失败,则下一轮必然重新ocr
+        :param autoCheckDialog: 是否自动检测弹框,默认True
+        :param minOcrLen: 要求ocr得到的文本总长度不能小于该值,否则认为识别失败
+        :return bool: 是否在目标页面
+        """
+        return False
 
     def get_earn_monkey_tab_name(self) -> tuple:
         """
@@ -454,11 +500,67 @@ class AbsWoolProject(ABC, Runnable):
         """
         return '来赚钱', '(任务中心|抵用金|现金收益|开宝箱得金币|金币收益|赚钱任务|交友广场)'
 
-    def get_home_tab_name(self) -> tuple:
+    def get_info_stream_tab_name(self) -> tuple:
         """
         获取 首页 信息流页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
         return '首页', r'(^放映厅$|^同城$|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
+
+    def check_if_in_info_stream_page(self, auto_enter_stream_page: bool = True,
+                                     forceRecheck: bool = False, autoCheckDialog: bool = True,
+                                     ocrResList: list = None) -> bool:
+        """检测当前位于信息流页面, 若当前未位于信息流页面,则自动通过 goto_home_information_tab() 跳转"""
+        name, keyword = self.get_info_stream_tab_name()
+        return self.check_if_in_page(targetText=keyword, autoCheckDialog=autoCheckDialog, ocrResList=ocrResList)
+
+    def check_if_in_earn_page(self, autoCheckDialog: bool = True, ocrResList: list = None) -> bool:
+        """检测当前位于赚钱任务页面, 若当前未位于信息流页面,则自动通过 goto_home_information_tab() 跳转"""
+        name, keyword = self.get_earn_monkey_tab_name()
+        return self.check_if_in_page(targetText=keyword, autoCheckDialog=autoCheckDialog, ocrResList=ocrResList)
+
+    def goto_home_information_tab(self, enableByRestartApp: bool = True) -> bool:
+        """
+        跳转到信息流页面
+        :param enableByRestartApp: 是否允许重启app后再做点击
+        :return bool: 是否跳转成功
+        """
+        name, targetPageKeyword = self.get_info_stream_tab_name()
+        return self.goto_home_sub_tab(name=name,
+                                      targetPageKeyword=targetPageKeyword,
+                                      enableByRestartApp=enableByRestartApp)
+
+    def goto_home_earn_tab(self, sleepSecsInPage: int = 2, enableByRestartApp: bool = True) -> bool:
+        """
+        跳转到赚钱任务页面
+        """
+        earnName, earnPageKeyword = self.get_earn_monkey_tab_name()
+        return self.goto_home_sub_tab(name=earnName, prefixText=None,
+                                      targetPageKeyword=earnPageKeyword,
+                                      sleepSecsInPage=sleepSecsInPage,
+                                      enableByRestartApp=enableByRestartApp)
+
+    def back_until_info_stream_page(self, prefixText: str = None, ocrResList=None) -> bool:
+        """通过按下返回键回到首页信息流页面"""
+        _, pageKeyword = self.get_info_stream_tab_name()
+        return self.back_until(targetText=pageKeyword, prefixText=prefixText, ocrResList=ocrResList)
+
+    def back_until_earn_page(self, prefixText: str = None, ocrResList=None) -> bool:
+        """通过按下返回键回到赚钱页面"""
+        _, pageKeyword = self.get_earn_monkey_tab_name()
+        return self.back_until(targetText=pageKeyword, prefixText=prefixText, ocrResList=ocrResList)
+
+    def back_until(self, targetText: str, prefixText: str = None, ocrResList=None, maxRetryCount: int = 10,
+                   autoCheckDialog: bool = True) -> bool:
+        """不断返回直到检测到指定文本"""
+        for _ in range(maxRetryCount):
+            if self.check_if_in_page(targetText=targetText, prefixText=prefixText, ocrResList=ocrResList,
+                                     autoCheckDialog=False):
+                return True
+            self.adbUtil.back()  # 返回一次
+            ocrResList = None
+            if autoCheckDialog:
+                ocrResList = self.check_dialog()  # 关闭弹框
+        return False
 
     # 跳转子tab页面,默认是 '去赚钱' 页面
     def goto_home_sub_tab(self, name: str = None, prefixText: str = None, targetPageKeyword: str = None,
@@ -489,11 +591,19 @@ class AbsWoolProject(ABC, Runnable):
                     self.adbUtil.exeShellCmds(['settings put system screen_brightness %s' % self.dim])  # 降低屏幕亮度，减少耗电
 
                 # 多次重复启动,用于去掉类似升级提示/签到提醒等弹框,通常都是一天弹出一次
-                for index in range(3):
+                name, keyword = self.get_info_stream_tab_name()
+                earnName, earnKeyword = self.get_earn_monkey_tab_name()
+                for index in range(2):
                     self.startApp(forceRestart=self.forceRestart, msg=f'开始挂机时,第{index}次强制重启')  # 启动app
-                    self.sleep(minSec=6, maxSec=10)  # 等待启动完成
+                    for _ in range(3):
+                        if self.check_if_in_info_stream_page(auto_enter_stream_page=False):
+                            break
+                        else:
+                            self.sleep(2)
+                    self.check_dialog(breakIfHitText=keyword)
                     if self.forceRestart and index <= 1:
-                        self.goto_home_sub_tab(sleepSecsInPage=10)
+                        self.goto_home_sub_tab(sleepSecsInPage=5)
+                        self.check_dialog(breakIfHitText=earnKeyword)
 
                     if not self.forceRestart:
                         break
@@ -501,11 +611,6 @@ class AbsWoolProject(ABC, Runnable):
                 running: bool = self.adbUtil.isAppRunning(appPkgName=self.pkgName)
                 self.logWarn(
                     'wool %s(%s) is running=%s,deviceId=%s' % (self.appName, self.pkgName, running, self.deviceId))
-                if self.forceRestart:
-                    # 每天首次启动可能会弹出青少年模式等弹框, 通过返回键进行取消
-                    self.adbUtil.back()
-                    self.sleep(minSec=5, maxSec=8)
-                    self.adbUtil.back()
             if running:
                 self.onRun(**kwargs)
         except Exception as e:
@@ -522,7 +627,7 @@ class AbsWoolProject(ABC, Runnable):
         self.logWarn('self.next=%s' % self.next)
         if isinstance(self.next, AbsWoolProject):
             self.sleep(self.sleepSecBetweenProjects)
-            self.next.updateCacheDir(self.cacheDir).updateLogPath(logName=self.logName).updateDeviceId(
+            self.next.updateCacheDir(self.cacheDir).updateDeviceId(
                 self.deviceId).updateDim(self.dim, self.dimOri).setNotificationRobotDict(
                 self.notificationRobotDict).run()
         else:

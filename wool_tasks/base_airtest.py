@@ -17,13 +17,16 @@ import re
 
 __author__ = "Lynxz"
 
+from typing import Union
 from cnocr import CnOcr
 from airtest.core.api import *
 from airtest.aircv import *
+from base.TaskManager import TaskManager, TaskLifeCycle
 from util.CommonUtil import CommonUtil
 from WoolProject import AbsWoolProject
 from util.TimeUtil import TimeUtil
 from util.FileUtil import FileUtil
+from util.decorator import log_wrap
 
 """
 airtest基类, 所有子类请自行配置下: auto_setup(__file__)
@@ -37,6 +40,8 @@ logger.setLevel(logging.WARN)
 
 class AbsBaseAir(AbsWoolProject):
     __metaclass__ = ABCMeta
+    key_minStreamSecs = 'key_minStreamSecs'  # 信息流页面需要刷多久后才允许执行其他操作,默认5min
+    key_lastStreamTs = 'key_lastStreamTs'  # 上次刷信息流时跳转的时间戳,单位:s
 
     def __init__(self, deviceId: str, pkgName: str = '',
                  splashActPath: str = '',
@@ -45,18 +50,8 @@ class AbsBaseAir(AbsWoolProject):
                  totalSec: int = 180,
                  forceRestart: bool = False):
 
-        super().__init__(pkgName=pkgName,
-                         splashActPath=splashActPath,
-                         homeActPath=homeActPath,
-                         appName=appName,
-                         deviceId=deviceId,
-                         totalSec=totalSec,
-                         forceRestart=forceRestart)
         self.poco = None
-        self.updateDeviceId(deviceId)
-        self.stateDict: dict = {}  # 用于子类按需存储一些状态信息
-        self.initStateDict()
-        self.airtest_device = G.DEVICE  # airtest设备列表中的当前设备
+        self.airtest_device = None  # airtest设备列表中的当前设备
 
         # 测试使用 cnocr 进行解析
         # 文档: https://cnocr.readthedocs.io/zh/latest/usage/
@@ -64,30 +59,13 @@ class AbsBaseAir(AbsWoolProject):
         # https://huggingface.co/breezedeus/cnstd-cnocr-models/tree/main/models/cnocr/2.2
         self.cnocrImpl: CnOcr = CnOcr()  # cnocr识别对象
 
-    def initStateDict(self):
-        pass
-
-    def updateStateKV(self, key: str, value: object):
-        self.stateDict[key] = value
-        return self
-
-    def getStateValue(self, key: str, default_value: object = None):
-        return self.stateDict.get(key, default_value)
-
-    def check_coin_dialog(self, ocrResList=None, fromX: int = 0, fromY: int = 0, retryCount: int = 2,
-                          breakIfHitText: str = None):
-        """
-        检测当前界面的弹框,并统一处理:
-        1. 对于领取红包的, 直接领取
-        2. 对于看广告视频的, 点击进行跳转观看, 观看结束后返回当前页面
-        :param ocrResList: cnorcr识别结果,避免重复截图识别,若为None则会重新截图及ocr
-        :param fromX: ocrResList 非 None 时有效, 用于表示 ocrResList 的在屏幕上的偏移量
-        :param fromY: 同上
-        :param retryCount: 检测次数
-        :param breakIfHitText: 观看广告视频返回到指定页面时,要停止继续返回,默认是None表示返回到 '任务中心'
-        :return list: 最后一次cnocr识别结果
-        """
-        pass
+        super().__init__(pkgName=pkgName,
+                         splashActPath=splashActPath,
+                         homeActPath=homeActPath,
+                         appName=appName,
+                         deviceId=deviceId,
+                         totalSec=totalSec,
+                         forceRestart=forceRestart)
 
     def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
                           max_sec: int = 60,  # 每个直播最多需要观看的时长
@@ -95,8 +73,9 @@ class AbsBaseAir(AbsWoolProject):
                           autoBack2Home: bool = True):
         pass
 
+    @log_wrap(print_out_obj=False, print_caller=True)
     def continue_watch_ad_videos(self, max_secs: int = 90,  # 最多要观看的时长, 之后会通过检测 '已领取' / '已成功领取奖励' 来决定是否继续观看
-                                 min_secs: int = 30,
+                                 min_secs: int = 10,
                                  maxVideos: int = 5,
                                  breakIfHitText: str = None):
         """
@@ -109,12 +88,13 @@ class AbsBaseAir(AbsWoolProject):
         """
         pass
 
-    # 可能会弹出获得金币弹框, 点击关闭按钮
-    def closeDialog(self, extraTpl: Template = None, autoClick: bool = True,
+    # 可能会弹出获得金币弹框, 点击关闭按钮, 耗时比较久, 建议是想检测特定文本后按需触发
+    @log_wrap(print_caller=True)
+    def closeDialog(self, extraImg: str = None, autoClick: bool = True,
                     minX: int = 200, minY: int = 200, maxX: int = 0, maxY: int = 0) -> tuple:
         """
         搜索并点击关闭弹框
-        :param extraTpl: 其他自定义的关闭按钮图片
+        :param extraImg: 其他自定义的关闭按钮图片相对路径,会优先匹配该图片
         :param autoClick: 匹配到关闭按钮后是否直接点击
         :param minX:匹配到的按钮必须满足的指定的区间才认为合法
         :param maxX:匹配到的按钮必须满足的指定的区间才认为合法
@@ -124,7 +104,55 @@ class AbsBaseAir(AbsWoolProject):
         """
         pass
 
-    def search_by_input(self, keyword: str, hintListKeyword: str = r'搜索有奖', viewSec: int = 20) -> bool:
+    @log_wrap(exclude_arg={'self', 'cnocr_result'})
+    def get_rest_chance_count(self, title: str,
+                              subTitle: str,
+                              cnocr_result: list = None,
+                              appendStrFlag: str = '') -> tuple:
+        """
+        要求当前已在赚钱任务页面
+        比如搜索/看直播等活动,每天有限额,通过本方法根据 subTitle 信息获取剩余可用次数
+        1. 优先进行ocr单行匹配
+        2. 对完整的ocr结果进行匹配
+
+        :param title: 标题行
+        :param subTitle: 正则表达式要求至少包含一个 '(\\d+/\\d+)' 表示已完成次数和总次数
+        :param cnocr_result: 若已有ocr识别结果,则直接服用,否则重新ocr
+        :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
+        :return tuple: (int,int)  completeCount, totalCount 依次表示已使用的次数, 总次数
+        """
+        completeCount: int = 0
+        totalCount: int = 0
+        if cnocr_result is None:
+            pos, ocrStr, ocrResultList = self.findTextByOCR(subTitle, prefixText=title,
+                                                            swipeOverlayHeight=300,
+                                                            height=1400, appendStrFlag=appendStrFlag)
+        else:
+            pos, ocrStr, ocrResultDict = self.findTextByCnOCRResult(cnocr_result, targetText=subTitle,
+                                                                    prefixText=title, appendStrFlag=appendStrFlag)
+            if not CommonUtil.isNoneOrBlank(ocrResultDict):
+                subTitleText = ocrResultDict.get('text', '')
+                ocrStr = ocrStr if CommonUtil.isNoneOrBlank(subTitleText) else subTitleText
+
+        if CommonUtil.isNoneOrBlank(ocrStr):
+            return completeCount, totalCount
+
+        pattern = re.compile(subTitle)  # 如果已搜索过,还有剩余搜索机会的话,此时可能没有 '去搜索' 按钮, 而是倒计时按钮
+        resultList = pattern.findall(ocrStr)
+        if CommonUtil.isNoneOrBlank(resultList):
+            return completeCount, totalCount
+        else:
+            chancesInfo = resultList[0]
+            if '/' in chancesInfo:
+                arr = chancesInfo.split('/')
+                if len(arr) >= 2:
+                    completeCount = CommonUtil.convertStr2Int(arr[0], 0)
+                    totalCount = CommonUtil.convertStr2Int(arr[1], 0)
+        self.logWarn(f'已完成:{chancesInfo},complete={completeCount},total={totalCount},ocrStr={ocrStr}')
+        return completeCount, totalCount
+
+    def search_by_input(self, keyword: str, hintListKeyword: str = r'搜索有奖',
+                        viewSec: int = 20, ignoreCase: bool = True) -> bool:
         """
         要求当前已在搜索页面,且光标已定位到搜索输入框
         则会自动输入部分keyword,并尝试匹配:
@@ -135,10 +163,12 @@ class AbsBaseAir(AbsWoolProject):
          :param keyword: 完整的搜索关键字
          :param hintListKeyword: 输入keyword后可能会弹出提示列表,点选带有 hintListKeyword 的item
          :param viewSec: 若搜索成功,则浏览搜索结果的时长,单位:s, 大于0有效,浏览完成后仍在当前页面
+         :param ignoreCase: 是否忽略大小写
          :return bool:是否搜索成功
         """
         # 由于使用 yosemite 等输入直接键入文本时,获得金币约等于无,此处尝试只输入一半内容,然后通过下拉提示列表进行点击触发关键字输入
-        inputKWIndex: int = int(len(keyword) / 2)
+        length = len(keyword)
+        inputKWIndex: int = length if length <= 8 else int(length / 2)
         inputKW: str = keyword[0:inputKWIndex]  # 实际输入的关键字内容
         self.logWarn(f'尝试输入搜索关键字: {inputKW}  完整的关键字为:{keyword}')
         self.text(inputKW, search=False)  # 输入关键字,进行搜索
@@ -168,7 +198,7 @@ class AbsBaseAir(AbsWoolProject):
             while True:
                 self.sleep(4)
                 self.swipeUp(durationMs=1000)
-                totalSec = totalSec + 4
+                totalSec = totalSec + 5
                 if totalSec > viewSec:
                     break
         return success
@@ -306,16 +336,21 @@ class AbsBaseAir(AbsWoolProject):
             return {"screen": filename, "resolution": aircv.get_resolution(screen)}
         return None
 
+    @log_wrap(print_out_obj=False, print_caller=True)
     def updateDeviceId(self, deviceId: str):
+        if not CommonUtil.isNoneOrBlank(
+                self.deviceId) and self.deviceId == deviceId and self.airtest_device is not None:
+            return self
+
         super().updateDeviceId(deviceId)
         connect_device("Android:///%s?cap_method=javacap&touch_method=adb" % self.deviceId)
         wake()  # 唤醒设备
-
+        set_current(self.deviceId)
         self.airtest_device = G.DEVICE
-        for dev in G.DEVICE_LIST:
-            if self.deviceId == dev.serialno:
-                self.airtest_device = dev
-                break
+        # for dev in G.DEVICE_LIST:
+        #     if self.deviceId == dev.serialno:
+        #         self.airtest_device = dev
+        #         break
         self.init_poco()
         return self
 
@@ -402,14 +437,44 @@ class AbsBaseAir(AbsWoolProject):
             traceback.print_exc()
             return ''
 
-    def getScreenOcrResult(self, ) -> list:
+    def getScreenOcrResult(self, autoSwitchPointerLocation: bool = True,
+                           fromX: int = 0, fromY: int = 0, toX: int = 0, toY: int = 0) -> list:
         """获取当前屏幕截图的ocr结果对象"""
+        # 记录当前是否开启了 "指针位置" 功能,以便最后进行恢复
+        pointerLocationOri: int = self.adbUtil.pointerLocation(value=-1, deviceId=self.deviceId)
+        if autoSwitchPointerLocation:
+            self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
+
         screen = self.snapshot()  # 截屏
+
+        # 恢复指针位置开关设置
+        if autoSwitchPointerLocation:
+            self.adbUtil.pointerLocation(value=pointerLocationOri, deviceId=self.deviceId)
+
         # screen = self.airtest_device.snapshot()  # 截屏
         if screen is None:
             self.logError(f'getScreenOcrResult fail as screenshot return null')
             return None
+
+        if not fromX == fromY == toX == toY == 0:
+            sWidth, sHeight = self.getWH()  # 获取当前设备宽度
+            toX = toX if 0 < toX < sWidth else sWidth
+            toY = toY if 0 < toY < sHeight else sHeight
+            screen = self.snapshot()  # 截屏
+            screen = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
+
         return self.cnocrImpl.ocr(screen)  # cnocr进行解析, 实测耗时大概0.2s
+
+    def composeOcrStr(self, cnocr_result: list, appendStrFlag: str = ' ') -> str:
+        """根据cnocr识别结果拼接生成text信息"""
+        ocr_str_result: str = ''
+        if CommonUtil.isNoneOrBlank(cnocr_result):
+            return ocr_str_result
+        for index in range(len(cnocr_result)):
+            dictItem: dict = cnocr_result[index]
+            t = dictItem.get('text', '')
+            ocr_str_result = '%s%s%s' % (ocr_str_result, appendStrFlag, t)
+        return ocr_str_result
 
     def findTextByOCR(self, targetText: str,
                       prefixText: str = None,
@@ -423,6 +488,7 @@ class AbsBaseAir(AbsWoolProject):
                       imgPrefixName: str = '',
                       autoConvertQuotes: bool = True,
                       appendStrFlag: str = ' ',
+                      ignoreCase: bool = True,
                       printCmdInfo: bool = False) -> tuple:
         """
         通过每次截图指定 height 的图片进行OCR识别,若识别到目标文本(targetText),则返回True
@@ -442,6 +508,7 @@ class AbsBaseAir(AbsWoolProject):
         :param imgPrefixName: 截图前缀名称
         :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
         :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
+        :param ignoreCase: 正则匹配字符串时,是否忽略大小写
         :param printCmdInfo: 是否打印命令内容
         :return tuple (list,str,dict):
             第一个元素list: 表示匹配到的targetText区域在屏幕的四个角的坐标(已自行累加了fromX,fromY的偏移量), 若为空,则表示未识别到
@@ -472,8 +539,6 @@ class AbsBaseAir(AbsWoolProject):
         cnocr_result: list = None  # cnocr对区域截图进行识别的原始结果对象
 
         for i in range(maxSwipeRetryCount):
-            loopStartTsBack: float = time.time()
-
             screen = self.snapshot()  # 截屏
             if screen is None:
                 self.logError(f'findTextByOCR fail as screenshot return null')
@@ -485,6 +550,7 @@ class AbsBaseAir(AbsWoolProject):
                                                                              prefixText=prefixText,
                                                                              fromX=fromX, fromY=fromY,
                                                                              appendStrFlag=appendStrFlag,
+                                                                             ignoreCase=ignoreCase,
                                                                              autoConvertQuotes=autoConvertQuotes)
             hit = hit or not CommonUtil.isNoneOrBlank(posList)  # 是否匹配到目标文字
 
@@ -516,8 +582,6 @@ class AbsBaseAir(AbsWoolProject):
                 # 滑动耗时稍微长点,避免onMoveUp后,页面因为惯性继续滑动
                 self.swipeUp(minDeltaY=swipeHeight, maxDeltaY=swipeHeight,
                              keepVerticalSwipe=True, durationMs=1500, printCmdInfo=printCmdInfo)
-            # self.logWarn(
-            #     f'findTextByOCR loopCheck {i} end duration={time.time() - loopStartTsBack}', printCmdInfo=printCmdInfo)
 
         # 恢复指针位置开关设置
         if autoSwitchPointerLocation:
@@ -529,12 +593,18 @@ class AbsBaseAir(AbsWoolProject):
                      printCmdInfo=printCmdInfo)
         return posList, ocr_str_result, cnocr_result
 
+    def _make_re_compile_obj(self, targetText: str, ignoreCase: bool = True) -> re.Pattern:
+        targetTextPattern = None
+        if not CommonUtil.isNoneOrBlank(targetText):
+            targetTextPattern = re.compile(targetText, re.IGNORECASE) if ignoreCase else re.compile(targetText)
+        return targetTextPattern
+
     def findTextByCnOCRResult(self, cnocr_result: list, targetText: str, prefixText: str = None,
                               fromX: int = 0, fromY: int = 0, autoConvertQuotes: bool = True,
-                              appendStrFlag: str = ' ',
+                              appendStrFlag: str = ' ', ignoreCase: bool = True,
                               printCmdInfo: bool = False) -> tuple:
         """
-        根据cnocr识别结果,检测是否存在目标文本(targetText),若有则该文本的位置信息
+        根据cnocr识别结果,检测是否存在目标文本(targetText),若有则该文本的位置信息 todo 6.4 增加subfixText限制 或者 prefixText&targetText距离限制
         每次截图前会屏幕向上滑动 height 高度, 然后截取 (fromX,fromY) -> (fromX+width,fromY+height) 长条形区域图片进行OCR
         :param cnocr_result: 根据cnocr框架识别得到的结果,若为空,则返回失败
         :param targetText: 必填,要识别的文本正则表达式, 若为空, 则返回的是区域截图的ocr识别结果, pos列表为空
@@ -543,6 +613,8 @@ class AbsBaseAir(AbsWoolProject):
         :param fromY: 区域截图左上角的Y坐标,默认(0,0)
         :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
         :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
+        :param ignoreCase: 正则匹配字符串时,是否忽略大小写
+        :param printCmdInfo: 是否打印日志结果
         :return tuple (list,str,dict): 三个元素都可能为空
             第一个元素list: 表示匹配到的targetText区域在屏幕的四个角的坐标(已自行累加了fromX,fromY的偏移量), 若为空,则表示未识别到
             第二个元素str:  表示最终ocr得到的文本
@@ -554,10 +626,8 @@ class AbsBaseAir(AbsWoolProject):
         targetDict: dict = None  # 目标文本信息, 包含 text/score/position
         ocr_str_result: str = ''  # 最后一次ocr识别的文本
         hitPrefixText: bool = CommonUtil.isNoneOrBlank(prefixText)
-        targetTextPattern = None if CommonUtil.isNoneOrBlank(targetText) else re.compile(targetText)
-        prefixTextPattern = None
-        if not hitPrefixText:
-            prefixTextPattern = re.compile(prefixText)
+        targetTextPattern = self._make_re_compile_obj(targetText, ignoreCase)
+        prefixTextPattern = self._make_re_compile_obj(prefixText, ignoreCase)
 
         for index in range(len(cnocr_result)):
             dictItem: dict = cnocr_result[index]
@@ -589,13 +659,17 @@ class AbsBaseAir(AbsWoolProject):
         # 对ocr文本结果中的引号进行格式化处理
         if autoConvertQuotes:
             ocr_str_result = ocr_str_result.replace('＂', '"').replace('“', '"').replace('”', '"')
-        self.logWarn(
-            f'findTextByCnOCRResult {not CommonUtil.isNoneOrBlank(posList)} '
-            f'targetText={targetText},prefixText={prefixText},ocr_str={ocr_str_result}')
+
+        valid = not CommonUtil.isNoneOrBlank(posList)
+        if printCmdInfo or valid:
+            self.logWarn(
+                f'findTextByCnOCRResult {valid} '
+                f'targetText={targetText},prefixText={prefixText},ocr_str={ocr_str_result}')
         return posList, ocr_str_result, targetDict
 
+    @log_wrap(print_caller=True, exclude_arg=['self', 'ocrResList'])
     def check_if_in_page(self, targetText: str, prefixText: str = None, ocrResList=None, height: int = 0,
-                         maxRetryCount: int = 3) -> bool:
+                         maxRetryCount: int = 2, autoCheckDialog: bool = True, minOcrLen: int = 20) -> bool:
         """
         检测当前是否在指定的页面
         :param targetText:页面上必须存在的信息,正则表达式,若为空,则直接返回True
@@ -603,20 +677,22 @@ class AbsBaseAir(AbsWoolProject):
         :param ocrResList: cnocr识别结果,若为空,则会进行一次ocr识别
         :param height: 若需要进行截图ocr,则ocr的高度是多少
         :param maxRetryCount: 识别重试次数, 若当前识别失败,则下一轮必然重新ocr
+        :param autoCheckDialog: 是否自动检测弹框,默认True
+        :param minOcrLen: 要求ocr得到的文本总长度不能小于该值,否则认为识别失败
         :return bool: 是否在目标页面
         """
         if CommonUtil.isNoneOrBlank(targetText):
             return True
         for index in range(maxRetryCount):
             if ocrResList is None:  # 重新ocr
-                pos, ocrResStr, _ = self.findTextByOCR(targetText, height=height, prefixText=prefixText,
-                                                       maxSwipeRetryCount=1)
+                pos, ocrResStr, ocrResList = self.findTextByOCR(targetText, height=height, prefixText=prefixText,
+                                                                maxSwipeRetryCount=1)
             else:  # 复用原先的ocr结果
                 pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText)
 
-            if CommonUtil.isNoneOrBlank(ocrResStr) or len(ocrResStr) <= 30:
-                self.logWarn(f'check_if_in_page fail ocrResStr is too short,wait')
-                self.sleep(3)
+            if CommonUtil.isNoneOrBlank(ocrResStr) or len(ocrResStr) <= minOcrLen:
+                self.logWarn(f'check_if_in_page fail ocrResStr is too short,wait:ocrResStr={ocrResStr}')
+                self.sleep(5)
                 continue
 
             if CommonUtil.isNoneOrBlank(pos):  # 未找到目标文本
@@ -624,9 +700,11 @@ class AbsBaseAir(AbsWoolProject):
                 self.logWarn(
                     f'check_if_in_page 未找到:{targetText}, index={index},prefixText={prefixText},'
                     f'img_path={img_path}\nocrResStr={ocrResStr}')
-                self.check_coin_dialog()  # 可能是有弹框覆盖
-                self.sleep(2)  # 可能是未加载完成,等待2s再试
-                ocrResList = None  # 置空,下一轮强制重新ocr
+                if autoCheckDialog:
+                    ocrResList = self.check_dialog(breakIfHitText=targetText)  # 可能是有弹框覆盖, 此处不做弹框检测,避免死循环
+                else:
+                    self.sleep(2)  # 可能是未加载完成,等待2s再试
+                    ocrResList = None  # 置空,下一轮强制重新ocr
             else:
                 return True
         return False
@@ -663,46 +741,83 @@ class AbsBaseAir(AbsWoolProject):
     def onRun(self, **kwargs):
         self.runAction(self.informationStreamPageAction, totalSec=self.totalSec, func=self.check_info_stream_valid)
 
+    def canDoOthersWhenInStream(self, autoUpdate: bool = True) -> bool:
+        """
+        当前正在刷信息流页面时,是否允许跳转到其他页面执行刷金币操作
+        在信息流页面每刷一页就会重新计算一次
+        :param autoUpdate:检测到允许跳转时, 是否刷新时间戳,默认:True
+        """
+        minStreamSec: int = self.getStateValue(AbsBaseAir.key_minStreamSecs, 0)  # 最短间隔时长,单位:s
+        lastStreamTs: float = self.getStateValue(AbsBaseAir.key_lastStreamTs, 0)  # 上次跳转的时间戳
+        curTs: float = time.time()
+        if curTs - lastStreamTs >= minStreamSec:
+            if autoUpdate:
+                self.updateStateKV(AbsBaseAir.key_lastStreamTs, curTs)
+            return True
+        else:
+            return False
+
     def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
         """检测当前信息流页面是否有必要挂机(主要是判断是否有奖励)"""
-        return self.check_current_at_info_stream_page(forceRecheck=forceRecheck)
+        if self.canDoOthersWhenInStream():
+            self.perform_earn_tab_actions()
+            self.back_until_info_stream_page()  # 返回首页
+            forceRecheck = True  # 可能跳转新页面了,需要重新检测
+        return self.check_if_in_info_stream_page(forceRecheck=forceRecheck)
 
-    def check_current_at_info_stream_page(self, keywordInPage: str = None, auto_enter_stream_page: bool = True,
-                                          forceRecheck: bool = False) -> bool:
-        """检测当前位于信息流页面, 若当前未位于信息流页面,则自动通过 goto_home_information_tab() 跳转"""
-        name, keyword = self.get_home_tab_name()
-        return self.check_if_in_page(targetText=keyword)
+    @log_wrap(print_out_obj=False)
+    def perform_earn_tab_actions(self, tag: Union[str, list] = 'earn_page_action', maxSwipeCount: int = 8,
+                                 back2HomeStramTab: bool = False, filterFuncNames: set = None):
+        """
+        跳转到去赚钱页面,然后执行各任务
+        :param tag: 需要自行的任务task tag, 可只传入一个,或者list
+        :param maxSwipeCount: 在赚钱任务页面最多下滑次数
+        :param back2HomeStramTab: 执行完毕后是否回退到首页信息流页面
+        :param filterFuncNames: 若非空,则只执行包含的方法
+        """
+        if not self.check_if_in_earn_page() and not self.goto_home_earn_tab():
+            self.logWarn(f'perform_earn_tab_actions fail as not in earn page')
+            return self
+        earnName, earnKeyword = self.get_earn_monkey_tab_name()
+        earnFuncList = list()
+        if isinstance(tag, str):
+            earnFuncList = TaskManager.getTaskList(tag, taskLifeCycle=TaskLifeCycle.custom)
+        elif isinstance(tag, list):
+            for tTag in tag:
+                tEarnFuncList = TaskManager.getTaskList(tTag, taskLifeCycle=TaskLifeCycle.custom)
+                if not CommonUtil.isNoneOrBlank(tEarnFuncList):
+                    earnFuncList = earnFuncList + tEarnFuncList
 
-    def goto_home_information_tab(self, enableByRestartApp: bool = True) -> bool:
-        """
-        跳转到信息流页面
-        :param enableByRestartApp: 是否允许重启app后再做点击
-        :return bool: 是否跳转成功
-        """
-        name, targetPageKeyword = self.get_home_tab_name()
-        return self.goto_home_sub_tab(name=name,
-                                      targetPageKeyword=targetPageKeyword,
-                                      enableByRestartApp=enableByRestartApp)
+        ocrResList = self.getScreenOcrResult()
+        for _ in range(maxSwipeCount):
+            for item in earnFuncList:
+                funcName: str = item.__name__
+                if not CommonUtil.isNoneOrBlank(filterFuncNames) and funcName not in filterFuncNames:
+                    continue
 
-    def goto_home_earn_tab(self, sleepSecsInPage: int = 2, enableByRestartApp: bool = True) -> bool:
-        """
-        跳转到赚钱任务页面
-        """
-        earnName, earnPageKeyword = self.get_earn_monkey_tab_name()
-        return self.goto_home_sub_tab(name=earnName, prefixText=None,
-                                      targetPageKeyword=earnPageKeyword,
-                                      sleepSecsInPage=sleepSecsInPage,
-                                      enableByRestartApp=enableByRestartApp)
+                self.logWarn(f'perform_earn_tab_actions action: {funcName}')
+                consumed = item(baseAir=self, ocrResList=ocrResList, breakIfHitText=earnKeyword)
+                if consumed:
+                    self.logWarn(f'perform_earn_tab_action consumed: {funcName}')
+                    if not self.check_if_in_earn_page(autoCheckDialog=True):
+                        if self.check_if_in_info_stream_page():
+                            self.goto_home_earn_tab()
+                        else:
+                            self.back_until_info_stream_page()
+                            self.goto_home_earn_tab()
 
-    def back_until(self, targetText: str, prefixText: str = None, ocrResList=None, retry_count: int = 10) -> bool:
-        """不断返回知道检测到指定文本"""
-        for _ in range(retry_count):
-            if self.check_if_in_page(targetText=targetText, prefixText=prefixText, ocrResList=ocrResList):
-                return True
-            self.adbUtil.back()  # 返回一次
-            self.check_coin_dialog()  # 关闭弹框
-            self.closeDialog()
-        return False
+                        if not self.check_if_in_earn_page(autoCheckDialog=True):
+                            self.logWarn(f'当前已不在赚钱页面,退出继续执行赚钱任务')
+                            break
+                        ocrResList = self.getScreenOcrResult()
+            self.back_until_earn_page(ocrResList=ocrResList)  # 返回到赚钱页面
+            self.swipeUp(minDeltaY=1000, maxDeltaY=1000, keepVerticalSwipe=True, durationMs=1500)  # 下滑一页
+            ocrResList = self.check_dialog(breakIfHitText=earnKeyword)  # 检测可能的弹框
+
+        self.back_until_earn_page()  # 执行完成,返回到赚钱页面
+        if back2HomeStramTab:
+            self.back_until_info_stream_page()  # 返回信息流页面
+        return self
 
 
 if __name__ == '__main__':

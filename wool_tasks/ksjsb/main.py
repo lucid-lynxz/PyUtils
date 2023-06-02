@@ -34,95 +34,12 @@ class KsAir(BDJsbBaseAir):
 
     def get_earning_info(self, coinPattern: str = r'金.:\s*(\d+)\s*',  # 偶尔会识别为: 金币 / 金市
                          cashPatter: str = r'抵用金:\s*(\d+\.?\d+)\s*',
+                         ocrResList: list = None,
                          ocrHeight: int = 500) -> tuple:
         return super().get_earning_info(coinPattern=coinPattern,
                                         cashPatter=cashPatter,
+                                        ocrResList=ocrResList,
                                         ocrHeight=ocrHeight)
-
-    def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
-        if self.canDoOthersWhenInStream():
-            self.logWarn('check_info_stream_valid')
-            self.zaoqi_daka()  # 早起打卡瓜分金币
-            self.kanshipin_fanbei()  # 金币翻倍
-            self.watch_ad_video()  # 看广告视频赚金币 todo 需要添加 subFixText 判断, 避免找错
-            forceRecheck = True  # 可能跳转新页面了,需要重新检测
-        return super().check_info_stream_valid(forceRecheck=forceRecheck)
-
-    def jinbi_gouhuasuan_qiandao(self, targetText1: str = r'^金.购划算$', targetText2: str = r'^今日签到$',
-                                 kanzhiboText: str = r'^看直播可领$', back2Home: bool = False) -> bool:
-        """
-        '去赚钱'  -> '金币购划算' -> '今日签到' 每天可以签到一次 , '看直播可领' 300金币, 看三个直播视频
-        :param targetText1: '金币购划算' 入口名称
-        :param targetText2: '签到' 按钮名称
-        :param kanzhiboText: '看直播可领' 按钮名称
-        """
-        key = 'jinbi_gouhuasuan_qiandao'
-        hasSignIn = self.getStateValue(key, False)
-        if hasSignIn:
-            return False
-        self.logWarn('jinbi_gouhuasuan_qiandao start')
-        self.goto_home_sub_tab()  # 跳转到去赚钱页面
-        pos, _, _ = self.findTextByOCR(targetText=targetText1, maxSwipeRetryCount=1)  # 金币购划算,跳转到二级页面
-        success = self.tapByTuple(self.calcCenterPos(pos))
-        ocrStr: str = ''
-        if success:
-            self.sleep(3)
-
-            # 今日签到
-            for i in range(3):
-                pos, ocrStr, ocrResList = self.findTextByOCR(targetText=targetText2, height=800, maxSwipeRetryCount=1)
-                success = self.tapByTuple(self.calcCenterPos(pos))
-                if success:
-                    break
-                else:
-                    pos, _, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=r'^明日签到$',
-                                                           prefixText='订单')
-                    if CommonUtil.isNoneOrBlank(pos):
-                        self.sleep(2)  # 额外等一会,可能是还没加载完成
-                    else:  # 已经签到过了
-                        break
-
-            # 看直播可领300金币
-            pos, ocrStr, ocrResList = self.findTextByOCR(targetText=kanzhiboText, height=800, maxSwipeRetryCount=1)
-            if self.tapByTuple(self.calcCenterPos(pos)):
-                self.sleep(3)  # 可能会加载一下
-                self.kan_zhibo_in_page(count=5, max_sec=100, zhiboHomePageTitle='爆款好物')
-                pass
-
-            self.adbUtil.back()  # 返回去赚钱页
-            self.updateStateKV(key, True)
-        if back2Home:
-            self.back2HomePage()
-            self.goto_home_information_tab()  # 返回首页
-        self.logWarn(f'jinbi_gouhuasuan_qiandao end success={success} {ocrStr}')
-        return True
-
-    def kanshipin_fanbei(self, targetText: str = r'(^点击翻倍$|^翻倍中$)',
-                         prefixText: str = r'开启看视频.*翻倍特权',
-                         minDurationSec: int = 20 * 60,
-                         back2Home: bool = False) -> bool:
-        """
-        定期查看 '去赚钱' 页面是否有金币翻倍特权, 翻倍后会返回首页
-        :param targetText: 翻倍按钮名称
-        :param prefixText: 翻倍按钮前方需存在的文本
-        :param minDurationSec: 隔多久才能尝试进行翻倍特权按钮点击
-        """
-        key = 'coin_fanbei'
-        lastTs = self.getStateValue(key, 0)  # 上一次查看翻倍特权的时间戳,单位:s
-        curTs = time.time()
-        duration = curTs - lastTs
-        if duration < minDurationSec:
-            return False
-
-        self.stateDict[key] = curTs
-        self.goto_home_sub_tab()  # 跳转到 '去赚钱' 页面
-        pos, ocrStr, _ = self.findTextByOCR(targetText=targetText, prefixText=prefixText, swipeOverlayHeight=300,
-                                            height=1200, maxSwipeRetryCount=10)
-        self.tapByTuple(self.calcCenterPos(pos))
-        self.logWarn(f'kanshipin_fanbei end success={not CommonUtil.isNoneOrBlank(pos)},ocrStr={ocrStr}')
-        if back2Home:
-            self.goto_home_information_tab()  # 返回信息流页面
-        return True
 
     def zaoqi_daka(self, back2Home: bool = False):
         """
@@ -144,7 +61,8 @@ class KsAir(BDJsbBaseAir):
         if 8 < hour < 11 and cutTs - lastTs >= 10 * 60:
             self.logWarn('zaoqi_daka start')
             self.stateDict[key_ts] = cutTs
-            self.goto_home_sub_tab()
+            _, earnKeyword = self.get_earn_monkey_tab_name()
+            self.goto_home_earn_tab()
             # 8点钱 "去查看"  8-12点  "领金币"  领完金币 "去查看"
             posList, _, _ = self.findTextByOCR(targetText='领金.', prefixText='早起打卡.*金.',
                                                swipeOverlayHeight=300, height=1000)
@@ -153,7 +71,7 @@ class KsAir(BDJsbBaseAir):
                 self.tapByTuple(centerPos)  # 点击跳转进行打卡
                 self.updateStateKV(key, True)
                 self.sleep(3)
-                self.check_coin_dialog()
+                self.check_dialog(breakIfHitText=earnKeyword)
                 self.closeDialog()  # 关闭打卡成功
                 self.sleep(3)  # 等待刷新
 
@@ -184,22 +102,10 @@ class KsAir(BDJsbBaseAir):
         msg = '%s 开始挂机\napp:%s\ndeviceId=%s\n金币:%s个\n现金:%s元' % (
             model, self.pkgName if CommonUtil.isNoneOrBlank(self.appName) else self.appName, self.deviceId, coin, cash)
         NetUtil.push_to_robot(msg, self.notificationRobotDict)
-
-        # # 刷视频 爽读小说
-        self.runAction(self.video_stream_page).runAction(self.jinbi_gouhuasuan_qiandao) \
-            .runAction(self.kan_xiaoshuo).runAction(self.kan_zhibo, count=8) \
-            .runAction(self.search, count=4).runAction(self.dao_fandian_ling_fanbu) \
-            .runAction(self.shipin_biaotai).runAction(self.kan_xiaoshuo) \
-            .runAction(self.watch_ad_video, count=8, minDurationSec=0)
-        # self.runAction(self.shipin_biaotai)
-        # self.runAction(self.watch_ad_video, count=2)
-        # self.runAction(self.dao_fandian_ling_fanbu)
-        # self.runAction(self.kan_zhibo, count=6)
-        # self.runAction(self.search, count=4)
-        # self.runAction(self.kan_xiaoshuo)
+        self.runAction(self.video_stream_page)
 
     # 首页 -> '去赚钱' -> '看视频得xx元' -> 跳转视频流页面, 持续刷视频
-    def video_stream_page(self, minSec: float = 4, maxSec=10) -> float:
+    def video_stream_page(self, minSec: float = 1, maxSec=4) -> float:
         """
         信息流页面操作，比如视频流页面的不断刷视频，直到达到指定时长
         :param minSec: 每个视频停留观看的最短时长，单位：s
@@ -229,7 +135,6 @@ class KsAir(BDJsbBaseAir):
 
             cur_retry_times = 0  # 有奖励的页面则重置等待次数
             watch_secs = self.sleep(minSec=minSec, maxSec=maxSec)  # 等待，模拟正在观看视频
-            # logging.warning('%s watch_secs=%s' % (TimeUtil.getTimeStr(), watch_secs))
 
             valid_secs += watch_secs  # 累计已看视频时长
             total_secs = time.time() - startTs  # 累计耗时,单位:s
@@ -251,85 +156,6 @@ class KsAir(BDJsbBaseAir):
         获取 去赚钱 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
         return '去赚钱', '(任务中心|抵用金|现金收益|开宝箱得金币|金币收益|赚钱任务|交友广场|金币购划算)'
-
-    def dao_fandian_ling_fanbu(self, minDurationSec: int = -1,
-                               titlePattern: str = r'到.*点领饭补',  # 去赚钱页面的领取饭补item标题内容
-                               subTilePattern: str = r'(错过饭点也能领.*点击立得|明天继续领饭补)',  # 子标题内容
-                               btnText: str = r'(去查看|去领取|明天来领)',  # 取赚钱页面的领取饭补按钮名称
-                               btnText4Fanbu: str = r'领取饭补\d+金.',  # 在饭补页面,底部领取饭补按钮名称
-                               title4Fanbu: str = r'(到点领.*饭补金.|领.*补贴)'  # 饭补页面顶部标题,用于判断是否跳转成功
-                               ):
-        """
-        ks '去赚钱' -> '到饭点领饭补' 按钮 '去查看'/'去领取' ->
-        页面顶部: '到点领饭补金币'
-        饭补补贴按钮: '00:05:23 后领取夜宵补贴' / '领取饭补40金币'
-        底部按钮 '看视频'/'看直播
-
-        早饭饭补: 05:00-09:00  42金币
-        午饭饭补: 11:00-14:00 32金币
-        晚饭饭补: 17:00-20:00 36金币
-        夜宵饭补: 21:00-24:00 40金币
-
-        点击 '领取饭补xx金币' 后, 弹框 '恭喜获得夜宵补贴', '看视频再领40金币'
-        底部的 '看视频' 按钮大概可以看10个视频, 每个10~26s, 收益固定60金币
-        底部的 '看直播' 可以看10个不同的直播,每个看10s即可, 大部分10金币, 也有见过125金币的
-        若无法跳转会toast: '任务已完成,明天再来吧~'
-        """
-        key_can_do = 'key_can_watch_fanbu_video_again'
-        can_do = self.getStateValue(key_can_do, True)
-        if not can_do:
-            return
-
-        # 尝试跳转到领取饭补页面
-        self.goto_home_sub_tab()
-        pos, _, ocrResList = self.findTextByOCR(btnText, prefixText=titlePattern, swipeOverlayHeight=300, height=1400)
-        success = self.tapByTuple(self.calcCenterPos(pos))
-        if success:
-            _, earnPageKeyWord = self.get_earn_monkey_tab_name()
-            self.sleep(3)
-
-            # 尝试点击 '领取饭补42金币' 按钮
-            pos, _, ocrResList = self.findTextByOCR(btnText4Fanbu, prefixText=title4Fanbu, maxSwipeRetryCount=1)
-            success = self.tapByTuple(self.calcCenterPos(pos))
-            if success:
-                self.check_coin_dialog(breakIfHitText=title4Fanbu)  # 检测金币弹框,按需跳转查看视频,最后返回当前页面
-                self.sleep(4)  # 可能需要等待下, 下方的 '看视频'/'看直播'按钮才会显示
-
-            # 检测是否还在饭补页面
-            if not self.check_if_in_page(targetText=title4Fanbu):
-                self.logWarn(f'当前已不在饭补页面,返回首页赚钱页面')
-                if self.check_if_in_page(targetText=earnPageKeyWord):
-                    return
-
-                self.back2HomePage()  # 返回到首页
-                self.goto_home_sub_tab()  # 跳转到赚钱页面
-                return
-
-            # 点击 '看视频' 按钮
-            pos, _, ocrResList = self.findTextByOCR('^看视频', prefixText=title4Fanbu, maxSwipeRetryCount=1)
-            for loopIndex in range(10):
-                self.tapByTuple(self.calcCenterPos(pos))
-                # 此处不服用pos变量,避免需要重新ocr
-                tempPos, _, ocrResList = self.findTextByOCR('^看视频', prefixText=title4Fanbu, maxSwipeRetryCount=1)
-                if CommonUtil.isNoneOrBlank(tempPos):  # 跳转成功
-                    self.continue_watch_ad_videos(breakIfHitText=title4Fanbu)
-                else:  # 未跳转成功, 应该是不能再看了
-                    break
-
-            # 点击 '看直播' 按钮
-            self.updateStateKV(key_can_do, False)  # 视频和直播都看完了,就不在跳转领取饭补了
-            pos, _, ocrResList = self.findTextByOCR('^看直播.?$', prefixText=title4Fanbu, maxSwipeRetryCount=1)
-            self.tapByTuple(self.calcCenterPos(pos))
-            pos, _, ocrResList = self.findTextByOCR('^看直播.?$', prefixText=title4Fanbu, maxSwipeRetryCount=1)
-            if CommonUtil.isNoneOrBlank(pos):  # 跳转成功
-                self.kan_zhibo_in_page(count=14, max_sec=30)
-
-    def search(self, count: int = 1, minDurationSec: int = -1,
-               titlePattern: str = r'搜索(.*?)赚金.',
-               subTilePattern: str = r'每天最高可得.*已.*完成(\d{1,2}/\d{1,2})',
-               btnText: str = '去搜索'):
-        super().search(count=count, minDurationSec=minDurationSec, titlePattern=titlePattern,
-                       subTilePattern=subTilePattern, btnText=btnText)
 
     def shipin_biaotai(self, count: int = 36, minDurationSec: int = -1,
                        titlePattern: str = r'给视频表态赚金.',
@@ -423,7 +249,7 @@ if __name__ == '__main__':
     # KsAir(deviceId='', forceRestart=False).search()
     ksAir = KsAir(deviceId='7b65fc7a', forceRestart=False)
     # ksAir.kan_zhibo(count=8)
-    # ksAir.check_coin_dialog()
+    # ksAir.check_dialog()
 
     _, ocrStr, _ = ksAir.findTextByOCR(r'(\d+).后.*奖励', maxSwipeRetryCount=1)
     print(f'ocrStr={ocrStr}')

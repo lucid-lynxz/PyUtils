@@ -642,7 +642,7 @@ class AdbUtil(object):
         self.exeShellCmds(['wm size %sx%s' % (width, height)], deviceId, printCmdInfo)
         return self
 
-    def getDeviceInfo(self, deviceId: str = None, forceGet: bool = False) -> dict:
+    def getDeviceInfo(self, deviceId: str = None, forceGet: bool = False, hasRoot: bool = False) -> dict:
         """
         获取设备的其他信息,当前支持的key如下：
         imei:设备imei,高版本可能无法获取到
@@ -670,8 +670,8 @@ class AdbUtil(object):
             return cacheItem
 
         result = dict()
-        result['imei'] = self.getImeiInfo(deviceId)
-        result['mac'] = self.getMacAddress(deviceId)
+        result['imei'] = self.getImeiInfo(deviceId) if hasRoot else ""
+        result['mac'] = self.getMacAddress(deviceId) if hasRoot else ""
         result['android_id'], _ = self.exeShellCmds(['settings get secure android_id'], deviceId)
         result['model'], _ = self.exeShellCmds(['getprop ro.product.model'], deviceId)
         result['android_version'], _ = self.exeShellCmds(['getprop ro.build.version.release'], deviceId)

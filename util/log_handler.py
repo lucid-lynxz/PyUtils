@@ -23,7 +23,7 @@ class DefaultCustomLog(object):
         """
         使用默认配置获取日志实例
         :param name:日志名称
-        :param log_path:日志名称
+        :param log_path:日志路径
         :param level:日志级别
         :param use_stream_handler:是否输出到控制台,默认是True
         :param use_file_handler:是否保存到文件,默认是False
@@ -51,12 +51,14 @@ class LogHandlerSetting(object):
             cls,
             log_path=None,
             log_level=logging.DEBUG,
+            encoding='utf-8',
             formatter_str="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     ):
         """
         获取日志文件处理器，用于把日志写入文件
         :param log_path:日志文件完整路径, 默认用：{项目根目录}/log/{%Y-%m-%d}.log
         :param log_level: 日志级别
+        :param encoding: 编码格式,默认:utf-8
         :param formatter_str: 日志格式化
         :return:logging.FileHandler
         """
@@ -68,13 +70,12 @@ class LogHandlerSetting(object):
             log_path = os.path.join(
                 LogHandlerSetting.save_log_dir_path,
                 "log",
-                "info_log",
-                "%s.txt" % time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime()),
+                "%s.txt" % time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()),
             )
         log_dir = os.path.dirname(log_path)
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        file_handler = logging.FileHandler(log_path)
+        file_handler = logging.FileHandler(log_path, encoding=encoding)
         file_handler.setLevel(log_level)
         formatter = logging.Formatter(formatter_str)
         file_handler.setFormatter(formatter)
