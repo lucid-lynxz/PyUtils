@@ -33,7 +33,7 @@ class DyAir(BDJsbBaseAir):
         """
         获取 首页 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '首页', r'(^频道$|^关注$|^同城$|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
+        return '首页', r'(^频道$|^关注$|同城|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
 
     def perform_earn_tab_actions(self, tag: Union[str, list] = None,
                                  maxSwipeCount: int = 8,

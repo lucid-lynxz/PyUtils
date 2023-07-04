@@ -82,7 +82,7 @@ class KsAir(BDJsbBaseAir):
                     self.tapByTuple(centerPos)  # 点击进行报名
                     self.sleep(3)
                     self.closeDialog()  # 关闭打卡成功
-                self.adbUtil.back()  # 回到 '去赚钱'页面
+                self.back_until(maxRetryCount=1)  # 回到 '去赚钱'页面
 
             if back2Home:
                 self.back2HomePage()  # 返回首页
@@ -105,7 +105,7 @@ class KsAir(BDJsbBaseAir):
         self.runAction(self.video_stream_page)
 
     # 首页 -> '去赚钱' -> '看视频得xx元' -> 跳转视频流页面, 持续刷视频
-    def video_stream_page(self, minSec: float = 1, maxSec=4) -> float:
+    def video_stream_page(self, minSec: float = 2, maxSec=5) -> float:
         """
         信息流页面操作，比如视频流页面的不断刷视频，直到达到指定时长
         :param minSec: 每个视频停留观看的最短时长，单位：s
@@ -220,7 +220,7 @@ class KsAir(BDJsbBaseAir):
 
         if not success:
             self.logWarn(f'shipin_biaotai fail 因为未找到三个按钮位置信息: {completeCount}/{totalCount}')
-            self.adbUtil.back()  # 返回到 '去赚钱' 页面
+            self.back_until(maxRetryCount=1)  # 返回到 '去赚钱' 页面
             if back2Home:
                 self.back2HomePage()
             return
@@ -239,7 +239,7 @@ class KsAir(BDJsbBaseAir):
             if evaluatedCount >= count:
                 self.updateStateKV(key_can_do, False)
                 break
-        self.adbUtil.back()  # 返回去赚钱页面
+        self.back_until(maxRetryCount=1)  # 返回去赚钱页面
         if back2Home:
             self.back2HomePage()
         self.logWarn(f'shipin_biaotai end')
@@ -249,7 +249,6 @@ if __name__ == '__main__':
     # KsAir(deviceId='', forceRestart=False).search()
     ksAir = KsAir(deviceId='7b65fc7a', forceRestart=False)
     # ksAir.kan_zhibo(count=8)
-    # ksAir.check_dialog()
 
     _, ocrStr, _ = ksAir.findTextByOCR(r'(\d+).后.*奖励', maxSwipeRetryCount=1)
     print(f'ocrStr={ocrStr}')

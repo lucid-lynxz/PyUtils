@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import traceback
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
@@ -439,11 +440,15 @@ class AdbUtil(object):
             return ''
         tArr = out.split('{')
         if tArr is not None and len(tArr) >= 2:
-            arr = tArr[1].replace('}', '').split(' ')
-            pkgName, actPath = arr[len(arr) - 1].split('/')
-            if actPath.startswith('.'):
-                actPath = '%s.%s' % (pkgName, actPath)
-            return actPath.strip()
+            try:
+                arr = tArr[1].replace('}', '').split(' ')
+                pkgName, actPath = arr[len(arr) - 1].split('/')
+                if actPath.startswith('.'):
+                    actPath = '%s.%s' % (pkgName, actPath)
+                return actPath.strip()
+            except Exception as e:
+                traceback.print_exc()
+                print(f'getCurrentActivity fail out={out},devId={deviceId} {e}')
         return ''
 
     def startApp(self, appPkgName: str, activityPath: str, deviceId: str = None):
@@ -631,6 +636,16 @@ class AdbUtil(object):
         """
         event = 164 if mute else 24 if up else 25
         self.exeShellCmds(['input keyevent %s' % event], deviceId)
+        return self
+
+    def updateHybird(self, enable: bool, deviceId: str = None):
+        """
+        是否禁用快用用框架
+        adb shell pm disable-user com.miui.hybrid
+        """
+        fastAppPkgs = ['com.huawei.fastapp', ' com.miui.hybrid']
+        for pkgName in fastAppPkgs:
+            self.exeShellCmds([f'pm {"enable" if enable else "disable-user"} {pkgName}'], deviceId)
         return self
 
     def updateDeviceSzie(self, width: int, height: int, deviceId: str = None, printCmdInfo: bool = False):

@@ -4,13 +4,12 @@
 import os
 import sys
 
-sys.stdout.reconfigure(encoding='utf-8')
-
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if proj_dir not in sys.path:
     sys.path.insert(0, proj_dir)
+
 from abc import ABC, abstractmethod, ABCMeta
 import random
 import time
@@ -111,7 +110,7 @@ class AbsWoolProject(ABC, Runnable):
         if not printCmdInfo:
             return self
         try:
-            self.logger.info('%s %s:%s,deviceId=%s' % (self.model, self.appName, msg, self.deviceId))
+            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
         except Exception as e:
             traceback.print_exc()
         finally:
@@ -121,7 +120,7 @@ class AbsWoolProject(ABC, Runnable):
         if not printCmdInfo:
             return self
         try:
-            self.logger.warning(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId}')
+            self.logger.warning(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
         except Exception as e:
             traceback.print_exc()
         finally:
@@ -131,11 +130,14 @@ class AbsWoolProject(ABC, Runnable):
         if not printCmdInfo:
             return self
         try:
-            self.logger.error('%s %s:%s,deviceId=%s' % (self.model, self.appName, msg, self.deviceId))
+            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
         except Exception as e:
             traceback.print_exc()
         finally:
             return self
+
+    def common_log_info(self) -> str:
+        return ''
 
     def runAction(self, target_func, **kwargs):
         """
@@ -144,11 +146,11 @@ class AbsWoolProject(ABC, Runnable):
         try:
             target_func(**kwargs)
         except Exception as e:
-            traceback.print_exc()
+            tracebackMsg = traceback.format_exc()
             model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
             isAvailable = self.adbUtil.isAvailable(self.deviceId)
-            msg = '%s %s %s isAvailable=%s 执行方法 %s 失败 %s' % (
-                model, self.appName, self.deviceId, isAvailable, target_func.__name__, e)
+            msg = '%s %s %s isAvailable=%s 执行方法 %s 失败 %s:%s' % (
+                model, self.appName, self.deviceId, isAvailable, target_func.__name__, e, tracebackMsg)
             NetUtil.push_to_robot(msg, self.notificationRobotDict)
             self.logError(msg)
         finally:
@@ -252,7 +254,7 @@ class AbsWoolProject(ABC, Runnable):
                 curAct = self.adbUtil.getCurrentActivity(self.deviceId)
             if self.homeActPath == curAct:
                 break
-            self.adbUtil.back()
+            self.back_until(maxRetryCount=1)
             self.sleep(1)
             if funcDoAfterPressBack is not None:
                 funcDoAfterPressBack()
@@ -504,9 +506,9 @@ class AbsWoolProject(ABC, Runnable):
         """
         获取 首页 信息流页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '首页', r'(^放映厅$|^同城$|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
+        return '首页', r'(放映厅|同城|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
 
-    def check_if_in_info_stream_page(self, auto_enter_stream_page: bool = True,
+    def check_if_in_info_stream_page(self, auto_enter_stream_page: bool = False,
                                      forceRecheck: bool = False, autoCheckDialog: bool = True,
                                      ocrResList: list = None) -> bool:
         """检测当前位于信息流页面, 若当前未位于信息流页面,则自动通过 goto_home_information_tab() 跳转"""
@@ -542,24 +544,43 @@ class AbsWoolProject(ABC, Runnable):
     def back_until_info_stream_page(self, prefixText: str = None, ocrResList=None) -> bool:
         """通过按下返回键回到首页信息流页面"""
         _, pageKeyword = self.get_info_stream_tab_name()
-        return self.back_until(targetText=pageKeyword, prefixText=prefixText, ocrResList=ocrResList)
+        success = self.back_until(targetText=pageKeyword, prefixText=prefixText, ocrResList=ocrResList)
+        if success:
+            self.swipeUp()
+        return success
 
     def back_until_earn_page(self, prefixText: str = None, ocrResList=None) -> bool:
         """通过按下返回键回到赚钱页面"""
         _, pageKeyword = self.get_earn_monkey_tab_name()
         return self.back_until(targetText=pageKeyword, prefixText=prefixText, ocrResList=ocrResList)
 
-    def back_until(self, targetText: str, prefixText: str = None, ocrResList=None, maxRetryCount: int = 10,
-                   autoCheckDialog: bool = True) -> bool:
-        """不断返回直到检测到指定文本"""
+    def back_until(self, targetText: str = None, prefixText: str = None, ocrResList=None, maxRetryCount: int = 10,
+                   autoCheckDialog: bool = True, **kwargs) -> bool:
+        """
+        不断返回直到检测到指定文本,若文本为空,则仅返回指定次数
+        但最多也只能返回到首页信息流页面,不允许再继续退出
+        """
+        if CommonUtil.isNoneOrBlank(targetText):
+            targetText = self.get_info_stream_tab_name()[1]
         for _ in range(maxRetryCount):
-            if self.check_if_in_page(targetText=targetText, prefixText=prefixText, ocrResList=ocrResList,
+            if self.check_if_in_page(targetText=targetText,
+                                     prefixText=prefixText,
+                                     ocrResList=ocrResList,
                                      autoCheckDialog=False):
                 return True
+            elif self.check_if_in_info_stream_page(ocrResList=ocrResList, autoCheckDialog=False):
+                self.logWarn(f'back_until fail as in home info stream now: {targetText}')
+                return False
+
             self.adbUtil.back()  # 返回一次
+            curAct = self.adbUtil.getCurrentActivity(deviceId=self.deviceId)
+            if self.pkgName not in curAct:
+                self.startApp()
+                self.sleep(5)
+
             ocrResList = None
             if autoCheckDialog:
-                ocrResList = self.check_dialog()  # 关闭弹框
+                ocrResList = self.check_dialog(canDoOtherAction=True, breakIfHitText=targetText, **kwargs)  # 关闭弹框
         return False
 
     # 跳转子tab页面,默认是 '去赚钱' 页面
@@ -585,6 +606,7 @@ class AbsWoolProject(ABC, Runnable):
 
                 random.seed()
                 self.adbUtil.updateVolume(mute=True)  # 开启静音
+                self.adbUtil.updateHybird(enable=False)  # 禁用快应用
                 # self.adbUtil.updateDeviceSzie(1080, 1920)
                 if self.dim > 0:
                     self.adbUtil.exeShellCmds(['settings put system screen_brightness_mode 0'])  # 关闭自动亮度
@@ -600,10 +622,10 @@ class AbsWoolProject(ABC, Runnable):
                             break
                         else:
                             self.sleep(2)
-                    self.check_dialog(breakIfHitText=keyword)
+                    self.check_dialog(breakIfHitText=keyword, canDoOtherAction=True)
                     if self.forceRestart and index <= 1:
                         self.goto_home_sub_tab(sleepSecsInPage=5)
-                        self.check_dialog(breakIfHitText=earnKeyword)
+                        self.check_dialog(breakIfHitText=earnKeyword, canDoOtherAction=True)
 
                     if not self.forceRestart:
                         break
@@ -660,8 +682,8 @@ class AbsWoolProject(ABC, Runnable):
         :return (int,int)
         """
         infoDict = self.adbUtil.getDeviceInfo(self.deviceId)
-        width = infoDict['ov_width']
-        height = infoDict['ov_height']
+        width = CommonUtil.convertStr2Int(infoDict['ov_width'], 1080)
+        height = CommonUtil.convertStr2Int(infoDict['ov_height'], 1920)
         return round(x / width), round(y / height)
 
     @abstractmethod

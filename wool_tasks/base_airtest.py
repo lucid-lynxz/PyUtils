@@ -5,9 +5,11 @@ import os
 import sys
 import traceback
 
+from util.NetUtil import NetUtil
+
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
-proj_dir = os.path.dirname(os.path.abspath(__file__))
+proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if proj_dir not in sys.path:
     sys.path.insert(0, proj_dir)
 
@@ -174,19 +176,39 @@ class AbsBaseAir(AbsWoolProject):
         self.text(inputKW, search=False)  # 输入关键字,进行搜索
         self.sleep(2)
 
+        pos, ocrStr, ocrResList = self.findTextByOCR(targetText=inputKW, subfixText=r'搜索',
+                                                     height=800, maxSwipeRetryCount=1)
+        if CommonUtil.isNoneOrBlank(pos):
+            img_path = self.saveScreenShot(f'search_by_input_fail_input_fail', autoAppendDateInfo=True)
+            self.logWarn(f'search_by_input fail 未输入成功,kw={inputKW},img_path={img_path}')
+            return False
+
         # 检测下拉提示列表
         success: bool = False
         for checkIndex in range(3):
-            pos, ocrStr, ocrResList = self.findTextByOCR(hintListKeyword, height=800, maxSwipeRetryCount=1)
+            pos, ocrStr, ocrResList = self.findTextByOCR(hintListKeyword, prefixText=inputKW,
+                                                         height=800, maxSwipeRetryCount=1)
             success = self.tapByTuple(self.calcCenterPos(pos))
+            self.logWarn(f'search_by_input 尝试匹配搜索有奖提示语 success={success},ocrStr={ocrStr}')
             if not success:  # 未找到 '搜索有奖' 时,表明对关键字无要求,直接点击比输入值更长的文本即可
-                pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, keyword)
+                pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, keyword, prefixText='搜索')
                 success = self.tapByTuple(self.calcCenterPos(pos))
                 if not success:
-                    pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'%s.+' % inputKW)
-                    success = self.tapByTuple(self.calcCenterPos(pos))
+                    pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'%s.+' % inputKW, prefixText=inputKW)
+                    pos = self.calcCenterPos(pos)
+                    self.logWarn(f'search_by_input 查找比输入更长的提示语 pos={pos}')
+                    success = self.tapByTuple(pos)
+                    if not success:
+                        pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'搜索')
+                        pos = self.calcCenterPos(pos)
+                        self.logWarn(f'search_by_input fail 直接点击 "搜索" 按钮: pos={pos}')
+                        success = self.tapByTuple(pos)
+
+                if self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=r'浏览\d+秒可得搜索金币'):
+                    success = True
 
             if not success:
+                self.logWarn(f'search input kw fail wait 3s:{inputKW}')
                 self.sleep(3)
             else:
                 self.logWarn(f'search input kw success:{inputKW}, ocrStr={ocrStr}')
@@ -478,6 +500,7 @@ class AbsBaseAir(AbsWoolProject):
 
     def findTextByOCR(self, targetText: str,
                       prefixText: str = None,
+                      subfixText: str = None,
                       fromX: int = 0, fromY: int = 0,
                       width: int = 0, height: int = 0,
                       swipeOverlayHeight: int = 100,
@@ -495,6 +518,7 @@ class AbsBaseAir(AbsWoolProject):
         每次截图前会屏幕向上滑动 height 高度, 然后截取 (fromX,fromY) -> (fromX+width,fromY+height) 长条形区域图片进行OCR
         :param targetText: 必填,要识别的文本正则表达式, 若为空, 则返回的是区域截图的ocr识别结果, pos列表为空
         :param prefixText: 要求在 targetText 之前应存在的字符串正则表达式,若为空,则表示不做判断
+        :param subfixText: 要求在 targetText 之后应存在的字符串正则表达式,若为空,则表示不做判断
         :param fromX: 区域截图左上角的x坐标,默认(0,0)
         :param fromY: 区域截图左上角的Y坐标,默认(0,0)
         :param width: 区域截图宽度,0或负数表示截图到屏幕右侧边缘
@@ -542,12 +566,13 @@ class AbsBaseAir(AbsWoolProject):
             screen = self.snapshot()  # 截屏
             if screen is None:
                 self.logError(f'findTextByOCR fail as screenshot return null')
-                return None, None, None
+                return None, '', None
             img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图, 整体耗时0.15s左右
 
             cnocr_result = self.cnocrImpl.ocr(img)  # cnocr进行解析, 实测耗时大概0.2s
             posList, ocr_str_result, targetDict = self.findTextByCnOCRResult(cnocr_result, targetText=targetText,
                                                                              prefixText=prefixText,
+                                                                             subfixText=subfixText,
                                                                              fromX=fromX, fromY=fromY,
                                                                              appendStrFlag=appendStrFlag,
                                                                              ignoreCase=ignoreCase,
@@ -600,6 +625,7 @@ class AbsBaseAir(AbsWoolProject):
         return targetTextPattern
 
     def findTextByCnOCRResult(self, cnocr_result: list, targetText: str, prefixText: str = None,
+                              subfixText: str = None,
                               fromX: int = 0, fromY: int = 0, autoConvertQuotes: bool = True,
                               appendStrFlag: str = ' ', ignoreCase: bool = True,
                               printCmdInfo: bool = False) -> tuple:
@@ -609,6 +635,7 @@ class AbsBaseAir(AbsWoolProject):
         :param cnocr_result: 根据cnocr框架识别得到的结果,若为空,则返回失败
         :param targetText: 必填,要识别的文本正则表达式, 若为空, 则返回的是区域截图的ocr识别结果, pos列表为空
         :param prefixText: 要求在 targetText 之前应存在的字符串正则表达式,若为空,则表示不做判断
+        :param subfixText: 要求在 targetText 之后应存在的字符串正则表达式,若为空,则表示不做判断
         :param fromX: 区域截图左上角的x坐标,默认(0,0)
         :param fromY: 区域截图左上角的Y坐标,默认(0,0)
         :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
@@ -621,33 +648,43 @@ class AbsBaseAir(AbsWoolProject):
             第三个元素dict: cnocr识别到的该文本对应的其他信息dict,包含 text/score/position
         """
         if CommonUtil.isNoneOrBlank(cnocr_result):
-            return None, None, None
-        hit: bool = False  # 是否匹配到目标文字
+            return None, '', None
+
+        if CommonUtil.isNoneOrBlank(targetText):
+            return None, self.composeOcrStr(cnocr_result), None
+
         targetDict: dict = None  # 目标文本信息, 包含 text/score/position
         ocr_str_result: str = ''  # 最后一次ocr识别的文本
+        hitTargetText: bool = False  # 是否匹配到目标文字
         hitPrefixText: bool = CommonUtil.isNoneOrBlank(prefixText)
+        hitSubfixText: bool = CommonUtil.isNoneOrBlank(subfixText)
         targetTextPattern = self._make_re_compile_obj(targetText, ignoreCase)
         prefixTextPattern = self._make_re_compile_obj(prefixText, ignoreCase)
+        subfixTextPattern = self._make_re_compile_obj(subfixText, ignoreCase)
 
         for index in range(len(cnocr_result)):
             dictItem: dict = cnocr_result[index]
             t = dictItem.get('text', '')
             ocr_str_result = '%s%s%s' % (ocr_str_result, appendStrFlag, t)
 
+            # 匹配前置文本
             if not hitPrefixText:
                 resultList = prefixTextPattern.findall(t)
-                if not CommonUtil.isNoneOrBlank(resultList):  # 匹配到前置文本
-                    hitPrefixText = True
-                    continue
-
-            if not hitPrefixText or hit:
+                hitPrefixText = not CommonUtil.isNoneOrBlank(resultList)
                 continue
 
-            # 匹配到目标文本后
-            resultList = None if targetTextPattern is None else targetTextPattern.findall(t)
-            hit = not CommonUtil.isNoneOrBlank(resultList)
-            if hit:
-                targetDict = dictItem
+            # 匹配目标文本
+            if not hitTargetText:
+                resultList = targetTextPattern.findall(t)
+                hitTargetText = not CommonUtil.isNoneOrBlank(resultList)
+                if hitTargetText:
+                    targetDict = dictItem
+                continue
+
+            # 匹配后置文本
+            if not hitSubfixText:
+                resultList = None if subfixTextPattern is None else subfixTextPattern.findall(t)
+                hitSubfixText = not CommonUtil.isNoneOrBlank(resultList)
 
         # 偏移得到屏幕中的绝对坐标
         posList = None if targetDict is None else targetDict.get('position', None)
@@ -660,16 +697,19 @@ class AbsBaseAir(AbsWoolProject):
         if autoConvertQuotes:
             ocr_str_result = ocr_str_result.replace('＂', '"').replace('“', '"').replace('”', '"')
 
-        valid = not CommonUtil.isNoneOrBlank(posList)
+        valid = not CommonUtil.isNoneOrBlank(posList) and hitSubfixText
         if printCmdInfo or valid:
             self.logWarn(
-                f'findTextByCnOCRResult {valid} '
-                f'targetText={targetText},prefixText={prefixText},ocr_str={ocr_str_result}')
+                f'findTextByCnOCRResult {valid},hitSubfixText={hitSubfixText}'
+                f',targetText={targetText},prefixText={prefixText},subfix={subfixText}'
+                f',ocr_str={ocr_str_result}')
+        if not valid:
+            return None, ocr_str_result, None
         return posList, ocr_str_result, targetDict
 
     @log_wrap(print_caller=True, exclude_arg=['self', 'ocrResList'])
     def check_if_in_page(self, targetText: str, prefixText: str = None, ocrResList=None, height: int = 0,
-                         maxRetryCount: int = 2, autoCheckDialog: bool = True, minOcrLen: int = 20) -> bool:
+                         maxRetryCount: int = 1, autoCheckDialog: bool = True, minOcrLen: int = 20) -> bool:
         """
         检测当前是否在指定的页面
         :param targetText:页面上必须存在的信息,正则表达式,若为空,则直接返回True
@@ -690,23 +730,28 @@ class AbsBaseAir(AbsWoolProject):
             else:  # 复用原先的ocr结果
                 pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText)
 
+            if not CommonUtil.isNoneOrBlank(pos):  # 找到目标文本
+                return True
+
+            if maxRetryCount <= 1:  # 只允许匹配一次,则直接返回
+                return False
+
+            # 检测文本长度
             if CommonUtil.isNoneOrBlank(ocrResStr) or len(ocrResStr) <= minOcrLen:
                 self.logWarn(f'check_if_in_page fail ocrResStr is too short,wait:ocrResStr={ocrResStr}')
-                self.sleep(5)
+                ocrResList = None
+                self.sleep(2)
                 continue
 
-            if CommonUtil.isNoneOrBlank(pos):  # 未找到目标文本
-                img_path = self.saveScreenShot(f'未找到_{targetText}_{prefixText}_{index}', autoAppendDateInfo=True)
-                self.logWarn(
-                    f'check_if_in_page 未找到:{targetText}, index={index},prefixText={prefixText},'
-                    f'img_path={img_path}\nocrResStr={ocrResStr}')
-                if autoCheckDialog:
-                    ocrResList = self.check_dialog(breakIfHitText=targetText)  # 可能是有弹框覆盖, 此处不做弹框检测,避免死循环
-                else:
-                    self.sleep(2)  # 可能是未加载完成,等待2s再试
-                    ocrResList = None  # 置空,下一轮强制重新ocr
+            img_path = self.saveScreenShot(f'未找到_{targetText}_{prefixText}_{index}', autoAppendDateInfo=True)
+            self.logWarn(
+                f'check_if_in_page 未找到:{targetText}, index={index},prefixText={prefixText},'
+                f'img_path={img_path}\nocrResStr={ocrResStr}')
+            if autoCheckDialog:
+                ocrResList = self.check_dialog(breakIfHitText=targetText)  # 可能是有弹框覆盖, 此处不做弹框检测,避免死循环
             else:
-                return True
+                self.sleep(2)  # 可能是未加载完成,等待2s再试
+                ocrResList = None  # 置空,下一轮强制重新ocr
         return False
 
     def calcCenterPos(self, ltrb: list) -> tuple:
@@ -725,7 +770,7 @@ class AbsBaseAir(AbsWoolProject):
         centerY = rt[1] + (rb[1] - rt[1]) / 2
         return centerX, centerY
 
-    def tapByTuple(self, posTuple: tuple, deviceId: str = None, times: int = 1, sleepSec: float = 1.5,
+    def tapByTuple(self, posTuple: tuple, deviceId: str = None, times: int = 1, sleepSec: float = 3,
                    printCmdInfo: bool = False) -> bool:
         return self.adbUtil.tapByTuple(posTuple, deviceId=deviceId, times=times, sleepSec=sleepSec,
                                        printCmdInfo=printCmdInfo)
@@ -751,6 +796,8 @@ class AbsBaseAir(AbsWoolProject):
         lastStreamTs: float = self.getStateValue(AbsBaseAir.key_lastStreamTs, 0)  # 上次跳转的时间戳
         curTs: float = time.time()
         if curTs - lastStreamTs >= minStreamSec:
+            self.logWarn(
+                f'canDoOthersWhenInStream true minStreamSec={minStreamSec},lastStreamTs={lastStreamTs},curTs={curTs}')
             if autoUpdate:
                 self.updateStateKV(AbsBaseAir.key_lastStreamTs, curTs)
             return True
@@ -795,10 +842,10 @@ class AbsBaseAir(AbsWoolProject):
                 if not CommonUtil.isNoneOrBlank(filterFuncNames) and funcName not in filterFuncNames:
                     continue
 
-                self.logWarn(f'perform_earn_tab_actions action: {funcName}')
+                # self.logWarn(f'perform_earn_tab_actions action: {funcName}')
                 consumed = item(baseAir=self, ocrResList=ocrResList, breakIfHitText=earnKeyword)
                 if consumed:
-                    self.logWarn(f'perform_earn_tab_action consumed: {funcName}')
+                    self.logWarn(f'perform_earn_tab_actions consumed: {funcName}')
                     if not self.check_if_in_earn_page(autoCheckDialog=True):
                         if self.check_if_in_info_stream_page():
                             self.goto_home_earn_tab()
@@ -809,6 +856,7 @@ class AbsBaseAir(AbsWoolProject):
                         if not self.check_if_in_earn_page(autoCheckDialog=True):
                             self.logWarn(f'当前已不在赚钱页面,退出继续执行赚钱任务')
                             break
+                        self.sleep(2)  # 页面信息可能变化, 等待一会再ocr
                         ocrResList = self.getScreenOcrResult()
             self.back_until_earn_page(ocrResList=ocrResList)  # 返回到赚钱页面
             self.swipeUp(minDeltaY=1000, maxDeltaY=1000, keepVerticalSwipe=True, durationMs=1500)  # 下滑一页
@@ -819,12 +867,21 @@ class AbsBaseAir(AbsWoolProject):
             self.back_until_info_stream_page()  # 返回信息流页面
         return self
 
+    def common_log_info(self) -> str:
+        if self.airtest_device is None:
+            return ''
+        serialNo = self.airtest_device.serialno
+        if self.deviceId != serialNo:
+            NetUtil.push_to_robot(f'当前设备号与air dev序列号不符,serialNo={serialNo},deviceId={self.deviceId}',
+                                  self.notificationRobotDict)
+        return ''
+
 
 if __name__ == '__main__':
     air = AbsBaseAir(deviceId='0A221FDD40006J')
-    pos, ocr_str, _ = air.findTextByOCR('看小说', swipeOverlayHeight=300,
-                                        height=1200, saveDirPath='H:/wool_cache/', )
-    print('pos=%s' % pos)
-    cx, cy = air.calcCenterPos(pos)
+    pos1, ocr_str, _ = air.findTextByOCR('看小说', swipeOverlayHeight=300,
+                                         height=1200, saveDirPath='H:/wool_cache/', )
+    print('pos=%s' % pos1)
+    cx, cy = air.calcCenterPos(pos1)
     print('cx,cy=%s,%s' % (cx, cy))
     air.adbUtil.tap(cx, cy)

@@ -8,7 +8,7 @@ import traceback
 
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
-proj_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if proj_dir not in sys.path:
     sys.path.insert(0, proj_dir)
 import random
@@ -35,7 +35,7 @@ class BDJsbBaseAir(AbsBaseAir):
     def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
         return super().check_info_stream_valid(forceRecheck=forceRecheck)
 
-    @log_wrap()
+    @log_wrap(exclude_arg=['self', 'ocrResList'])
     def get_earning_info(self, coinPattern: str = r'金.收益\s*(\d+)\s*',
                          cashPatter: str = r'现金收益\s*(\d+\.?\d+)\s*',
                          ocrResList: list = None,
@@ -104,10 +104,10 @@ class BDJsbBaseAir(AbsBaseAir):
         """
         获取 首页 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '首页', r'(^放映厅$|^同城$|^热榜TOP|^搜索：|^热搜：|^直播卖货|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
+        return '首页', r'(放映厅|同城|^热榜TOP|^搜索：|^热搜：|^抢首评|^社会榜TOP.*|作品原声|来一发弹幕)'
 
     def onRun(self, **kwargs):
-        ocrResList = self.check_dialog()  # 检测可能存在的弹框,如:青少年模式
+        ocrResList = self.check_dialog(breakIfHitText=self.get_info_stream_tab_name()[1])  # 检测可能存在的弹框,如:青少年模式
         coin, cash = self.get_earning_info(ocrResList=ocrResList)  # 记录当前收益值
         self.updateStateKV('coin_begin', coin)
         self.updateStateKV('cash_begin', cash)
@@ -125,6 +125,7 @@ class BDJsbBaseAir(AbsBaseAir):
         if not inInfoStreamPage:
             inInfoStreamPage = self.goto_home_information_tab(enableByRestartApp=True)
         if inInfoStreamPage or self.check_if_in_info_stream_page():
+            self.swipeUp()
             super().onRun(**kwargs)  # 刷视频
         else:
             img_path = self.saveScreenShot('', autoAppendDateInfo=True)
@@ -244,7 +245,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 self.logWarn('已完成看直播:complete=%s,total=%s' % (completeCount, totalCount))
 
         if autoBack2Home:
-            self.adbUtil.back()  # 当前位于去赚钱页面,直接返回一次即可到首页
+            self.back_until(maxRetryCount=1)  # 当前位于去赚钱页面,直接返回一次即可到首页
 
     @log_wrap()
     def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
@@ -265,24 +266,44 @@ class BDJsbBaseAir(AbsBaseAir):
         if not inZhiboHomePage:
             return
 
+        completeCount, totalCount = self.get_rest_chance_count(title=r'看直播最高送\d+金.', subTitle=r'\d+/\d+',
+                                                               cnocr_result=self.getScreenOcrResult())
+        if totalCount >= completeCount > 0:
+            count = totalCount - completeCount
+        if count <= 0:
+            return
+
         w, h = self.getWH()
         for index in range(count):  # 观看直播视频
             # 随便点击一个
+            self.logWarn(f'kan_zhibo_in_page index={index},随机点一个视频 start')
             posX = w * 4 / 5 if index % 2 == 1 else w / 3
             self.tapByTuple((posX, h / 2))  # 优先点击第一个
             # 检测已不在直播列表首页: 判断是否跳转直播页面成功
-            inZhiboHomePage = self.check_if_in_page(targetText=zhiboHomePageTitle, height=500, autoCheckDialog=False)
+            inZhiboHomePage = self.check_if_in_page(targetText=zhiboHomePageTitle, height=500, autoCheckDialog=True)
             self.logWarn(
                 f'kan_zhibo_in_page 跳转:{not inZhiboHomePage},count={count},sec={max_sec},title={zhiboHomePageTitle}')
             if inZhiboHomePage:  # 未跳转到直播详情页面
                 self.swipeUp(durationMs=1000, minDeltaY=h / 2, maxDeltaY=h / 2)  # 上滑,观看下一个直播
                 continue
             else:  # 跳转直播详情成功
+                self.logWarn(f'kan_zhibo_in_page continue_watch_ad_videos index={index} start')
                 self.continue_watch_ad_videos(maxVideos=1, max_secs=max_sec + index,
                                               breakIfHitText=zhiboHomePageTitle)  # 观看直播
+                self.logWarn(f'kan_zhibo_in_page continue_watch_ad_videos index={index} end')
+
+            ocrResList = self.getScreenOcrResult()
+            if self.check_if_in_earn_page(ocrResList=ocrResList, autoCheckDialog=False):
+                self.logWarn(f'kan_zhibo_in_page fail,当前已回到赚钱任务页面')
+                return
+            elif self.check_if_in_info_stream_page(ocrResList=ocrResList, auto_enter_stream_page=False,
+                                                   autoCheckDialog=False):
+                self.logWarn(f'kan_zhibo_in_page fail,当前已回到首页')
+                return
+
             if count > 1 and index % 2 == 1:
                 # inZhiboHomePage: bool = self.check_if_in_page(targetText=zhiboHomePageTitle, height=500)
-                self.logWarn(f'直播列表 上滑一次 index={index}/{count}')
+                self.logWarn(f'kan_zhibo_in_page 直播列表 上滑一次 index={index}/{count}')
                 self.swipeUp(durationMs=1000, minDeltaY=h / 2, maxDeltaY=h / 2)  # 上滑,观看下一个直播
         self.back_until_earn_page()  # 退出直播首页列表,返回到去赚钱页面
         if autoBack2Home:
@@ -300,11 +321,16 @@ class BDJsbBaseAir(AbsBaseAir):
         if CommonUtil.isNoneOrBlank(ocrResList):
             ocrResList = self.getScreenOcrResult()
         _, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
+        if CommonUtil.isNoneOrBlank(ocrStr):
+            ocrStr = self.composeOcrStr(ocrResList)
+
         pattern = re.compile(waitSecKeyword)
         result = pattern.findall(ocrStr)
         if CommonUtil.isNoneOrBlank(result):
             waitSecKeyword = r'.*(\d{2}):(\d{2})'
             pos, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
+            if CommonUtil.isNoneOrBlank(ocrStr):
+                ocrStr = self.composeOcrStr(ocrResList)
             pattern = re.compile(waitSecKeyword)
             result = pattern.findall(ocrStr)
             hit = not CommonUtil.isNoneOrBlank(result)
@@ -339,39 +365,47 @@ class BDJsbBaseAir(AbsBaseAir):
             maxVideos = 10
 
         deltaSec: float = max(6.0, max_secs - min_secs)
-        ocrResList = None
         for i in range(maxVideos):
+            ocrResList = self.getScreenOcrResult()
+            startTs: float = time.time()
             if not CommonUtil.isNoneOrBlank(breakIfHitText) and self.check_if_in_page(ocrResList=ocrResList,
                                                                                       targetText=breakIfHitText,
                                                                                       autoCheckDialog=False):
                 break
-            self.sleep(min_secs)  # 先观看一会,倒计时信息也有可能是晚几秒才出现的
+            elif self.check_if_in_earn_page(ocrResList=ocrResList, autoCheckDialog=False):
+                self.logWarn(f'continue_watch_ad_videos fail as in earn page now')
+                break
+            elif self.check_if_in_info_stream_page(ocrResList=ocrResList,
+                                                   auto_enter_stream_page=False,
+                                                   autoCheckDialog=False):
+                self.logWarn(f'continue_watch_ad_videos fail as in home info stream page now')
+                break
+            # self.sleep(min_secs)  # 先观看一会,倒计时信息也有可能是晚几秒才出现的
 
             # 获取剩余观看时长,并进行等待
-            startTs: float = time.time()
-            ocrResList = self.getScreenOcrResult()
             extra_wait_secs = self.get_rest_watch_ad_videos_secs(ocrResList=ocrResList)
-            extra_wait_secs = max(0.0, extra_wait_secs - (time.time() - startTs) + 1)
+            exitAfterSleep: bool = extra_wait_secs > 0.1
+            extra_wait_secs = max(0, int(extra_wait_secs - (time.time() - startTs) + 1))
             if extra_wait_secs > 0:
                 self.logWarn(f'continue_watch_ad_videos find extra_wait_secs={extra_wait_secs}秒')
                 self.sleep(extra_wait_secs)
 
             deltaSec = deltaSec - (time.time() - startTs)
             deltaSec = max(deltaSec, 6)  # 至少再额外等待一会
+            totalLoopCount = int(deltaSec / 2)
             self.logWarn(
-                f'continue_watch_ad_videos index={i},deltaSec={deltaSec}秒,extra_wait_secs={extra_wait_secs}秒')
+                f'continue_watch_ad_videos index={i},deltaSec={deltaSec}秒,extra_wait_secs={extra_wait_secs}秒,totalLoopCount={totalLoopCount}')
 
             # 返回前先检测金币是否领取成功
             ocrResList = self.getScreenOcrResult()
-            for loopIndex in range(int(deltaSec / 2)):
+            for loopIndex in range(totalLoopCount):
                 pos, _, ocrResList = self.findTextByCnOCRResult(cnocr_result=ocrResList,
                                                                 targetText=r'(^已领取|已成功领取奖励|领取成功|^已完成$|^直播已结束$)')
-                if not CommonUtil.isNoneOrBlank(pos):
-                    self.logWarn(f'已领取了奖励,尝试退出观看广告 index={loopIndex}')
-                    self.adbUtil.back()  # 尝试退出
-                    self.logWarn(f'已领取了奖励并返回一次,尝试关闭弹框')
-                    ocrResList = self.check_dialog(canDoOtherAction=False)
-                    self.logWarn(f'已领取了奖励并返回一次,关闭弹框结束')
+                if exitAfterSleep or not CommonUtil.isNoneOrBlank(pos):
+                    self.logWarn(f'continue_watch_ad_videos 已领取了奖励,尝试退出观看广告 index={loopIndex}')
+                    if self.back_until(maxRetryCount=1, targetText=breakIfHitText):  # 尝试退出
+                        return self
+                    # self.check_dialog(canDoOtherAction=True, breakIfHitText=breakIfHitText)
                     break
 
                 # 检测是否尚未观看完毕
@@ -382,38 +416,46 @@ class BDJsbBaseAir(AbsBaseAir):
                 startTs = time.time()
                 extra_wait_secs = self.get_rest_watch_ad_videos_secs(ocrResList=ocrResList, max_secs=30)
                 extra_wait_secs = extra_wait_secs - (time.time() - startTs)
-                if extra_wait_secs <= 0:
+                if extra_wait_secs <= 0.1:
                     # 检测是否已退出了视频页面
                     if self.check_if_in_page(targetText=breakIfHitText, ocrResList=ocrResList, autoCheckDialog=False):
-                        self.logWarn(f'当前已回到直播首页,无需继续等待: {breakIfHitText}')
+                        self.logWarn(f'continue_watch_ad_videos 当前已回到直播首页,无需继续等待: {breakIfHitText}')
                         break
                     else:
-                        self.logWarn(f'未检测到剩余时长,尝试返回一次 index={loopIndex}')
-                        self.adbUtil.back()  # 可能跳转了新页面,尝试返回上一页
-                        self.logWarn(f'未检测到剩余时长,尝试关闭弹框start')
-                        ocrResList = self.check_dialog(canDoOtherAction=False)
-                        self.logWarn(f'未检测到剩余时长,尝试关闭弹框end')
+                        if self.check_if_in_earn_page(ocrResList=ocrResList):
+                            self.logWarn(f'continue_watch_ad_videos 当前已回到赚钱页面,无需继续尝试,退出')
+                            return self
+                        elif self.check_if_in_info_stream_page(ocrResList=ocrResList):
+                            self.logWarn(f'continue_watch_ad_videos 当前已回到信息流首页,无需继续尝试,退出')
+                            return self
+                        self.logWarn(f'continue_watch_ad_videos 未检测到剩余时长,尝试返回一次 index={loopIndex}')
+                        self.back_until(maxRetryCount=1)  # 可能跳转了新页面,尝试返回上一页
+                        self.logWarn(f'continue_watch_ad_videos 未检测到剩余时长,尝试关闭弹框start')
+                        ocrResList = self.check_dialog(canDoOtherAction=True, breakIfHitText=breakIfHitText)
+                        self.logWarn(f'continue_watch_ad_videos 未检测到剩余时长,尝试关闭弹框end')
                 else:  # 尚未看完视频,继续观看
-                    self.logWarn(f'检测到剩余时长 {extra_wait_secs},尝试等待start index={loopIndex}')
+                    self.logWarn(
+                        f'continue_watch_ad_videos 检测到剩余时长 {extra_wait_secs},尝试等待start index={loopIndex}')
                     self.sleep(extra_wait_secs)
-                    self.logWarn(f'检测到剩余时长 {extra_wait_secs},尝试等待end')
+                    self.logWarn(f'continue_watch_ad_videos 检测到剩余时长 {extra_wait_secs},尝试等待end')
                     ocrResList = self.getScreenOcrResult()
-                    self.logWarn(f'检测到剩余时长 {extra_wait_secs},等待完成并重新ocr')
+                    self.logWarn(f'continue_watch_ad_videos 检测到剩余时长 {extra_wait_secs},等待完成并重新ocr')
                     continue
 
         self.back_until(targetText=breakIfHitText, maxRetryCount=3, autoCheckDialog=True)  # 尝试返回2次即可
         # ocrResList = self.check_dialog(breakIfHitText=breakIfHitText, canDoOtherAction=True)
         return self
 
-    @log_wrap()
-    def check_if_in_info_stream_page(self, auto_enter_stream_page: bool = True,
-                                     forceRecheck: bool = False, autoCheckDialog: bool = True) -> bool:
+    @log_wrap(exclude_arg=['self', 'ocrResList'])
+    def check_if_in_info_stream_page(self, auto_enter_stream_page: bool = False,
+                                     forceRecheck: bool = False, autoCheckDialog: bool = True,
+                                     ocrResList: list = None) -> bool:
         tabName, keywordInPage = self.get_info_stream_tab_name()
         valid = super().check_if_in_info_stream_page(auto_enter_stream_page=auto_enter_stream_page,
-                                                     autoCheckDialog=autoCheckDialog)
-        self.logWarn('check_current_at_info_stream_page start valid=%s' % valid)
+                                                     autoCheckDialog=autoCheckDialog, ocrResList=ocrResList)
+        self.logWarn('check_if_in_info_stream_page start valid=%s' % valid)
 
-        key = f'check_current_at_info_stream_page_{keywordInPage}'
+        key = f'check_if_in_info_stream_page{keywordInPage}'
         state: int = self.getStateValue(key, 0)  # 上一次检测处于特定页面的结果 0-未知(未检测过) 1-处于指定页面 -1-未处于指定页面
         forceRecheck = not valid or forceRecheck or state != 1
 
@@ -427,7 +469,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 if auto_enter_stream_page:
                     self.back_until_info_stream_page()  # 回到首页
                     valid = self.goto_home_information_tab()  # 尝试进入到信息流页面
-            self.logWarn('check_current_at_info_stream_page end valid=%s' % valid)
+            self.logWarn('check_if_in_info_stream_page end valid=%s' % valid)
             self.updateStateKV(key, 1 if valid else -1)
             return valid
         return state == 1
@@ -527,15 +569,17 @@ class BDJsbBaseAir(AbsBaseAir):
 
                 # 未能第二次点击tab名称,可能无法回到页面起始位置,因此手动做N次下滑操作
                 if not self.tapByTuple(pos):  # 首页是视频流, 无需下滑, 否则观看的是已看过的视频
-                    for j in range(10):
-                        self.swipeDown(maxDeltaY=1500)
+                    for j in range(5):
+                        self.swipeDown(maxDeltaY=1000)
+                        self.check_dialog(breakIfHitText=targetPageKeyword)  # 可能随时都有弹框出现,每次都进行检测
             return inTargetPage
         except Exception as e:
             traceback.print_exc()
+            tracebackMsg = traceback.format_exc()
             img_path = self.saveScreenShot('exception_goto_sub_tab_%s' % name, autoAppendDateInfo=True)
             model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
-            msg = '%s %s %s\ngoto_home_sub_tab exception name=%s,prefixText=%s,targetPageKeyword=%s\nimg_path=%s' % (
-                model, self.appName, self.deviceId, name, prefixText, targetPageKeyword, img_path)
+            msg = '%s %s %s\ngoto_home_sub_tab exception name=%s,prefixText=%s,targetPageKeyword=%s\nimg_path=%s\ntracebackMsg=%s' % (
+                model, self.appName, self.deviceId, name, prefixText, targetPageKeyword, img_path, tracebackMsg)
             self.logWarn(msg)
             NetUtil.push_to_robot(msg, self.notificationRobotDict)
 
@@ -734,7 +778,7 @@ class BDJsbBaseAir(AbsBaseAir):
                         ocrResList = None
                         continue
                     elif loopIndex <= 4:
-                        self.adbUtil.back()  # 尝试通过返回取消弹框
+                        self.back_until(maxRetryCount=1)  # 尝试通过返回取消弹框
                         ocrResList = None
                         continue
                     else:  # 若通过返回键无法取消弹框,则重启
@@ -795,7 +839,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 success = self.tapByTuple(self.calcCenterPos(pos))  # 立即领取会跳转到看视频页面
                 if success:
                     self.continue_watch_ad_videos(breakIfHitText=keywordInNovelDetail)  # 看视频,最后会返回小说页面
-                    # self.adbUtil.back()  # 返回到小说页面
+                    # self.back_until(maxRetryCount=1)  # 返回到小说页面
 
                 self.swipeLeft()  # 首次阅读时会有引导提示, 左滑一次可以关闭, 即使没有引导,左滑也可以作为翻页操作
                 self.adbUtil.tap(500, 500)  # ks在引导页面无法通过左滑关闭,因此点击一次
@@ -813,7 +857,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 success = self.tapByTuple(self.calcCenterPos(pos))  # 立即领取会跳转到看视频页面
                 if success:
                     self.continue_watch_ad_videos(breakIfHitText=keywordInNovelDetail)  # 持续观看广告视频
-                    # self.adbUtil.back()  # 返回到小说阅读页面
+                    # self.back_until(maxRetryCount=1)  # 返回到小说阅读页面
                 sec = self.sleep(minSec=3, maxSec=6) + 1  # 随机读一会
 
                 # 确定当前仍在阅读页面, 若不是则按下返回键
@@ -825,12 +869,12 @@ class BDJsbBaseAir(AbsBaseAir):
                         success = self.tapByTuple(self.calcCenterPos(pos))  # 会跳转到看视频页面
                         if success:
                             self.continue_watch_ad_videos(breakIfHitText=keywordInNovelDetail)
-                            # self.adbUtil.back()  # 返回阅读页面
+                            # self.back_until(maxRetryCount=1)  # 返回阅读页面
                         break
                     elif i <= 3:  # 可能被其他弹框遮住了关键信息,因此等待一会
                         self.sleep(3)
                     else:
-                        self.adbUtil.back()  # 返回到小说阅读页面
+                        self.back_until(maxRetryCount=1)  # 返回到小说阅读页面
                         self.sleep(1)
                         # 可能会弹框:  "继续观看" "放弃奖励"
                         pos, _, ocrResList = self.findTextByOCR('^继续观看', prefixText=r'再看\d+秒.{0,5}可获得奖励',
@@ -838,7 +882,7 @@ class BDJsbBaseAir(AbsBaseAir):
                         if not CommonUtil.isNoneOrBlank(pos):
                             self.tapByTuple(self.calcCenterPos(pos))
                             self.continue_watch_ad_videos(breakIfHitText=keywordInNovelDetail)
-                            # self.adbUtil.back()
+                            # self.back_until(maxRetryCount=1)
                             # self.sleep(1)
                         else:
                             _, targetKeyword = self.get_earn_monkey_tab_name()  # 去赚钱页面关键字
@@ -855,7 +899,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 # 若已达到阅读时长要求,则退出当前小说的阅读返回小说首页
                 curNovelSecs = curNovelSecs + sec
                 if curNovelSecs >= eachNovelSec:
-                    self.adbUtil.back()
+                    self.back_until(maxRetryCount=1)
                     # 可能底部会弹出 '加入书架' 弹框, 点击加入,弹框消失后会自动返回一次, 有可能是居中弹框
                     pos, _, ocrResList = self.findTextByOCR('^加入书架$', prefixText='^暂不加入$', maxSwipeRetryCount=1)
                     if not self.tapByTuple(self.calcCenterPos(pos)):
@@ -892,8 +936,8 @@ class BDJsbBaseAir(AbsBaseAir):
         :param ocrResList: cnorcr识别结果,避免重复截图识别,若为None则会重新截图及ocr
         :param fromX: ocrResList 非 None 时有效, 用于表示 ocrResList 的在屏幕上的偏移量
         :param fromY: 同上
-        :param retryCount: 检测次数
-        :param breakIfHitText: 观看广告视频返回到指定页面时,要停止继续返回,默认是None表示不检测
+        :param retryCount: 最多检测次数,若一轮未命中任何dialog,则会直接退出
+        :param breakIfHitText: 观看广告视频返回到指定页面时,要停止继续返回,默认是None会自动提取首页关键字
         :param kwargs: 目前支持: 'canDoOtherAction'
         :return list: 最后一次cnocr识别结果
         """
@@ -901,6 +945,9 @@ class BDJsbBaseAir(AbsBaseAir):
             ocrResList = self.getScreenOcrResult()
             fromX = 0
             fromY = 0
+
+        if CommonUtil.isNoneOrBlank(breakIfHitText):
+            breakIfHitText = self.get_info_stream_tab_name()[1]
 
         canDoOtherAction: bool = kwargs.get('canDoOtherAction', True)
         checkFuncList = TaskManager.getTaskList('check_dialog', taskLifeCycle=TaskLifeCycle.custom)
@@ -911,12 +958,13 @@ class BDJsbBaseAir(AbsBaseAir):
         maxHitFuncCount = 3  # 最终只允许连续命中上次,超过就跳过该函数,因此可能识别出错了
         while True:
             self.logWarn(
-                f'check_dialog loop start,canDoOtherAction={canDoOtherAction},ocrStr={self.composeOcrStr(ocrResList)}')
+                f'check_dialog loop start,canDoOtherAction={canDoOtherAction},breakIfHitText={breakIfHitText}'
+                f',ocrStr={self.composeOcrStr(ocrResList)}')
             consumed: bool = False
             funcSize: int = len(checkFuncList)
             for item in checkFuncList:
                 funcName = item.__name__
-                self.logWarn(f'check_dialog try: {funcName},total={funcSize}')
+                # self.logWarn(f'\tcheck_dialog try: {funcName},total={funcSize}')
                 if lastHitFuncCount >= maxHitFuncCount:
                     self.logWarn(f'lastHitFuncName={lastHitFuncName},hitCnt={lastHitFuncCount},skip current')
                     lastHitFuncName = None
@@ -927,8 +975,9 @@ class BDJsbBaseAir(AbsBaseAir):
                                 fromX=fromX, fromY=fromY, *args, **kwargs)
                 if consumed:
                     self.sleep(2)
-                    self.logWarn(f'check_dialog consumed {retry}/{retryCount}: {funcName}')
                     ocrResList = self.getScreenOcrResult()  # 重新ocr并继续执行后续的按钮
+                    self.logWarn(f'check_dialog consumed {retry}/{retryCount}: {funcName} '
+                                 f'next ocrStr={self.composeOcrStr(ocrResList)}')
                     if lastHitFuncName is None or funcName == lastHitFuncName:
                         lastHitFuncName = funcName
                         lastHitFuncCount = lastHitFuncCount + 1
