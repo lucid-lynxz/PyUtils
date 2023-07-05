@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import traceback
+from typing import Union
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
@@ -463,13 +464,18 @@ class AdbUtil(object):
         self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
         return self
 
-    def killApp(self, appPkgName, deviceId: str = None):
+    def killApp(self, appPkgName: Union[str, None], deviceId: str = None):
         """
-        kill掉指定的app进程
+        kill掉指定的app进程, 若appPkgName为空,则表示kill所有三方程序
         """
-        if CommonUtil.isNoneOrBlank(appPkgName):
-            return self
-        self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId)
+        if CommonUtil.isNoneOrBlank(appPkgName):  # kill所有三方进程
+            runningProcessInfo = self.exeShellCmds(cmdArr=['ps |grep u0'], deviceId=deviceId)[0]
+            pkgs = self.getAllPkgs("3")
+            for pkg in pkgs:
+                if CommonUtil.isNoneOrBlank(runningProcessInfo) or pkg in runningProcessInfo:
+                    self.exeShellCmds(['am force-stop %s' % pkg], deviceId)
+        else:
+            self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId)
         return self
 
     def isAppRunning(self, appPkgName: str, deviceId: str = None) -> bool:
@@ -607,6 +613,14 @@ class AdbUtil(object):
         self.exeShellCmds(['input keyevent 26'], deviceId)
         return self
 
+    def screenOff(self, off: bool = True, deviceId: str = None):
+        """
+        点亮或者关闭屏幕
+        224 点亮屏幕  223 熄灭屏幕
+        """
+        self.exeShellCmds([f'input keyevent {"223" if off else "224"}'], deviceId)
+        return self
+
     def pointerLocation(self, value: int = 1, deviceId: str = None, printCmdInfo: bool = False) -> int:
         """
         开启/关闭 开发者选项 -> 指针位置选项
@@ -724,4 +738,5 @@ if __name__ == '__main__':
     # pprint.pprint(adbUtil.getDeviceInfo())
     # adbUtil.back()
     # print('--->%s' % adbUtil.pointerLocation(0))
-    print(f'curAct={adbUtil.getCurrentActivity(deviceId="7b65fc7a")}')
+    # print(f'curAct={adbUtil.getCurrentActivity(deviceId="7b65fc7a")}')
+    adbUtil.killApp(appPkgName=None)

@@ -153,8 +153,8 @@ def pk_jinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
          '点击即领,手慢无'
     按钮: '去领取'  右上角有关闭按钮
     """
-    targetText = r'^点击即领.手慢.'
-    prefixText = r'^你有\d+PK金币待领取$'
+    targetText = r'点击即领.手慢.'
+    prefixText = r'^你有\d+PK金币.*待领取'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.closeDialog(r'bd_assets/tpl1685198790981.png')

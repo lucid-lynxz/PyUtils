@@ -224,9 +224,8 @@ class AbsWoolProject(ABC, Runnable):
         self.adbUtil.startApp(self.pkgName, homeActPath)
         return self
 
-    def killApp(self):
-        if not CommonUtil.isNoneOrBlank(self.pkgName):
-            self.adbUtil.killApp(self.pkgName)
+    def killApp(self, allApp: bool = False):
+        self.adbUtil.killApp(None if allApp else self.pkgName)
         return self
 
     def back2HomePage(self, funcDoAfterPressBack=None):
@@ -645,7 +644,7 @@ class AbsWoolProject(ABC, Runnable):
         self.onFinish()  # 执行完成
 
         # 测试完成后, kill调进程,并开始下一个task的执行
-        self.killApp()
+        self.killApp(allApp=True)
         self.logWarn('self.next=%s' % self.next)
         if isinstance(self.next, AbsWoolProject):
             self.sleep(self.sleepSecBetweenProjects)
@@ -656,7 +655,7 @@ class AbsWoolProject(ABC, Runnable):
             if self.dimOri > 0:
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness_mode 1'])  # 开启自动亮度
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness %s' % self.dimOri])  # 恢复原屏幕亮度
-            self.adbUtil.power(deviceId=self.deviceId)  # 关闭手机屏幕
+            self.adbUtil.screenOff()  # 关闭手机屏幕
 
     def convert2RelPos(self, x: int, y: int, digits: int = 3) -> tuple:
         """
