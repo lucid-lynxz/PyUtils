@@ -42,14 +42,13 @@ logger.setLevel(logging.WARN)
 
 class AbsBaseAir(AbsWoolProject):
     __metaclass__ = ABCMeta
-    key_minStreamSecs = 'key_minStreamSecs'  # 信息流页面需要刷多久后才允许执行其他操作,默认5min
-    key_lastStreamTs = 'key_lastStreamTs'  # 上次刷信息流时跳转的时间戳,单位:s
 
     def __init__(self, deviceId: str, pkgName: str = '',
                  splashActPath: str = '',
                  homeActPath: str = '',
                  appName: str = '',
                  totalSec: int = 180,
+                 minInfoStreamSec: int = 180,
                  forceRestart: bool = False):
 
         self.poco = None
@@ -67,6 +66,7 @@ class AbsBaseAir(AbsWoolProject):
                          appName=appName,
                          deviceId=deviceId,
                          totalSec=totalSec,
+                         minInfoStreamSec=minInfoStreamSec,
                          forceRestart=forceRestart)
 
     def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
@@ -786,31 +786,37 @@ class AbsBaseAir(AbsWoolProject):
     def onRun(self, **kwargs):
         self.runAction(self.informationStreamPageAction, totalSec=self.totalSec, func=self.check_info_stream_valid)
 
-    def canDoOthersWhenInStream(self, autoUpdate: bool = True) -> bool:
+    def canDoOthersWhenInStream(self) -> bool:
         """
         当前正在刷信息流页面时,是否允许跳转到其他页面执行刷金币操作
         在信息流页面每刷一页就会重新计算一次
         :param autoUpdate:检测到允许跳转时, 是否刷新时间戳,默认:True
         """
         minStreamSec: int = self.getStateValue(AbsBaseAir.key_minStreamSecs, 0)  # 最短间隔时长,单位:s
-        lastStreamTs: float = self.getStateValue(AbsBaseAir.key_lastStreamTs, 0)  # 上次跳转的时间戳
+        inStramSec: int = self.getStateValue(AbsBaseAir.key_in_stram_sec, 0)  # 已连续刷信息流的时长,单位:s
+        lastStreamTs: float = self.getStateValue(AbsBaseAir.key_lastStreamTs, 0)  # 上次跳转的时间戳, 单位:s
         curTs: float = time.time()
-        if curTs - lastStreamTs >= minStreamSec:
+        if inStramSec >= minStreamSec:
             self.logWarn(
-                f'canDoOthersWhenInStream true minStreamSec={minStreamSec},lastStreamTs={lastStreamTs},curTs={curTs}')
-            if autoUpdate:
-                self.updateStateKV(AbsBaseAir.key_lastStreamTs, curTs)
+                f'canDoOthersWhenInStream true minStreamSec={minStreamSec},inStramSec={inStramSec}'
+                f',lastStreamTs={lastStreamTs},curTs={curTs}')
             return True
         else:
             return False
 
-    def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
-        """检测当前信息流页面是否有必要挂机(主要是判断是否有奖励)"""
-        if self.canDoOthersWhenInStream():
+    def check_info_stream_valid(self, forceRecheck: bool = False) -> tuple:
+        """
+        当前在信息流页面,检测是否可执行赚钱任务,默认是每5min可跳转赚钱任务一次
+        :return tuple: (bool,bool)
+                        第一个元素表示当前时候仍在信息流页面
+                        第二个元素表示是否有跳转执行赚钱任务
+        """
+        performEarnActions: bool = self.canDoOthersWhenInStream()
+        if performEarnActions:
             self.perform_earn_tab_actions()
             self.back_until_info_stream_page()  # 返回首页
             forceRecheck = True  # 可能跳转新页面了,需要重新检测
-        return self.check_if_in_info_stream_page(forceRecheck=forceRecheck)
+        return self.check_if_in_info_stream_page(forceRecheck=forceRecheck), performEarnActions
 
     @log_wrap(print_out_obj=False)
     def perform_earn_tab_actions(self, tag: Union[str, list] = 'earn_page_action', maxSwipeCount: int = 8,

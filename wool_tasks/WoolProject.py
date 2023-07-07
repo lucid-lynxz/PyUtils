@@ -26,6 +26,10 @@ from util.log_handler import DefaultCustomLog
 class AbsWoolProject(ABC, Runnable):
     __metaclass__ = ABCMeta
 
+    key_minStreamSecs = 'key_minStreamSecs'  # 信息流页面需要刷多久后才允许执行其他操作,默认5min
+    key_lastStreamTs = 'key_lastStreamTs'  # 上次刷信息流时跳转的时间戳,单位:s
+    key_in_stram_sec = 'key_stram_sec'  # 本轮已连续刷信息流时长,单位:s, 默认要求满5min才可跳转执行其他任务
+
     """
     封装了基类实用方法:
     1. updateDeviceId(str) 更新实用的设备号
@@ -46,6 +50,7 @@ class AbsWoolProject(ABC, Runnable):
                  forceRestart: bool = False,
                  appName: str = '',
                  totalSec: int = 180,
+                 minInfoStreamSec: int = 180,
                  sleepSecBetweenProjects: int = 0,
                  cacheDir: str = ''):
         """
@@ -55,7 +60,8 @@ class AbsWoolProject(ABC, Runnable):
         :param deviceId: 要运行的设备序列号,目前支持android,若为空,则只有一台可用设备时可自动识别,若有多台,则adbUtil等工具类不会初始化
         :param forceRestart: 是否要强制重启app
         :param appName: app可读名称
-        :param totalSec: 挂机时长, 单位: s, 默认180s
+        :param totalSec: 至少需要挂机的总时长, 单位: s, 默认180s
+        :param minInfoStreamSec: 至少需要刷信息流的时长 单位: s, 默认180s
         :param sleepSecBetweenProjects: 执行下一个project前需要等待的时长, 单位: s
         :param cacheDir: 缓存目录路径,主要用于存储ocr截图和日志等
         """
@@ -92,12 +98,16 @@ class AbsWoolProject(ABC, Runnable):
         self.dimOri: int = -1  # 设备初始的亮度
 
         self.next: AbsWoolProject = None  # 下一个需要执行的项目
+        self.minInfoStreamSec: int = minInfoStreamSec
         self.totalSec: int = totalSec
         self.sleepSecBetweenProjects: int = sleepSecBetweenProjects
         self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
 
     def initStateDict(self):
-        pass
+        self.updateStateKV(AbsWoolProject.key_minStreamSecs, 5 * 60)  # 间隔5min
+        self.updateStateKV(AbsWoolProject.key_lastStreamTs, 0)
+        self.updateStateKV(AbsWoolProject.key_in_stram_sec, 0)
+        return self
 
     def updateStateKV(self, key: str, value: object):
         self.stateDict[key] = value
@@ -423,24 +433,48 @@ class AbsWoolProject(ABC, Runnable):
         :param minSec: 每个视频停留观看的最短时长，单位：s
         :param maxSec: 每个视频停留观看的最长时长，单位：s
         :param maxRatio: 若始终无法跑够 totalSec 时长, 最多跑 totalSec * maxRatio 后必须退出
-        :param func: 用于计算当前信息流页面是否需要挂机, func()的执行可能比较耗时,有可能会有页面跳转,因此minSec/maxSec可适当小点
+        :param func: 按需跳转去赚钱页面执行其他赚钱任务, 然后返回信息流页面,并返回当前时候在信息页面bool值
+                    fun() -> tuple(bool,bool) 依次表示: 当前是否在信息页面, 是否有执行赚钱任务
+                    func()的执行可能比较耗时,有可能会有页面跳转,因此minSec/maxSec可适当小点
         """
         totalSec = self.totalSec if totalSec <= 0 else totalSec
         self.logWarn(
             'informationStreamPageAction totalSec=%s,deviceId=%s,appName=%s' % (totalSec, self.deviceId, self.appName))
 
-        valid_duration = 0  # 有效的信息流耗时
         ts_start = time.time()
-        max_total_sec = totalSec * maxRatio  # 最多运行1.5倍时长,超时后退出
+        total_stream_secs = 0  # 累计已刷信息流时长,单位:s
+        cur_stream_secs: float = 0  # 本次连续刷信息流时长,单位:s
+        max_total_sec = totalSec * maxRatio  # 挂机总时长运行1.5倍时长,超时后退出
+
         while True:
-            if func is None or func():  # 当前视频页面有效(有奖励),可以进行挂机
-                sec = self.sleep(minSec=minSec, maxSec=maxSec)  # 等待，模拟正在观看视频
-                valid_duration = valid_duration + sec  # 挂机的有效总耗时
+            inInfoStreamPage: bool = True  # 是否在信息流页面
+            performEarnActions: bool = False  # 是否跳转执行了赚钱任务
+
+            if func is not None:
+                inInfoStreamPage, performEarnActions = func()
+
+            # 跳转执行过赚钱任务后,重新统计连续刷信息流时长
+            starTs = time.time()
+            if performEarnActions:
+                cur_stream_secs = 0
+                self.updateStateKV(AbsWoolProject.key_lastStreamTs, starTs)
+
+            if inInfoStreamPage:  # 当前视频页面有效(有奖励),可以进行挂机
+                self.sleep(minSec=minSec, maxSec=maxSec)  # 等待，模拟正在观看视频
+                sec = time.time() - starTs
+
+                total_stream_secs = total_stream_secs + sec  # 刷视频流的总耗时
+                cur_stream_secs = cur_stream_secs + sec  # 挂机的有效总耗时
+                self.updateStateKV(AbsWoolProject.key_in_stram_sec, cur_stream_secs)
+            else:
+                self.back_until_info_stream_page()
 
             # 计算总耗时，若超过max_total_sec，则强制退出
             total_duration = time.time() - ts_start  # 总耗时
 
-            if valid_duration >= totalSec or total_duration >= max_total_sec:
+            if total_stream_secs >= self.minInfoStreamSec and total_duration >= self.totalSec:
+                break
+            elif total_duration >= max_total_sec:
                 break
 
             # 视频观看结束后，上滑切换到下一个视频

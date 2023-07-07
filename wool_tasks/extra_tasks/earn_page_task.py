@@ -294,6 +294,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     # 检测 '一键领取' 按钮, 偶尔 '键' 会识别为 '健', 偶尔 '一' 会识别为空白
     pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(^.?键领取$|^·?健领取$)',
                                    prefixText='^认真阅读.金.')
+    baseAir.logWarn(f'kan_xiaoshuo 检测一键领取 ocrStr={baseAir.composeOcrStr(ocrResList)}')
     if baseAir.tapByTuple(pos):  # 直接点击,仅有toast提示结果而已
         ocrResList = baseAir.getScreenOcrResult()
 
@@ -362,6 +363,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
                 for _ in range(10):
                     pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'领取金币',
                                                    prefixText=r'阅读赚金币')
+                    baseAir.logWarn(f'kan_xiaoshuo 检测领取金币 ocrStr2={baseAir.composeOcrStr(ocrResList)}')
                     if baseAir.tapByTuple(pos):  # 若可以领金币,则会弹出 "我知道了" 弹框
                         baseAir.check_dialog(canDoOtherAction=False, breakIfHitText=keywordInNovelDetail)
                     else:
@@ -385,7 +387,8 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     hasReadSecs = hasReadSecs + curNovelSecs
     baseAir.updateStateKV(key, hasReadSecs)
     baseAir.forLoop(baseAir.swipeDown, times=5, sec=0)
-    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=r'(^.键领取$|^·健领取$)', prefixText='^认真阅读赢金.')
+    pos, ocrStr, ocrResList = _find_pos(baseAir, None, targetText=r'(.键领取|·健领取)', prefixText='认真阅读赢金.')
+    baseAir.logWarn(f'kan_xiaoshuo end 再次检测一键领取 ocrStr3={ocrStr}')
     baseAir.tapByTuple(pos)  # 直接点击,仅有toast提示结果而已
     baseAir.back_until_earn_page()  # 返回到去赚钱页面
     return True

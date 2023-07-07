@@ -27,12 +27,8 @@ using(os.path.dirname(__file__))
 
 
 class BDJsbBaseAir(AbsBaseAir):
-    def initStateDict(self):
-        self.updateStateKV(AbsBaseAir.key_minStreamSecs, 5 * 60)  # 间隔5min
-        self.updateStateKV(AbsBaseAir.key_lastStreamTs, 0)
-        return self
 
-    def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
+    def check_info_stream_valid(self, forceRecheck: bool = False) -> tuple:
         return super().check_info_stream_valid(forceRecheck=forceRecheck)
 
     @log_wrap(exclude_arg=['self', 'ocrResList'])
@@ -57,7 +53,10 @@ class BDJsbBaseAir(AbsBaseAir):
             img_path = self.saveScreenShot('get_earning_info_fail', autoAppendDateInfo=True)
             self.logWarn(f'get_earning_info fail as goto_home_sub_tab fail,img_path={img_path}')
             return coin, cash
-        for i in range(3):  # 尝试重启获取收益情况
+
+        lastCoin = 0
+        lastCash = 0
+        for i in range(5):  # 尝试重启获取收益情况
             # self.closeDialog()
             self.swipeUp(minDeltaY=600)  # 上滑一次
             self.saveScreenShot('查看收益全图', autoAppendDateInfo=True)
@@ -78,10 +77,17 @@ class BDJsbBaseAir(AbsBaseAir):
             coin = int(coin)
 
             if coin > 0 and cash > 0:
-                break
-            elif i <= 2:
+                # 由于有金币滚动动画, 因此可能识别到大于0的值也不是最终数据
+                # 此处至少进行两次检测, 两次数值一致,则认为数据可靠
+                if i > 0 and lastCoin == coin and lastCash == cash:
+                    break
+                lastCash = cash
+                lastCoin = coin
+                sleep(2)
+                continue
+            elif i <= 3:
                 self.check_dialog(breakIfHitText=earnPageKeyword)  # 每次都尝试检测一次弹框,可能会有升级等弹框
-                self.sleep(2)
+                self.sleep(5)
             else:  # 当前有可能跳转到其他子集页面了,导致无法识别到收益情况,进行重启重试
                 img_path = self.saveScreenShot('get_earning_info_fail', autoAppendDateInfo=True)
                 # 重启app

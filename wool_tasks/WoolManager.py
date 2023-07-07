@@ -87,7 +87,7 @@ class WoolManager(BaseConfig):
             connected = adbUtil.isAvailable(deviceId)
             print('device:%s is connected=%s' % (deviceId, connected))
             if connected:
-                # 格式: 包名={app名称},{挂机时长,单位:s},{首页路径,可放空}
+                # 格式: 包名={app名称},{刷信息流的最短时长,单位:s},{挂机最短总时长,单位:s},{首页路径,可放空}
                 # 获取待挂机的app信息,并拼接最终task
                 project: typing.Optional[AbsWoolProject] = None
                 for pkgName, value in appInfoDict.items():
@@ -95,22 +95,29 @@ class WoolManager(BaseConfig):
                     arr = [] if CommonUtil.isNoneOrBlank(value) else value.split(',')
                     size = len(arr)
                     appName = arr[0] if size >= 1 else ''  # app名称
-                    totalSec = int(arr[1]) if size >= 2 else 180  # 默认刷3min
-                    homeActPath = arr[2] if size >= 3 else ''  # app首页路径
-                    print('appName=%s,totalSec=%s' % (appName, totalSec))
+                    minInfoStreamSec = int(arr[1]) if size >= 2 else 180  # 默认至少需要刷信息流3min
+                    totalSec = int(arr[2]) if size >= 3 else 180  # 默认总挂机时长至少3min
+                    homeActPath = arr[3] if size >= 4 else ''  # app首页路径
+                    print(f'appName={appName}, minInfoStreamSec={minInfoStreamSec},totalSec={totalSec}')
 
                     if KsAir.PKG_NAME == pkgName:
-                        ksjsb = KsAir(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
+                        ksjsb = KsAir(deviceId=deviceId,
+                                      totalSec=totalSec,
+                                      minInfoStreamSec=minInfoStreamSec,
+                                      forceRestart=forceRestartApp)
                         project = ksjsb if project is None else project.setNext(ksjsb)
                     elif DyAir.PKG_NAME == pkgName:
-                        dyjsb = DyAir(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
+                        dyjsb = DyAir(deviceId=deviceId, totalSec=totalSec,
+                                      minInfoStreamSec=minInfoStreamSec,
+                                      forceRestart=forceRestartApp)
                         project = dyjsb if project is None else project.setNext(dyjsb)
                     elif DragonRead.PKG_NAME == pkgName:
-                        dragonRead = DragonRead(deviceId=deviceId, totalSec=totalSec, forceRestart=forceRestartApp)
+                        dragonRead = DragonRead(deviceId=deviceId, totalSec=totalSec, minInfoStreamSec=minInfoStreamSec,
+                                                forceRestart=forceRestartApp)
                         project = dragonRead if project is None else project.setNext(dragonRead)
                     else:
                         simpleProject = WoolProjectImpl(deviceId=deviceId, pkgName=pkgName, homeActPath=homeActPath,
-                                                        forceRestart=forceRestartApp,
+                                                        forceRestart=forceRestartApp, minInfoStreamSec=minInfoStreamSec,
                                                         appName=appName, totalSec=totalSec)
                         project = simpleProject if project is None else project.setNext(simpleProject)
 

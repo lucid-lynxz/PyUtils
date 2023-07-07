@@ -20,11 +20,12 @@ auto_setup(__file__)
 class DyAir(BDJsbBaseAir):
     PKG_NAME = 'com.ss.android.ugc.aweme.lite'
 
-    def __init__(self, deviceId: str, forceRestart: bool = True, totalSec: int = 180):
+    def __init__(self, deviceId: str, forceRestart: bool = True, totalSec: int = 180, minInfoStreamSec: int = 180):
         super().__init__(deviceId=deviceId, pkgName=DyAir.PKG_NAME,
                          splashActPath='com.ss.android.ugc.aweme.splash.SplashActivity',
                          homeActPath='com.ss.android.ugc.aweme.splash.SplashActivity',
                          appName='抖音极速版',
+                         minInfoStreamSec=minInfoStreamSec,
                          totalSec=totalSec,
                          forceRestart=forceRestart)
         using(os.path.dirname(__file__))

@@ -176,7 +176,7 @@ def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
     baseAir.sleep(5)
     targetText: str = r'超值爆款'  # 超值爆款划算购
     ocrResList = baseAir.getScreenOcrResult(toY=1000)
-    if baseAir.check_if_in_page(targetText=targetText, ocrResList=ocrResList):
+    if not baseAir.check_if_in_page(targetText=targetText, ocrResList=ocrResList):
         baseAir.logWarn(f'当前未在超值爆款页面,返回上一页: {baseAir.composeOcrStr(ocrResList)}')
         baseAir.back_until(targetText=breakIfHitText, maxRetryCount=3)
         return True

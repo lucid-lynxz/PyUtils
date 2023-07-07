@@ -14,7 +14,6 @@ from airtest.core.api import *
 from airtest.core.helper import using
 
 from util.CommonUtil import CommonUtil
-from util.NetUtil import NetUtil
 from wool_tasks.base_airtest_bd_jsb import BDJsbBaseAir
 
 auto_setup(__file__)
@@ -23,10 +22,11 @@ auto_setup(__file__)
 class KsAir(BDJsbBaseAir):
     PKG_NAME = 'com.kuaishou.nebula'
 
-    def __init__(self, deviceId: str, forceRestart=True, totalSec: int = 180):
+    def __init__(self, deviceId: str, forceRestart=True, totalSec: int = 180, minInfoStreamSec: int = 180):
         super().__init__(deviceId=deviceId, pkgName=KsAir.PKG_NAME,
                          homeActPath='com.yxcorp.gifshow.HomeActivity',
                          appName='快手极速版',
+                         minInfoStreamSec=minInfoStreamSec,
                          totalSec=totalSec,
                          forceRestart=forceRestart)
         using(os.path.dirname(__file__))
@@ -89,20 +89,20 @@ class KsAir(BDJsbBaseAir):
                 self.goto_home_sub_tab(name='首页')
             self.logWarn('zaoqi_daka end')
 
-    def onRun(self, **kwargs):
-        # super().onRun(**kwargs)
-        self.updateStateKV('startTs', time.time())  # 开始执行时间
-        coin, cash = self.get_earning_info()  # 开始时的金币/现金信息
-        self.updateStateKV('coin_begin', coin)
-        self.updateStateKV('cash_begin', cash)
-
-        # 发送推送消息
-        deviceDict: dict = self.adbUtil.getDeviceInfo(self.deviceId)
-        model = deviceDict.get('model')  # 设备型号,如:pixel 5
-        msg = '%s 开始挂机\napp:%s\ndeviceId=%s\n金币:%s个\n现金:%s元' % (
-            model, self.pkgName if CommonUtil.isNoneOrBlank(self.appName) else self.appName, self.deviceId, coin, cash)
-        NetUtil.push_to_robot(msg, self.notificationRobotDict)
-        self.runAction(self.video_stream_page)
+    # def onRun(self, **kwargs):
+    #     # super().onRun(**kwargs)
+    #     self.updateStateKV('startTs', time.time())  # 开始执行时间
+    #     coin, cash = self.get_earning_info()  # 开始时的金币/现金信息
+    #     self.updateStateKV('coin_begin', coin)
+    #     self.updateStateKV('cash_begin', cash)
+    #
+    #     # 发送推送消息
+    #     deviceDict: dict = self.adbUtil.getDeviceInfo(self.deviceId)
+    #     model = deviceDict.get('model')  # 设备型号,如:pixel 5
+    #     msg = '%s 开始挂机\napp:%s\ndeviceId=%s\n金币:%s个\n现金:%s元' % (
+    #         model, self.pkgName if CommonUtil.isNoneOrBlank(self.appName) else self.appName, self.deviceId, coin, cash)
+    #     NetUtil.push_to_robot(msg, self.notificationRobotDict)
+    #     self.runAction(self.video_stream_page)
 
     # 首页 -> '去赚钱' -> '看视频得xx元' -> 跳转视频流页面, 持续刷视频
     def video_stream_page(self, minSec: float = 2, maxSec=5) -> float:

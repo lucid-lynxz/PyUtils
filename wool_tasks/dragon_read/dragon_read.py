@@ -19,11 +19,12 @@ auto_setup(__file__)
 class DragonRead(BDJsbBaseAir):
     PKG_NAME = 'com.dragon.read'
 
-    def __init__(self, deviceId: str, forceRestart: bool = True, totalSec: int = 180):
+    def __init__(self, deviceId: str, forceRestart: bool = True, totalSec: int = 180, minInfoStreamSec: int = 180):
         super().__init__(deviceId=deviceId, pkgName=DragonRead.PKG_NAME,
                          splashActPath='com.dragon.read.pages.splash.SplashActivity',
                          homeActPath='com.dragon.read.pages.main.MainFragmentActivity',
                          appName='番茄免费小说',
+                         minInfoStreamSec=minInfoStreamSec,
                          totalSec=totalSec,
                          forceRestart=forceRestart)
         using(os.path.dirname(__file__))
