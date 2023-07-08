@@ -103,10 +103,11 @@ class AbsWoolProject(ABC, Runnable):
         self.sleepSecBetweenProjects: int = sleepSecBetweenProjects
         self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
 
-    def initStateDict(self):
         self.updateStateKV(AbsWoolProject.key_minStreamSecs, 5 * 60)  # 间隔5min
         self.updateStateKV(AbsWoolProject.key_lastStreamTs, 0)
         self.updateStateKV(AbsWoolProject.key_in_stram_sec, 0)
+
+    def initStateDict(self):
         return self
 
     def updateStateKV(self, key: str, value: object):
@@ -678,18 +679,23 @@ class AbsWoolProject(ABC, Runnable):
         self.onFinish()  # 执行完成
 
         # 测试完成后, kill调进程,并开始下一个task的执行
-        self.killApp(allApp=True)
+        self.killApp()
         self.logWarn('self.next=%s' % self.next)
         if isinstance(self.next, AbsWoolProject):
             self.sleep(self.sleepSecBetweenProjects)
-            self.next.updateCacheDir(self.cacheDir).updateDeviceId(
-                self.deviceId).updateDim(self.dim, self.dimOri).setNotificationRobotDict(
-                self.notificationRobotDict).run()
+
+            minStreamSecs = self.getStateValue(AbsWoolProject.key_minStreamSecs, 5 * 60)
+            self.next.updateCacheDir(self.cacheDir) \
+                .updateStateKV(AbsWoolProject.key_minStreamSecs, minStreamSecs) \
+                .updateDeviceId(self.deviceId).updateDim(self.dim, self.dimOri) \
+                .setNotificationRobotDict(self.notificationRobotDict).run()
         else:
+            self.logWarn(f'本机已完成挂机,恢复默认设置并锁屏')
             if self.dimOri > 0:
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness_mode 1'])  # 开启自动亮度
                 self.adbUtil.exeShellCmds(['settings put system screen_brightness %s' % self.dimOri])  # 恢复原屏幕亮度
-            self.adbUtil.screenOff()  # 关闭手机屏幕
+            self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
+            self.adbUtil.screenOff(deviceId=self.deviceId)
 
     def convert2RelPos(self, x: int, y: int, digits: int = 3) -> tuple:
         """

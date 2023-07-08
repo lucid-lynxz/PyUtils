@@ -110,7 +110,7 @@ class CompressUtil(object):
         result = CommonUtil.exeCmd(
             "echo %s | %s x %s -y -aos -o%s %s" % (pCmd, self.sevenZipPath, src7zFile, dest, pCmd), printCmdInfo)
         print('result=%s' % result)
-        success = "Can't open as archive" not in result
+        success = "Can't open as archive" not in result and 'Archives with Errors: ' not in result
         return success, dest
 
 

@@ -15,6 +15,8 @@ from util.AdbUtil import AdbUtil
 from airtest.aircv import *
 from base.BaseConfig import BaseConfig
 from util.NetUtil import NetUtil
+from util.CommonUtil import CommonUtil
+from util.FileUtil import FileUtil
 
 
 class KillApp(BaseConfig):
@@ -23,11 +25,23 @@ class KillApp(BaseConfig):
     """
 
     def onRun(self):
+        # 结束上一次wool进程
+        processInfoPath = self.configParser.get('setting', 'processInfoPath')
+        pids = FileUtil.readFile(processInfoPath)
+        for pid in pids:
+            CommonUtil.killPid(pid)
+
+        # 结束手机中的app
+        appInfoList = self.configParser.getSectionKeyList('app_info')
         adbUtil: AdbUtil = AdbUtil()
         devIds = adbUtil.getAllDeviceId(onlineOnly=True)[0]
         for devId in devIds:
-            print(f'killAllApps for devId={devId}')
-            adbUtil.killApp(appPkgName=None, deviceId=devId)  # 关闭所有进程
+            print(f'killAllApps for devId={devId},pending kill appInfoList={appInfoList}')
+            if CommonUtil.isNoneOrBlank(appInfoList):  # 关闭所有进程
+                adbUtil.killApp(appPkgName=None, deviceId=devId)
+            else:
+                for appInfo in appInfoList:  # 只关闭指定进程
+                    adbUtil.killApp(appPkgName=appInfo, deviceId=devId)
             adbUtil.screenOff(deviceId=devId)  # 关闭屏幕
 
         # 发送钉钉通知
@@ -42,6 +56,6 @@ if __name__ == "__main__":
     # 默认使用当前目录下的 config.ini 文件路径
     # 通过 --config xxx.ini 传入配置文件路径
     curDirPath = os.path.abspath(os.path.dirname(__file__))
-    configPath = '%s/config.ini' % curDirPath
+    configPath = '%s/config_kill_all_apps.ini' % curDirPath
 
     KillApp(configPath, optFirst=True).run()

@@ -35,7 +35,7 @@ class TimeUtil(object):
         minutes = int(rest // 60)
         secs = int(rest % 60)
         result = '%s小时%s分%s秒' % (hour, minutes, secs)
-        return result.replace('0小时', '').replace('0分', '').replace('0秒', '')
+        return result.replace('分0秒', '分').replace('时0分', '时').replace('0小时', '')
 
     @classmethod
     def currentTimeMillis(cls) -> int:
@@ -97,3 +97,4 @@ if __name__ == '__main__':
     print(TimeUtil.convertSecsDuration(59.5))
     print(TimeUtil.convertSecsDuration(61))
     print(TimeUtil.convertSecsDuration(3600 + 358))
+    print(TimeUtil.convertSecsDuration(5260))

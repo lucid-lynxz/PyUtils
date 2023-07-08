@@ -51,6 +51,7 @@ class WoolManager(BaseConfig):
         arr = deviceIds.split(',')
         for item in arr:
             if adbUtil.isAvailable(item):
+                adbUtil.screenOff(off=False, deviceId=item)
                 result.append(item.strip())
         return result
 
@@ -66,17 +67,22 @@ class WoolManager(BaseConfig):
         deviceIds = settingDict.get('deviceIds', '')
         deviceList = self._getDeviceList(deviceIds=deviceIds)
         if CommonUtil.isNoneOrBlank(deviceList):
-            NetUtil.push_to_robot('可用设备列表为空,退出挂机,请检查', robotSection)
+            NetUtil.push_to_robot(f'可用设备列表为空,退出挂机,请检查 {self}', robotSection)
             return
 
         # 挂机完成后是否休眠本机电脑
         sleepPcAfterAll = settingDict.get('sleepPcAfterAll', 'False') == 'True'
         forceRestartApp = settingDict.get('forceRestartApp', 'False') == 'True'
         sleepSec = settingDict.get('sleepSec', 0)
+        performEarnActionDuration = int(settingDict.get('performEarnActionDuration', 5 * 60))
 
         cacheDir = settingDict.get('cacheDir', '')  # 缓存目录路径
         clearCache = settingDict.get('clearCache', 'False') == 'True'
         FileUtil.createFile('%s/' % cacheDir, clearCache)  # 按需创建缓存目录
+
+        pidInfoFile = f'{cacheDir}/processInfo.txt'
+        FileUtil.createFile(pidInfoFile)  # 创建当前进程信息
+        FileUtil.write2File(pidInfoFile, f'{os.getpid()}')
 
         LogHandlerSetting.save_log_dir_path = cacheDir
 
@@ -89,6 +95,8 @@ class WoolManager(BaseConfig):
             if connected:
                 # 格式: 包名={app名称},{刷信息流的最短时长,单位:s},{挂机最短总时长,单位:s},{首页路径,可放空}
                 # 获取待挂机的app信息,并拼接最终task
+                if forceRestartApp:
+                    adbUtil.killApp(None, deviceId=deviceId)  # 关闭所有程序
                 project: typing.Optional[AbsWoolProject] = None
                 for pkgName, value in appInfoDict.items():
                     pkgName = pkgName.split('__more__')[0]
@@ -123,6 +131,7 @@ class WoolManager(BaseConfig):
 
                 t = WoolThread(project.updateCacheDir(cacheDir)
                                .updateDim(dim)
+                               .updateStateKV(AbsWoolProject.key_minStreamSecs, performEarnActionDuration)
                                .setNotificationRobotDict(robotSection)
                                .setDefaultIme(settingDict.get('ime', ''))
                                )
@@ -158,6 +167,12 @@ class WoolManager(BaseConfig):
         NetUtil.push_to_robot(
             '完成挂机\n耗时:%s\n总秒数:%s\n电脑休眠:%s%s' % (secs_duration, int(duration), willSleepPcAfter, sleepTip),
             robotSection)
+
+        deviceList = self._getDeviceList(deviceIds=deviceIds)
+        if not CommonUtil.isNoneOrBlank(deviceList):
+            for deviceId in deviceList:
+                adbUtil.killApp(None, deviceId=deviceId, printCmdInfo=True)  # 关闭所有三方app
+                adbUtil.screenOff(deviceId=deviceId)  # 关闭手机屏幕
 
         # 电脑进行休眠省电
         if willSleepPcAfter:

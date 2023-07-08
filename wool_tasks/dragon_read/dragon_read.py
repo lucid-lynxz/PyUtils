@@ -39,7 +39,7 @@ class DragonRead(BDJsbBaseAir):
     def get_info_stream_tab_name(self) -> tuple:
         return '书城', r'(排行榜|书荒广场|热门书签|^推荐|猜你喜欢)'
 
-    def check_info_stream_valid(self, forceRecheck: bool = False) -> bool:
+    def check_info_stream_valid(self, forceRecheck: bool = False) -> tuple:
         if self.canDoOthersWhenInStream():
             self.watch_ad_video(minDurationSec=5 * 60)
             forceRecheck = True
@@ -56,6 +56,6 @@ class DragonRead(BDJsbBaseAir):
     def kan_xiaoshuo(self, jump2NovelHomeBtnText: str = r'(^看小说$|^看更多$)',
                      prefixText: str = r'[看|读]小说.*?赚金.',
                      jump2NovelDetailBtnText: str = r'(?:每读\(0/\d+\)|\d\.\d分)',
-                     keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|继续阅读下一页|\d+金.|下一章)',
+                     keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)',
                      eachNovelSec: float = 16 * 60, novelCount: int = 1):
         super().kan_xiaoshuo()

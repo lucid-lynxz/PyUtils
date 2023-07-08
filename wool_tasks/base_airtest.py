@@ -563,7 +563,11 @@ class AbsBaseAir(AbsWoolProject):
         cnocr_result: list = None  # cnocr对区域截图进行识别的原始结果对象
 
         for i in range(maxSwipeRetryCount):
-            screen = self.snapshot()  # 截屏
+            try:
+                screen = self.snapshot()  # 截屏
+            except Exception as e:
+                screen = None
+                self.logError(f'snapshot fail {e}')
             if screen is None:
                 self.logError(f'findTextByOCR fail as screenshot return null')
                 return None, '', None
@@ -790,7 +794,6 @@ class AbsBaseAir(AbsWoolProject):
         """
         当前正在刷信息流页面时,是否允许跳转到其他页面执行刷金币操作
         在信息流页面每刷一页就会重新计算一次
-        :param autoUpdate:检测到允许跳转时, 是否刷新时间戳,默认:True
         """
         minStreamSec: int = self.getStateValue(AbsBaseAir.key_minStreamSecs, 0)  # 最短间隔时长,单位:s
         inStramSec: int = self.getStateValue(AbsBaseAir.key_in_stram_sec, 0)  # 已连续刷信息流的时长,单位:s
@@ -828,9 +831,11 @@ class AbsBaseAir(AbsWoolProject):
         :param back2HomeStramTab: 执行完毕后是否回退到首页信息流页面
         :param filterFuncNames: 若非空,则只执行包含的方法
         """
-        if not self.check_if_in_earn_page() and not self.goto_home_earn_tab():
+        self.goto_home_earn_tab()
+        if not self.check_if_in_earn_page():
             self.logWarn(f'perform_earn_tab_actions fail as not in earn page')
             return self
+
         earnName, earnKeyword = self.get_earn_monkey_tab_name()
         earnFuncList = list()
         if isinstance(tag, str):

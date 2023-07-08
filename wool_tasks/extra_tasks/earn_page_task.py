@@ -80,9 +80,12 @@ def dao_fandian_ling_fanbu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText
     title4Fanbu: str = r'(到点领.*饭补金.|领.*补贴)'  # 饭补页面顶部标题,用于判断是否跳转成功
     _, earnPageKeyWord = baseAir.get_earn_monkey_tab_name()
 
+    # 尝试跳转到领取饭补页面
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=titleText,
                                         fromX=fromX, fromY=fromY)
-    baseAir.tapByTuple(pos)  # 尝试跳转到领取饭补页面
+    if not baseAir.tapByTuple(pos):
+        return False
+
     if baseAir.check_if_in_page(targetText=earnPageKeyWord, autoCheckDialog=False):  # 跳转是失败,当前仍在赚钱任务页面
         baseAir.logWarn(f'当前仍在earn页面,领饭补失败 {ocrStr}')
         baseAir.check_dialog(ocrResList=ocrResList, breakIfHitText=breakIfHitText)
@@ -127,6 +130,44 @@ def dao_fandian_ling_fanbu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText
                 baseAir.kan_zhibo_in_page(count=10, max_sec=90, autoBack2Home=False)
     baseAir.logWarn(f'到饭点...看直播 end')
     baseAir.updateStateKV(key, False)
+    return True
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                   fromX: int = 0, fromY: int = 0) -> bool:
+    """
+    ks: '去赚钱' -> '看视频得5000金币' 按钮 '领福利'
+    dy: '来赚钱' -> '看广告赚金币' 按钮 '去领取' 每5min/20min可以看一次, 不一定,偶尔也觃
+         副标题: '每5分钟完成一次广告任务,单日最高可赚20000金币'  共2行
+    """
+    minDurationSec: int = 30  # 至少间隔多久才可以再次尝试看视频, ks没限制,连续几次可能会一次限制30s, 1min或更长间隔才能继续
+    if baseAir.pkgName == 'com.ss.android.ugc.aweme.lite':  # dy 每5min可以刷一次广告
+        minDurationSec = 5 * 60
+
+    key = f'watch_ad_video_ts_{__tag}'  # 上次观看广告视频的时间戳
+    lastTs = baseAir.getStateValue(key, 0)  # 上一次观看视频广告的时间戳,单位:s
+    curTs = time.time()
+    if curTs - lastTs < minDurationSec:
+        baseAir.logWarn('watch_ad_video fail as curTs=%s,lastTs=%s,min=%s' % (curTs, lastTs, minDurationSec))
+        return False
+
+    btnText: str = r'(^领福利$|^去领取$)'
+    titleText: str = r'(^看视频得\d+金.|^看广告赚金.)'
+    subTitleText: str = r'(单日最高|广告任务)'
+    targetText: str = subTitleText
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=targetText, prefixText=titleText,
+                                        fromX=fromX, fromY=fromY)
+    if not baseAir.tapByTuple(pos):
+        return False
+
+    # 可能跳转后无广告自动返回,此时也需要重新ocr
+    if baseAir.check_if_in_earn_page(autoCheckDialog=False):
+        return True
+
+    baseAir.logWarn(f'watch_ad_video start')
+    baseAir.updateStateKV(key, curTs)  # 上一次观看视频广告的时间戳,单位:s
+    baseAir.continue_watch_ad_videos(breakIfHitText=titleText)  # 继续观看直到无法继续, 最终会返回到当前页面
     return True
 
 
@@ -280,7 +321,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     if not baseAir.tapByTuple(pos):  # 跳转到读小说页面
         baseAir.logError(f'kan_xiaoshuo 未找到按钮 {itemBtnText} {itemTitle},ocrStr={ocrStr}')
         return False
-    baseAir.sleep(3)  # 刷新比较慢, 额外等一会
+    baseAir.sleep(5)  # 刷新比较慢, 额外等一会
 
     ocrResList = baseAir.getScreenOcrResult()
     if baseAir.check_if_in_page(earnKeyword, ocrResList=ocrResList):
@@ -291,8 +332,8 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     baseAir.updateStateKV(key_last_ts, time.time())
     ocrResList = baseAir.check_dialog(breakIfHitText=breakIfHitText)  # 关闭弹框
 
-    # 检测 '一键领取' 按钮, 偶尔 '键' 会识别为 '健', 偶尔 '一' 会识别为空白
-    pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(^.?键领取$|^·?健领取$)',
+    # 检测 '一键领取' 按钮, 可能会识别为: '一键领取'/'一健领取'/'键建领取'
+    pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(.键领取|·健领取|.建领取)',
                                    prefixText='^认真阅读.金.')
     baseAir.logWarn(f'kan_xiaoshuo 检测一键领取 ocrStr={baseAir.composeOcrStr(ocrResList)}')
     if baseAir.tapByTuple(pos):  # 直接点击,仅有toast提示结果而已
@@ -306,14 +347,14 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
         baseAir.back_until_earn_page()  # 回到赚钱页面
         return True
 
-    baseAir.forLoop(baseAir.swipeUp, times=3, sec=0, durationMs=1200)  # 上滑三次
+    baseAir.forLoop(baseAir.swipeUp, times=round(random.random() * 5 + 1), sec=0, durationMs=1200)  # 上滑三次
 
     # 点击具体小说名, 跳转到小说阅读详情页面
     btnText: str = r'(?:每读\(0/\d+\)|\d\.\d分)'
     pos, _, ocrResList = _find_pos(baseAir, None, targetText=btnText, maxSwipeRetryCount=5)
     baseAir.tapByTuple(pos, sleepSec=3)  # 点击跳转到小说页面进行阅读
 
-    keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)'
+    keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)'
     if not baseAir.check_if_in_page(keywordInNovelDetail, autoCheckDialog=True):
         baseAir.logError(f'kan_xiaoshuo 跳转小说阅读详情页失败,退出读小说')
         baseAir.back_until_earn_page()  # 回到赚钱页面
@@ -330,6 +371,13 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
         baseAir.sleep(2)
         ocrResList = baseAir.check_dialog(breakIfHitText=keywordInNovelDetail, canDoOtherAction=True)  # 检测是否有红包或弹框
         baseAir.logWarn(f'kan_xiaoshuo 阅读小说检测 已读{curNovelSecs}秒: {baseAir.composeOcrStr(ocrResList)}')
+
+        # 可能误点广告, 广告又刚好是小说app,因此需要特别剔除
+        pos, _, _ = _find_pos(baseAir, ocrResList, targetText=r'(应用名称.*开发者|应用名.*版本号)')
+        if not CommonUtil.isNoneOrBlank(pos):
+            baseAir.logWarn(f'kan_xiaoshuo 检测到应用名称,尝试返回一次')
+            baseAir.back_until(targetText=None, maxRetryCount=1)
+
         baseAir.sleep(minSec=2, maxSec=4)  # 随机读一会
 
         # 解锁章节后继续阅读
@@ -356,6 +404,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
         # 若已达到阅读时长要求,则退出当前小说的阅读返回小说首页
         curNovelSecs = round(curNovelSecs + sec, 1)
         if curNovelSecs >= eachNovelSec:
+            baseAir.logWarn(f'kan_xiaoshuo 已达到阅读时长 {curNovelSecs}, eachNovelSec={eachNovelSec}')
             # 抖音需要自己点击金币,在弹框中选择 "领取金币", 快手不需要
             ocrResList = baseAir.getScreenOcrResult(toY=200)
             pos, _, _ = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'\d+金币')
@@ -369,6 +418,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
                     else:
                         break
 
+            baseAir.logWarn(f'kan_xiaoshuo 尝试返回到earn页面, 并检测加入书架等弹框')
             baseAir.back_until(targetText=itemBtnText, maxRetryCount=1)
             # 可能底部会弹出 '加入书架' 弹框, 点击加入,弹框消失后会自动返回一次, 有可能是居中弹框
             pos, _, ocrResList = baseAir.findTextByOCR('^加入书架$', prefixText='^暂不加入$', maxSwipeRetryCount=1)
@@ -387,44 +437,11 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     hasReadSecs = hasReadSecs + curNovelSecs
     baseAir.updateStateKV(key, hasReadSecs)
     baseAir.forLoop(baseAir.swipeDown, times=5, sec=0)
-    pos, ocrStr, ocrResList = _find_pos(baseAir, None, targetText=r'(.键领取|·健领取)', prefixText='认真阅读赢金.')
+    pos, ocrStr, ocrResList = _find_pos(baseAir, None, targetText=r'(.键领取|·健领取|.建领取)',
+                                        prefixText='认真阅读.金.')
     baseAir.logWarn(f'kan_xiaoshuo end 再次检测一键领取 ocrStr3={ocrStr}')
     baseAir.tapByTuple(pos)  # 直接点击,仅有toast提示结果而已
     baseAir.back_until_earn_page()  # 返回到去赚钱页面
-    return True
-
-
-@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
-                   fromX: int = 0, fromY: int = 0) -> bool:
-    """
-    ks: '去赚钱' -> '看视频得5000金币' 按钮 '领福利'
-    dy: '来赚钱' -> '看广告赚金币' 按钮 '去领取' 每5min/20min可以看一次, 不一定
-         副标题: '每5分钟完成一次广告任务,单日最高可赚20000金币'  共2行
-    """
-    minDurationSec: int = 5 * 60  # 每5分钟可再次尝试看视频
-    key = 'watch_ad_video'
-    lastTs = baseAir.getStateValue(key, 0)  # 上一次观看视频广告的时间戳,单位:s
-    curTs = time.time()
-    if curTs - lastTs < minDurationSec:
-        baseAir.logWarn('watch_ad_video fail as curTs=%s,lastTs=%s,min=%s' % (curTs, lastTs, minDurationSec))
-        return False
-
-    btnText: str = r'(^领福利$|^去领取$)'
-    titleText: str = r'(^看视频得\d+金.|^看广告赚金.)'
-    subTitleText: str = r'(单日最高|广告任务)'
-    targetText: str = subTitleText
-    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=targetText, prefixText=titleText,
-                                        fromX=fromX, fromY=fromY)
-    if not baseAir.tapByTuple(pos):
-        return False
-
-    # 可能跳转后无广告自动返回,此时也需要重新ocr
-    if baseAir.check_if_in_earn_page(autoCheckDialog=False):
-        return True
-
-    baseAir.logWarn(f'watch_ad_video start')
-    baseAir.continue_watch_ad_videos(breakIfHitText=titleText)  # 继续观看知道无法继续, 最终会返回到当前页面
     return True
 
 

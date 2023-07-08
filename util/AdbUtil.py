@@ -464,18 +464,19 @@ class AdbUtil(object):
         self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
         return self
 
-    def killApp(self, appPkgName: Union[str, None], deviceId: str = None):
+    def killApp(self, appPkgName: Union[str, None], deviceId: str = None, printCmdInfo: bool = False):
         """
         kill掉指定的app进程, 若appPkgName为空,则表示kill所有三方程序
         """
         if CommonUtil.isNoneOrBlank(appPkgName):  # kill所有三方进程
-            runningProcessInfo = self.exeShellCmds(cmdArr=['ps |grep u0'], deviceId=deviceId)[0]
+            runningProcessInfo = \
+                self.exeShellCmds(cmdArr=['ps |grep u0'], deviceId=deviceId, printCmdInfo=printCmdInfo)[0]
             pkgs = self.getAllPkgs("3")
             for pkg in pkgs:
                 if CommonUtil.isNoneOrBlank(runningProcessInfo) or pkg in runningProcessInfo:
-                    self.exeShellCmds(['am force-stop %s' % pkg], deviceId)
+                    self.exeShellCmds(['am force-stop %s' % pkg], deviceId, printCmdInfo=printCmdInfo)
         else:
-            self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId)
+            self.exeShellCmds(['am force-stop %s' % appPkgName], deviceId, printCmdInfo=printCmdInfo)
         return self
 
     def isAppRunning(self, appPkgName: str, deviceId: str = None) -> bool:

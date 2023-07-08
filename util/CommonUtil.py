@@ -52,7 +52,7 @@ class CommonUtil(object):
     @classmethod
     def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
         """
-        通过os.system(xxx) 执行命令, 吴返回信息
+        通过os.system(xxx) 执行命令, 无返回信息
         """
         if printCmdInfo:
             print("execute cmd by os.system: %s" % cmd)
@@ -191,6 +191,24 @@ class CommonUtil(object):
             return int(src)
         except ValueError:
             return defaultValue
+
+    @staticmethod
+    def killPid(pid: str):
+        """
+        结束指定pid的进程
+        """
+        if CommonUtil.isNoneOrBlank(pid):
+            return
+
+        try:
+            if CommonUtil.isWindows():
+                CommonUtil.exeCmdByOSSystem(f'taskkill /f /pid {pid}')
+            else:
+                import signal
+                os.kill(int(pid), signal.SIGKILL)
+                print(f'killPid {pid}')
+        except Exception as e:
+            print(f'killPid {pid} fail: {e}')
 
 
 if __name__ == "__main__":

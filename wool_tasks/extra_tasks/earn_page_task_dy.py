@@ -119,11 +119,14 @@ def search(baseAir: AbsBaseAir, ocrResList: list,
 
     # 确定搜索词, dy要求每次搜索词都不同,可搜索10次
     for i in range(count):
+        # 可能会弹出 添加搜索框到桌面 等弹框
+        baseAir.check_dialog(canDoOtherAction=True, breakIfHitText=breakIfHitText)
+
         index = i % len(keyword_arr)
         keyword = keyword_arr[index]
         baseAir.search_by_input(keyword, viewSec=20)
 
-        # 顶部搜索栏的 清空按钮
+        # 顶部搜索栏的清空按钮
         hit = False
         pos = baseAir.exists(
             Template(r"dyjsb/tpl1683642926933.png", record_pos=(0.294, -0.898), resolution=(1080, 2340)))
@@ -277,7 +280,7 @@ def guangjie(baseAir: AbsBaseAir, ocrResList: list,
 
     btnText: str = r'去逛街'  # 按钮名称,用于跳转到逛街页面
     title: str = r'(^逛街赚钱|逛街领金币)'  # 逛街item的标题
-    subTitle: str = r'(\d{1,2}/\d{1,2})$'  # 逛街item的子标题,用于获取可完成次数
+    subTitle: str = r'(\d{1,2}/\d{1,2})'  # 逛街item的子标题,用于获取可完成次数
     minSecEachTime: int = 90  # 每次浏览的时长,页面要求90s左右,增加加载时长等因素,留10%左右的冗余量
 
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=btnText, subfixText=subTitle,
@@ -337,7 +340,7 @@ def guangjie(baseAir: AbsBaseAir, ocrResList: list,
 
         if totalSec > minSecEachTime or beyondMaxSecs:
             if baseAir.back_until(targetText=breakIfHitText, ocrResList=ocrResList, maxRetryCount=1,
-                                  autoCheckDialog=False, needSwipeUp=True):
+                                  autoCheckDialog=True, needSwipeUp=True):
                 return True
 
             # 可能返回失败

@@ -199,7 +199,7 @@ class BDJsbBaseAir(AbsBaseAir):
                 _, targetKeyword = self.get_earn_monkey_tab_name()  # 去赚钱页面关键字
                 pos, _, _ = self.findTextByOCR(targetKeyword, maxSwipeRetryCount=1)  # 查看当前是否仍在赚钱页面
                 if CommonUtil.isNoneOrBlank(pos):
-                    self.continue_watch_ad_videos(breakIfHitText=titleText)  # 继续观看知道无法继续, 最终会返回到当前页面
+                    self.continue_watch_ad_videos(breakIfHitText=titleText)  # 继续观看直到无法继续, 最终会返回到当前页面
                 success = True
             else:
                 break
@@ -317,41 +317,53 @@ class BDJsbBaseAir(AbsBaseAir):
 
     def get_rest_watch_ad_videos_secs(self, ocrResList: list = None, max_secs: int = 180) -> int:
         """
-        查找看广告视频/直播页面中的剩余时长,目前包含两种: '倒计时00:18' 和 '26s后可领取奖励'
+        查找看广告视频/直播页面中的剩余时长,目前包含几种可能:
+            '倒计时00:18'
+            '26s后可领取奖励'
+            '60秒'
         :param ocrResList: 屏幕ocr信息
         :param max_secs: 最大有效的时长,若超出,则无效,返回-1
         :return 得到的倒计时时长信息,单位:s
         """
-        extra_wait_secs = 0  # 检测到的倒计时时长,单位:s
-        waitSecKeyword = r'(\d+).后.*奖励'
-        if CommonUtil.isNoneOrBlank(ocrResList):
-            ocrResList = self.getScreenOcrResult()
-        _, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
-        if CommonUtil.isNoneOrBlank(ocrStr):
-            ocrStr = self.composeOcrStr(ocrResList)
-
-        pattern = re.compile(waitSecKeyword)
-        result = pattern.findall(ocrStr)
-        if CommonUtil.isNoneOrBlank(result):
-            waitSecKeyword = r'.*(\d{2}):(\d{2})'
-            pos, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
+        try:
+            extra_wait_secs = 0  # 检测到的倒计时时长,单位:s
+            waitSecKeyword = r'(\d+).后.*奖励'
+            if CommonUtil.isNoneOrBlank(ocrResList):
+                ocrResList = self.getScreenOcrResult()
+            _, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
             if CommonUtil.isNoneOrBlank(ocrStr):
                 ocrStr = self.composeOcrStr(ocrResList)
+
             pattern = re.compile(waitSecKeyword)
             result = pattern.findall(ocrStr)
-            hit = not CommonUtil.isNoneOrBlank(result)
-            if hit:
-                rest_minutes = CommonUtil.convertStr2Int(result[0][0], 0)
-                rest_sec = CommonUtil.convertStr2Int(result[0][1], 0)
-                extra_wait_secs = rest_minutes * 60 + rest_sec
-        else:
-            secStr = result[0]
-            extra_wait_secs = CommonUtil.convertStr2Int(secStr, 10)
+            if CommonUtil.isNoneOrBlank(result):
+                waitSecKeyword = r'.*(\d{2}):(\d{2})'
+                pos, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
+                if CommonUtil.isNoneOrBlank(ocrStr):
+                    ocrStr = self.composeOcrStr(ocrResList)
+                pattern = re.compile(waitSecKeyword)
+                result = pattern.findall(ocrStr)
+                hit = not CommonUtil.isNoneOrBlank(result)
+                if hit:
+                    rest_minutes = CommonUtil.convertStr2Int(result[0][0], 0)
+                    rest_sec = CommonUtil.convertStr2Int(result[0][1], 0)
+                    extra_wait_secs = rest_minutes * 60 + rest_sec
+            else:
+                secStr = result[0]
+                extra_wait_secs = CommonUtil.convertStr2Int(secStr, 10)
 
-        if extra_wait_secs > max_secs:
-            extra_wait_secs = -1
-        self.logWarn(f'get_rest_watch_ad_videos_secs extra_wait_secs={extra_wait_secs},ocrStr={ocrStr}')
-        return extra_wait_secs
+            if extra_wait_secs > max_secs:
+                waitSecKeyword = r'(\d+)秒'
+                pos, ocrStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=waitSecKeyword)
+                if not CommonUtil.isNoneOrBlank(pos):
+                    extra_wait_secs = int(result[0])
+
+            if extra_wait_secs > max_secs:
+                extra_wait_secs = -1
+            self.logWarn(f'get_rest_watch_ad_videos_secs extra_wait_secs={extra_wait_secs},ocrStr={ocrStr}')
+            return extra_wait_secs
+        except Exception as e:
+            return -1
 
     @log_wrap(print_out_obj=False)
     def continue_watch_ad_videos(self, max_secs: float = 90,  # 最多要观看的时长, 之后会通过检测 '已领取' / '已成功领取奖励' 来决定是否继续观看
@@ -388,13 +400,21 @@ class BDJsbBaseAir(AbsBaseAir):
                 break
             # self.sleep(min_secs)  # 先观看一会,倒计时信息也有可能是晚几秒才出现的
 
+            # 是否需要上滑浏览
+            pos, ocrResStr, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=r'上滑浏览赚金.')
+            swipeUp: bool = not CommonUtil.isNoneOrBlank(pos)
+
             # 获取剩余观看时长,并进行等待
             extra_wait_secs = self.get_rest_watch_ad_videos_secs(ocrResList=ocrResList)
             exitAfterSleep: bool = extra_wait_secs > 0.1
             extra_wait_secs = max(0, int(extra_wait_secs - (time.time() - startTs) + 1))
             if extra_wait_secs > 0:
                 self.logWarn(f'continue_watch_ad_videos find extra_wait_secs={extra_wait_secs}秒')
-                self.sleep(extra_wait_secs)
+                totalLoopCount = int((extra_wait_secs + 5) / 5)
+                for _ in range(totalLoopCount):
+                    if swipeUp:
+                        self.swipeUp()
+                    self.sleep(5)
 
             deltaSec = deltaSec - (time.time() - startTs)
             deltaSec = max(deltaSec, 6)  # 至少再额外等待一会
@@ -730,7 +750,7 @@ class BDJsbBaseAir(AbsBaseAir):
     def kan_xiaoshuo(self, jump2NovelHomeBtnText: str = r'(^看小说$|^看更多$)',
                      prefixText: str = r'[看|读]小说.*?赚金.',
                      jump2NovelDetailBtnText: str = r'(?:每读\(0/\d+\)|\d\.\d分)',
-                     keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|继续阅读下一页|\d+金.|下一章)',
+                     keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)',
                      eachNovelSec: float = 16 * 60, novelCount: int = 1):
         """
         dy: '来赚钱' -> '看小说赚金币' -> '看更多'
@@ -755,7 +775,7 @@ class BDJsbBaseAir(AbsBaseAir):
     @log_wrap()
     def read_novel_detail(self, jump2NovelDetailBtnText: str = r'(?:每读\(0/\d+\)|\d\.\d分)',
                           jumpPrefixText: str = None,
-                          keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|继续阅读下一页|\d+金.|下一章)',
+                          keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)',
                           eachNovelSec: float = 16 * 60, novelCount: int = 1):
         """
         要求当前已在小说首页列表页, 选择具体小说进行阅读
@@ -978,7 +998,10 @@ class BDJsbBaseAir(AbsBaseAir):
                     continue
 
                 consumed = item(baseAir=self, ocrResList=ocrResList, breakIfHitText=breakIfHitText,
-                                fromX=fromX, fromY=fromY, *args, **kwargs)
+                                fromX=fromX, fromY=fromY,
+                                lastHitFuncName=lastHitFuncName,
+                                lastHitFuncCount=lastHitFuncCount,
+                                *args, **kwargs)
                 if consumed:
                     self.sleep(2)
                     ocrResList = self.getScreenOcrResult()  # 重新ocr并继续执行后续的按钮
