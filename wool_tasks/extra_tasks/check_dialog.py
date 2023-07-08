@@ -80,6 +80,22 @@ def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+        fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '抖音极速版没有响应'
+    按钮: '关闭应用'  等待
+    """
+    pos, _, _ = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'等待',
+                          prefixText=rf'{baseAir.appName}没有响应', fromX=fromX, fromY=fromY)
+    if baseAir.tapByTuple(pos):
+        baseAir.logWarn(f'anr 检测到anr弹框,尝试进行等待')
+        baseAir.sleep(5)
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def check_contacts_update_dialog(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
