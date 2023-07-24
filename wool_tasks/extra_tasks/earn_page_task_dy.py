@@ -255,7 +255,8 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
     return True
 
 
-@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+# 目前dy在达到时长后， 会持续弹框继续浏览60s,无限循环，该任务已废
+# @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def guangjie(baseAir: AbsBaseAir, ocrResList: list,
              breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """

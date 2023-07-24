@@ -51,7 +51,7 @@ def _can_do_other_action(defaultValue: bool = True, **kwargs) -> bool:
     return kwargs.get('canDoOtherAction', defaultValue)
 
 
-def _match_max_retry_count(curFuncName: str, maxHitCount: int = 3, **kwargs) -> bool:
+def _match_max_retry_count(curFuncName: str, maxHitCount: int = 2, **kwargs) -> bool:
     """
     当前方法是否已经连续触发过最大次数,若是,建议选择退出执行
     """
