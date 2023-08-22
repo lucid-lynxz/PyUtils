@@ -339,6 +339,99 @@ def gognxi_huode_manjian_quanyi(baseAir: AbsBaseAir, ocrResList: list, breakIfHi
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def gongxi_xingyun_yonghu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                          fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '恭喜成为幸运用户'
+         '平台专属福利'  '下单更优惠'
+         '15元'  '优惠券'
+         '满150元可用'  '限定优惠活动商品'
+    按钮: '立即收下'
+    下方有关闭按钮
+    """
+    targetText = r'立即收下'
+    prefixText = r'喜成为幸运用户'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog()  # 用默认的 bd_assets/tpl1685624986007.png 可匹配到
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def gouwu_najinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '当前活动页下单，立得大额金币'
+         '7288金币'
+    按钮: '立即购物拿金币'
+         '确认收货7日后到账，可用去【金币收益】 中查看'
+    右上角有关闭按钮
+    """
+    targetText = r'立即购物拿金币'
+    prefixText = r'当前活动页下单'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog(r'bd_assets/tpl1683813537693.png')
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def pengzhang_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                         fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '恭喜获得'
+         '领取膨胀优惠券机会'
+         中间是优惠券信息
+    按钮: '膨胀'
+    下方有关闭按钮
+    """
+    targetText = r'膨胀'
+    prefixText = r'领取膨胀优惠券机会'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog(r'bd_assets/tpl1684931855744.png')
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def hudong_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                      fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '参与互动，领取优惠券福利'
+    按钮: '继续互动'  ‘坚持退出’
+    下方有关闭按钮
+    """
+    targetText = r'坚持退出'
+    prefixText = r'参与互动.*优惠券'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog(r'bd_assets/tpl1685198790981.png')
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def zhubo_kaibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '你关注的主播正在开播哦'
+    按钮: '立即去看'  ‘退出直播间’
+    右上角有关闭按钮
+    """
+    targetText = r'退出直播间'
+    prefixText = r'主播正在开播'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos)
+    # if not CommonUtil.isNoneOrBlank(pos):
+    #     baseAir.closeDialog(r'bd_assets/tpl1685198790981.png')
+    #     return True
+    # return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def kan_xiaoshuo_tianjiang_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
@@ -371,6 +464,53 @@ def jiaru_paihang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
         baseAir.closeDialog()
         return True
     return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def kaitong_tongzhi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '通知设置'
+         '为保证成功过收到直播提醒，请在手机设置中开启通知、日历'
+    按钮: '开启通知' 左上角有关闭按钮
+    """
+    targetText = r'^开启通知'
+    prefixText = r'通知设置'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog()
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def wangluo_cuowu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '网络错误'
+         '当前无网络，请检查后重试'
+    按钮: '刷新'
+    """
+    targetText = r'^刷新'
+    prefixText = r'网络错误'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos)
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def xiadan_zhifu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '下单并支付'
+         '可外获得400金币'
+         中间是产品介绍
+    按钮: '去下单'
+         '放弃奖励'  '我已下单'
+    """
+    targetText = r'放弃奖励'
+    prefixText = r'下单并支付'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos)
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
@@ -600,7 +740,7 @@ def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
          '+18金币
     按钮: '领取奖励' '坚持退出'
     """
-    targetText: str = r'^领取奖励$'
+    targetText: str = r'领取奖励'
     prefixText: str = r'再看一个视频额外获得'
     pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
                                prefixText=prefixText, fromX=fromX, fromY=fromY)
