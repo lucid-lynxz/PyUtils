@@ -138,6 +138,8 @@ def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
                    fromX: int = 0, fromY: int = 0) -> bool:
     """
     ks: '去赚钱' -> '看视频得5000金币' 按钮 '领福利'
+    ks: '去赚钱' -> '看广告得2400金币' 按钮 '领福利'
+                    副标题: 当日最高赚2400金币, 0/3
     dy: '来赚钱' -> '看广告赚金币' 按钮 '去领取' 每5min/20min可以看一次, 不一定,偶尔也觃
          副标题: '每5分钟完成一次广告任务,单日最高可赚20000金币'  共2行
     """
@@ -153,12 +155,12 @@ def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
         return False
 
     btnText: str = r'(^领福利$|^去领取$)'
-    titleText: str = r'(^看视频得\d+金.|^看广告赚金.)'
+    titleText: str = r'(^看视频得\d+金.|^看广告赚金.|看广告得\d+金.)'
     subTitleText: str = r'(单日最高|广告任务)'
     targetText: str = subTitleText
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=targetText, prefixText=titleText,
                                         fromX=fromX, fromY=fromY)
-    if not baseAir.tapByTuple(pos):
+    if not baseAir.tapByTuple(pos, sleepSec=5):
         return False
 
     # 可能跳转后无广告自动返回,此时也需要重新ocr
@@ -314,14 +316,14 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     itemBtnText: str = r'(^看小说$|^看更多$)'  # 跳转到看小说首页的按钮正则名称
     itemTitle: str = r'[看|读]小说.*?赚金.'  # 看小说item信息标题
     itemSubTitle: str = ''  # r'(最高每分钟可得|精彩小说|看越多)'  # 看小说item信息标题
-    eachNovelSec: float = 8 * 60  # 每本小说阅读时长,单位:s
+    eachNovelSec: float = 6 * 60  # 每本小说阅读时长,单位:s
     earnName, earnKeyword = baseAir.get_earn_monkey_tab_name()
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=itemBtnText, prefixText=itemTitle,
                                         subfixText=itemSubTitle, fromX=fromX, fromY=fromY)
     if not baseAir.tapByTuple(pos):  # 跳转到读小说页面
         baseAir.logError(f'kan_xiaoshuo 未找到按钮 {itemBtnText} {itemTitle},ocrStr={ocrStr}')
         return False
-    baseAir.sleep(5)  # 刷新比较慢, 额外等一会
+    baseAir.sleep(30)  # 刷新比较慢, 额外等一会
 
     ocrResList = baseAir.getScreenOcrResult()
     if baseAir.check_if_in_page(earnKeyword, ocrResList=ocrResList):
@@ -410,11 +412,11 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
             pos, _, _ = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'\d+金币')
             if baseAir.tapByTuple(pos):
                 for _ in range(10):
-                    pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'领取金币',
+                    pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'(领取金币|去领取)',
                                                    prefixText=r'阅读赚金币')
                     baseAir.logWarn(f'kan_xiaoshuo 检测领取金币 ocrStr2={baseAir.composeOcrStr(ocrResList)}')
                     if baseAir.tapByTuple(pos):  # 若可以领金币,则会弹出 "我知道了" 弹框
-                        baseAir.check_dialog(canDoOtherAction=False, breakIfHitText=keywordInNovelDetail)
+                        baseAir.check_dialog(canDoOtherAction=True, breakIfHitText='阅读赚金币')
                     else:
                         break
 
@@ -437,9 +439,9 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     hasReadSecs = hasReadSecs + curNovelSecs
     baseAir.updateStateKV(key, hasReadSecs)
     baseAir.forLoop(baseAir.swipeDown, times=5, sec=0)
-    pos, ocrStr, ocrResList = _find_pos(baseAir, None, targetText=r'(.键领取|·健领取|.建领取)',
+    pos, ocrStr, ocrResList = _find_pos(baseAir, None, targetText=r'(.*键领取|·健领取|.建领取|键领取)',
                                         prefixText='认真阅读.金.')
-    baseAir.logWarn(f'kan_xiaoshuo end 再次检测一键领取 ocrStr3={ocrStr}')
+    baseAir.logWarn(f'kan_xiaoshuo end 再次检测一键领取 pos={pos},ocrStr3={ocrStr}')
     baseAir.tapByTuple(pos)  # 直接点击,仅有toast提示结果而已
     baseAir.back_until_earn_page()  # 返回到去赚钱页面
     return True

@@ -184,13 +184,21 @@ def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
         baseAir.back_until(targetText=breakIfHitText, maxRetryCount=3)
         return True
 
+    baseAir.check_dialog(breakIfHitText=breakIfHitText)
     totalSecs: int = 0  # 已浏览时长
     swipeUp: bool = True
+    cnt = 0
     while totalSecs <= secs:
         if swipeUp:
             baseAir.swipeUp(durationMs=2000)
         else:
             baseAir.swipeDown(durationMs=2000)
+
+        # 隔一段时间检测一次弹框
+        cnt = (cnt + 1) % 10
+        if cnt == 0:
+            baseAir.check_dialog(breakIfHitText=breakIfHitText)
+
         swipeUp = not swipeUp
         baseAir.sleep(0.5)
         totalSecs += 2
@@ -234,7 +242,7 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
         secs = max(int(result[0]), secs)
     secs = int(1.1 * secs)  # 额外冗余10%
 
-    baseAir.tapByTuple(pos)  # 点击跳转到浏览爆款页面
+    baseAir.tapByTuple(pos, sleepSec=10)  # 点击跳转到浏览爆款页面
     ocrResList = baseAir.getScreenOcrResult(toY=1000)
     if baseAir.check_if_in_earn_page(ocrResList=ocrResList):
         baseAir.logWarn(f'当前未跳转到新页面')
@@ -244,7 +252,7 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
     if baseAir.tapByTuple(pos):  # 尝试领取奖励
         ocrResList = baseAir.getScreenOcrResult(toY=1000)
 
-    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'浏览.金币')
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(浏览.金币|上滑继续浏览)')
     if baseAir.tapByTuple(pos):  # 尝试浏览赚金币
         totalSecs: int = 0  # 已浏览时长
         while totalSecs <= secs:
@@ -322,22 +330,30 @@ def guangjie(baseAir: AbsBaseAir, ocrResList: list,
         return False
 
     # 点击 '去逛街' 按钮,跳转到商品浏览界面
-    if not baseAir.tapByTuple(pos):
+    if not baseAir.tapByTuple(pos, sleepSec=5):
         baseAir.logWarn(f'去逛街赚钱 失败, 未找到按钮,已完成次数:{completeCount}/{totalCount}')
         return False
 
-    baseAir.sleep(5)
+    baseAir.sleep(10)
     startTs: float = time.time()
-    baseAir.check_dialog(needSwipeUp=True, breakIfHitText=breakIfHitText)
+    baseAir.check_dialog(needSwipeUp=True, breakIfHitText=breakIfHitText, guangjie_secs=secs)
     baseAir.updateStateKV(key_last_ts, curTs)
     totalSec: float = time.time() - startTs  # 本次已浏览的时长,单位: s
     maxTotalSec: float = minSecEachTime * 1.2
+    swipeUp: bool = False
     while totalSec <= 2 * minSecEachTime:
         sec = baseAir.sleep(minSec=2, maxSec=5)
         totalSec = totalSec + sec
-        baseAir.swipeUp(durationMs=2000)  # 上滑
-        beyondMaxSecs: bool = time.time() - startTs >= maxTotalSec
-        ocrResList = baseAir.check_dialog(canDoOtherAction=True, needSwipeUp=True, breakIfHitText=breakIfHitText)
+        if swipeUp:
+            baseAir.swipeUp(durationMs=2000)  # 上滑
+        else:
+            baseAir.swipeDown(durationMs=2000)  # 下滑
+        swipeUp = not swipeUp
+
+        restSecs: float = maxTotalSec - (time.time() - startTs)
+        beyondMaxSecs: bool = restSecs <= 0
+        ocrResList = baseAir.check_dialog(canDoOtherAction=True, needSwipeUp=True, breakIfHitText=breakIfHitText,
+                                          maxTotalSec=restSecs, guangjie_secs=secs)
 
         if totalSec > minSecEachTime or beyondMaxSecs:
             if baseAir.back_until(targetText=breakIfHitText, ocrResList=ocrResList, maxRetryCount=1,
