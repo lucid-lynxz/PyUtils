@@ -49,17 +49,12 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
 def qiandao(baseAir: AbsBaseAir, ocrResList: list,
             breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
-    dy: '来攒钱' -> 日常任务 '签到'
+    dy: '来赚钱' -> 日常任务 '签到'
     """
-    title: str = r'^签到'
-    subTitle: str = r'^已连续签到\d+天'
-    btnText: str = '^签到$'
+    title: str = r'签到'
+    subTitle: str = r'连续签到\d+天'
     targetText: str = subTitle
     key_can_do = f'qiandao_state_{__tag}'
-    canDo = baseAir.getStateValue(key_can_do, True)
-    if not canDo:
-        return False
-
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=targetText, prefixText=title,
                                         fromX=fromX, fromY=fromY)
     if baseAir.tapByTuple(pos):
@@ -68,6 +63,122 @@ def qiandao(baseAir: AbsBaseAir, ocrResList: list,
         baseAir.updateStateKV(key_can_do, False)
         return True
     return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def guangjie(baseAir: AbsBaseAir, ocrResList: list,
+             breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    dy '来赚钱' -> '逛街赚钱' 每天可以做10次, 有些可以20次
+    标题: '逛街领金币'
+         '浏览低价商品领金币完成0/10'
+    按钮: '去逛街'
+
+    标题: '逛街赚钱'
+         '低价好物等你挑,02:04后浏览还可得金币,下单再得海量金币,每日可完成3/10次'  --> 多行, 当前无金币奖励的情况
+          '浏览低价商品60秒即得189金币,下单再得海量金币,每日可完成3/10次'  --> 多行, 当前有金币奖励的提示语
+    按钮: '去逛街'
+    """
+    minDurationSec: int = 5 * 60  # 连续两次逛街之间的时间间隔,单位: s
+    key_last_ts = f'guangjie_ts_{__tag}'  # 上一次逛街的时间戳,单位:s
+    key_rest_count = f'guangjie_rest_count_{__tag}'  # 剩余逛街次数
+    rest_count: int = baseAir.getStateValue(key_rest_count, 10)
+    lastTs = baseAir.getStateValue(key_last_ts, 0)
+    curTs = time.time()
+    if rest_count < 0:
+        baseAir.logWarn(f'逛街失败, 剩余可逛次数为: {rest_count}')
+        return False
+
+    btnText: str = r'去逛街'  # 按钮名称,用于跳转到逛街页面
+    title: str = r'(.街赚钱|.街领金币)'  # 逛街item的标题 逛街偶尔会识别为 狂街
+    subTitle: str = r'(\d{1,2}/\d{1,2})'  # 逛街item的子标题,用于获取可完成次数
+    minSecEachTime: int = 90  # 每次浏览的时长,页面要求90s左右,增加加载时长等因素,留10%左右的冗余量
+
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=btnText, subfixText=subTitle,
+                                        prefixText=title, fromX=fromX, fromY=fromY)
+    if CommonUtil.isNoneOrBlank(pos):
+        baseAir.logWarn(f'未找到逛街赚钱按钮,ocrStr={ocrStr}')
+        return False
+
+    # 检测当前是否有金币奖励,并重置时间戳
+    pattern = re.compile(r'(\d{2}):(\d{2})后浏览')
+    result = pattern.findall(ocrStr)
+    if not CommonUtil.isNoneOrBlank(result):
+        minutes = CommonUtil.convertStr2Int(result[0][0], 0)
+        secs = minutes * 60 + CommonUtil.convertStr2Int(result[0][1], 0)
+        lastTs = lastTs + minDurationSec - secs
+        baseAir.logWarn(f'当前逛街浏览商品暂无金币奖励,下次再试 {result},secs={secs}秒')
+        baseAir.updateStateKV(key_last_ts, lastTs)
+        return False
+
+    # 检测要浏览的时长
+    pattern = re.compile(r'浏览.*(\d{2,3})秒.*')
+    result = pattern.findall(ocrStr)
+    if CommonUtil.isNoneOrBlank(result):
+        baseAir.logWarn(f'当前逛街浏览商品暂无金币奖励,下次再试 {result}')
+        return False
+    else:
+        secs = max(int(result[0]), 60)
+    minSecEachTime = max(int(secs), minSecEachTime)
+    baseAir.logWarn(f'可逛街浏览低价商品获得金币,本次至少需要浏览 {secs} 秒, 最终设定 {minSecEachTime}')
+
+    # 点击'去逛街' 跳转商品浏览页面
+    completeCount, totalCount = baseAir.get_rest_chance_count(title=title, subTitle=subTitle, cnocr_result=ocrResList)
+    if totalCount > 0:
+        baseAir.logWarn(f'逛街赚金币,今日已完成{completeCount}/{totalCount}')
+        baseAir.updateStateKV(key_rest_count, totalCount - completeCount)
+
+    if completeCount >= totalCount > 0:
+        baseAir.logWarn(f'今日逛街赚金币活动均已完成,无需再试')
+        return False
+
+    # 点击 '去逛街' 按钮,跳转到商品浏览界面
+    if not baseAir.tapByTuple(pos, sleepSec=5):
+        baseAir.logWarn(f'去逛街赚钱 失败, 未找到按钮,已完成次数:{completeCount}/{totalCount}')
+        return False
+
+    baseAir.sleep(10)
+    startTs: float = time.time()
+    baseAir.check_dialog(needSwipeUp=True, breakIfHitText=breakIfHitText, guangjie_secs=secs)
+    baseAir.updateStateKV(key_last_ts, curTs)
+    totalSec: float = time.time() - startTs  # 本次已浏览的时长,单位: s
+    maxTotalSec: float = minSecEachTime * 1.2
+    swipeUp: bool = True
+    while totalSec <= 2 * minSecEachTime:
+        sec = baseAir.sleep(minSec=2, maxSec=5)
+        totalSec = totalSec + sec
+        if swipeUp:
+            baseAir.swipeUp(durationMs=2000)  # 上滑
+        else:
+            baseAir.swipeDown(durationMs=2000)  # 下滑
+        swipeUp = not swipeUp
+
+        restSecs: float = maxTotalSec - (time.time() - startTs)
+        beyondMaxSecs: bool = restSecs <= 0
+        ocrResList = baseAir.check_dialog(canDoOtherAction=True, needSwipeUp=True, breakIfHitText=breakIfHitText,
+                                          maxTotalSec=restSecs, guangjie_secs=secs)
+
+        if totalSec > minSecEachTime or beyondMaxSecs:
+            if baseAir.back_until(targetText=breakIfHitText, ocrResList=ocrResList, maxRetryCount=1,
+                                  autoCheckDialog=True, needSwipeUp=True):
+                return True
+
+            # 可能返回失败
+            pos, _, ocrResList = baseAir.findTextByOCR(targetText=r'(^继续完成$|^继续观看$)', prefixText='坚持退出',
+                                                       maxSwipeRetryCount=1, fromY=300)
+            if beyondMaxSecs:  # 已超过最大时长
+                pos, _, _ = baseAir.findTextByCnOCRResult(cnocr_result=ocrResList, targetText='坚持退出',
+                                                          prefixText=r'(^继续完成$|^继续观看$)')
+                baseAir.tapByTuple(baseAir.calcCenterPos(pos))  # 坚持退出
+                return True
+            else:
+                success = baseAir.tapByTuple(baseAir.calcCenterPos(pos))
+                if success:  # 尚未完成浏览任务, 额外浏览10s
+                    totalSec = totalSec - 10
+                    baseAir.swipeUp(durationMs=1500)  # 上滑
+                else:
+                    return True
+    return True
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
@@ -263,116 +374,46 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
     return True
 
 
-# 目前dy在达到时长后， 会持续弹框继续浏览60s,无限循环，该任务已废
-# @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def guangjie(baseAir: AbsBaseAir, ocrResList: list,
-             breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def wanan_xiaodao(baseAir: AbsBaseAir, ocrResList: list,
+                  breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
-    dy '来赚钱' -> '逛街赚钱' 每天可以做10次, 有些可以20次
-    标题: '逛街领金币'
-         '浏览低价商品领金币完成0/10'
-    按钮: '去逛街'
-
-    标题: '逛街赚钱'
-         '低价好物等你挑,02:04后浏览还可得金币,下单再得海量金币,每日可完成3/10次'  --> 多行, 当前无金币奖励的情况
-          '浏览低价商品60秒即得189金币,下单再得海量金币,每日可完成3/10次'  --> 多行, 当前有金币奖励的提示语
-    按钮: '去逛街'
+    dy: 标题: '晚安小岛'  按钮: '去小岛'
+        副标题: '和朋友说晚安领金币'
+        20:00~6:00 可执行
     """
-    minDurationSec: int = 5 * 60  # 连续两次逛街之间的时间间隔,单位: s
-    key_last_ts = f'guangjie_ts_{__tag}'  # 上一次逛街的时间戳,单位:s
-    key_rest_count = f'guangjie_rest_count_{__tag}'  # 剩余逛街次数
-    rest_count: int = baseAir.getStateValue(key_rest_count, 10)
-    lastTs = baseAir.getStateValue(key_last_ts, 0)
-    curTs = time.time()
-    if rest_count < 0:
+    key_consumed = f'wanan_xiaodao_consumed_{__tag}'
+    consumed: bool = baseAir.getStateValue(key_consumed, False)  # 是否已浏览过
+    if consumed:
         return False
 
-    btnText: str = r'去逛街'  # 按钮名称,用于跳转到逛街页面
-    title: str = r'(^逛街赚钱|逛街领金币)'  # 逛街item的标题
-    subTitle: str = r'(\d{1,2}/\d{1,2})'  # 逛街item的子标题,用于获取可完成次数
-    minSecEachTime: int = 90  # 每次浏览的时长,页面要求90s左右,增加加载时长等因素,留10%左右的冗余量
+    lt = time.localtime()
+    hour = lt.tm_hour
+    if hour < 20 or hour > 6:
+        return False
 
-    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=btnText, subfixText=subTitle,
+    title: str = r'晚安小岛'
+    targetText: str = r'去小岛'
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText,
                                         prefixText=title, fromX=fromX, fromY=fromY)
-    if CommonUtil.isNoneOrBlank(pos):
+    if not baseAir.tapByTuple(pos, sleepSec=6):
         return False
 
-    # 检测当前是否有金币奖励,并重置时间戳
-    pattern = re.compile(r'(\d{2}):(\d{2})后浏览')
-    result = pattern.findall(ocrStr)
-    if not CommonUtil.isNoneOrBlank(result):
-        minutes = CommonUtil.convertStr2Int(result[0][0], 0)
-        secs = minutes * 60 + CommonUtil.convertStr2Int(result[0][1], 0)
-        lastTs = lastTs + minDurationSec - secs
-        baseAir.logWarn(f'当前逛街浏览商品暂无金币奖励,下次再试 {result},secs={secs}秒')
-        baseAir.updateStateKV(key_last_ts, lastTs)
-        return False
+    ocrResList = baseAir.getScreenOcrResult(fromY=800)
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=r'我睡觉了',
+                                        prefixText=r'我的日常', fromX=800)
+    baseAir.updateStateKV(key_consumed, True)
+    if baseAir.tapByTuple(pos, sleepSec=5):
+        # 会弹框选择此刻状态
+        ocrResList = baseAir.getScreenOcrResult(fromY=800)
+        pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=r'(美滋滋|充实|失眠中|好梦|平静|疲惫)',
+                                            prefixText=r'此刻状态', fromX=800)
+        if baseAir.tapByTuple(pos):
+            pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=r'发布动态',
+                                                prefixText=r'此刻状态', fromX=800)
+            baseAir.tapByTuple(pos, sleepSec=5)
+        baseAir.closeDialog()  # 关闭可能弹出的祝福卡弹框
+        baseAir.check_dialog()
 
-    # 检测要浏览的时长
-    pattern = re.compile(r'浏览.*(\d+)秒.*')
-    result = pattern.findall(ocrStr)
-    if CommonUtil.isNoneOrBlank(result):
-        baseAir.logWarn(f'当前逛街浏览商品暂无金币奖励,下次再试 {result}')
-        return False
-    else:
-        secs = max(int(result[0]), 90)
-    minSecEachTime = max(int(secs), minSecEachTime)
-    baseAir.logWarn(f'可浏览低价商品获得金币,本次至少需要浏览 {secs} 秒, 最终设定 {minSecEachTime}')
-
-    # 点击'去逛街' 跳转商品浏览页面
-    completeCount, totalCount = baseAir.get_rest_chance_count(title=title, subTitle=subTitle, cnocr_result=ocrResList)
-    if totalCount > 0:
-        baseAir.logWarn(f'逛街赚金币,今日已完成{completeCount}/{totalCount}')
-        baseAir.updateStateKV(key_rest_count, totalCount - completeCount)
-
-    if completeCount >= totalCount > 0:
-        baseAir.logWarn(f'今日逛街赚金币活动均已完成,无需再试')
-        return False
-
-    # 点击 '去逛街' 按钮,跳转到商品浏览界面
-    if not baseAir.tapByTuple(pos, sleepSec=5):
-        baseAir.logWarn(f'去逛街赚钱 失败, 未找到按钮,已完成次数:{completeCount}/{totalCount}')
-        return False
-
-    baseAir.sleep(10)
-    startTs: float = time.time()
-    baseAir.check_dialog(needSwipeUp=True, breakIfHitText=breakIfHitText, guangjie_secs=secs)
-    baseAir.updateStateKV(key_last_ts, curTs)
-    totalSec: float = time.time() - startTs  # 本次已浏览的时长,单位: s
-    maxTotalSec: float = minSecEachTime * 1.2
-    swipeUp: bool = False
-    while totalSec <= 2 * minSecEachTime:
-        sec = baseAir.sleep(minSec=2, maxSec=5)
-        totalSec = totalSec + sec
-        if swipeUp:
-            baseAir.swipeUp(durationMs=2000)  # 上滑
-        else:
-            baseAir.swipeDown(durationMs=2000)  # 下滑
-        swipeUp = not swipeUp
-
-        restSecs: float = maxTotalSec - (time.time() - startTs)
-        beyondMaxSecs: bool = restSecs <= 0
-        ocrResList = baseAir.check_dialog(canDoOtherAction=True, needSwipeUp=True, breakIfHitText=breakIfHitText,
-                                          maxTotalSec=restSecs, guangjie_secs=secs)
-
-        if totalSec > minSecEachTime or beyondMaxSecs:
-            if baseAir.back_until(targetText=breakIfHitText, ocrResList=ocrResList, maxRetryCount=1,
-                                  autoCheckDialog=True, needSwipeUp=True):
-                return True
-
-            # 可能返回失败
-            pos, _, ocrResList = baseAir.findTextByOCR(targetText=r'(^继续完成$|^继续观看$)', prefixText='坚持退出',
-                                                       maxSwipeRetryCount=1, fromY=300)
-            if beyondMaxSecs:  # 已超过最大时长
-                pos, _, _ = baseAir.findTextByCnOCRResult(cnocr_result=ocrResList, targetText='坚持退出',
-                                                          prefixText=r'(^继续完成$|^继续观看$)')
-                baseAir.tapByTuple(baseAir.calcCenterPos(pos))  # 坚持退出
-                return True
-            else:
-                success = baseAir.tapByTuple(baseAir.calcCenterPos(pos))
-                if success:  # 尚未完成浏览任务, 额外浏览10s
-                    totalSec = totalSec - 10
-                    baseAir.swipeUp(durationMs=1500)  # 上滑
-                else:
-                    return True
+    baseAir.back_until(targetText=breakIfHitText, maxRetryCount=3)
     return True

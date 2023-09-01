@@ -853,7 +853,7 @@ class AbsBaseAir(AbsWoolProject):
                 if not CommonUtil.isNoneOrBlank(filterFuncNames) and funcName not in filterFuncNames:
                     continue
 
-                # self.logWarn(f'perform_earn_tab_actions action: {funcName}')
+                self.logWarn(f'perform_earn_tab_actions action: {funcName},ocrStr={self.composeOcrStr(ocrResList)}')
                 consumed = item(baseAir=self, ocrResList=ocrResList, breakIfHitText=earnKeyword)
                 if consumed:
                     self.logWarn(f'perform_earn_tab_actions consumed: {funcName}')

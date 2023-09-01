@@ -565,7 +565,7 @@ class BDJsbBaseAir(AbsBaseAir):
                             self.touch(pos)  # 点击进行跳转,肯定是新页面了
                             break
                 else:
-                    self.tapByTuple(pos)  # 可能会跳转新页面, 也可能只是当前页面的一个tab
+                    self.tapByTuple(pos, sleepSec=5)  # 可能会跳转新页面, 也可能只是当前页面的一个tab
                     break
 
             # 首次加载可能耗时比较长,此处进行验证
@@ -590,7 +590,9 @@ class BDJsbBaseAir(AbsBaseAir):
             #  尝试再点击一次tab标题, 使页面回到开始处
             if inTargetPage and tEarnName == name:
                 # 肯定是从底部点击的, 避免误触 '赚钱任务' 页面的其他同名的任务按钮
-                pos, _, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=name, prefixText=prefixText)
+                ocrResList = self.getScreenOcrResult(fromY=by)
+                pos, _, _ = self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=name, prefixText=prefixText,
+                                                       fromY=by)
                 pos = self.calcCenterPos(pos)
 
                 # 未能第二次点击tab名称,可能无法回到页面起始位置,因此手动做N次下滑操作

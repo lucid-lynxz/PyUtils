@@ -287,7 +287,7 @@ def jinbi_gouhuasuan_qiandao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
                 break
 
     # 看直播可领300金币
-    pos, ocrStr, ocrResList = _find_pos(baseAir=baseAir, ocrResList=ocrResList, targetText=r'^看直播可领$')
+    pos, ocrStr, ocrResList = _find_pos(baseAir=baseAir, ocrResList=ocrResList, targetText=r'^看直播可领')
     if baseAir.tapByTuple(pos):
         baseAir.sleep(3)  # 可能会加载一下
         baseAir.kan_zhibo_in_page(count=3, max_sec=90, zhiboHomePageTitle='爆款好物')
@@ -313,17 +313,17 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     if hasReadSecs >= maxReadSec or time.time() - lastReadTs <= minDuration:
         return False
 
-    itemBtnText: str = r'(^看小说$|^看更多$)'  # 跳转到看小说首页的按钮正则名称
+    itemBtnText: str = r'(^看小说|^看更多)'  # 跳转到看小说首页的按钮正则名称
     itemTitle: str = r'[看|读]小说.*?赚金.'  # 看小说item信息标题
     itemSubTitle: str = ''  # r'(最高每分钟可得|精彩小说|看越多)'  # 看小说item信息标题
     eachNovelSec: float = 6 * 60  # 每本小说阅读时长,单位:s
     earnName, earnKeyword = baseAir.get_earn_monkey_tab_name()
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=itemBtnText, prefixText=itemTitle,
                                         subfixText=itemSubTitle, fromX=fromX, fromY=fromY)
-    if not baseAir.tapByTuple(pos):  # 跳转到读小说页面
+    if not baseAir.tapByTuple(pos, sleepSec=5):  # 跳转到读小说页面
         baseAir.logError(f'kan_xiaoshuo 未找到按钮 {itemBtnText} {itemTitle},ocrStr={ocrStr}')
         return False
-    baseAir.sleep(30)  # 刷新比较慢, 额外等一会
+    baseAir.sleep(20)  # 刷新比较慢, 额外等一会
 
     ocrResList = baseAir.getScreenOcrResult()
     if baseAir.check_if_in_page(earnKeyword, ocrResList=ocrResList):

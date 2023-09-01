@@ -638,17 +638,94 @@ def downlaod_app(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    视频未观看结束就按下返回键,  弹出继续观看的弹框
+    逛街赚金币也会弹出类似的弹框,但点击 '继续观看' 后需要上滑才会继续计时
+    标题: '再看3s可领奖励'
+         '+18金币'
+    按钮: '继续观看'  '坚持退出' '换一个'
+
+    形式2:
+    标题: '再看6秒，可获得奖励'
+    按钮: '继续观看' '放弃奖励' '换一个视频'
+
+    形式3:
+    标题: '继续观看18秒，可获得奖励'
+    按钮: '继续观看' '坚持退出' '换一个'
+    """
+    targetText: str = r'(继续观看)'
+    cancelText: str = r'(坚持退出|放弃奖励)'
+    prefixText: str = r'看(\d+).*奖励'
+    pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText,
+                                        prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if CommonUtil.isNoneOrBlank(pos):
+        return False
+
+    cancelPos, _, _ = _find_pos(baseAir, ocrResList, targetText=cancelText,
+                                prefixText=prefixText, fromX=fromX, fromY=fromY)
+
+    # 获取剩余最多时长
+    restSecs: float = kwargs.get('maxTotalSec', -9999)
+    if restSecs != -9999 and restSecs <= 0:  # 已不用继续等待
+        return baseAir.tapByTuple(cancelPos)
+
+    # 获取需要观看的时长
+    ptn = re.compile(prefixText)
+    result = ptn.findall(ocrStr)
+    secs: float = 0
+    if not CommonUtil.isNoneOrBlank(result):
+        secs = CommonUtil.convertStr2Float(result[0][0], 3)
+        if secs > restSecs + 1:  # 剩余可用时长已不够,直接退出
+            return baseAir.tapByTuple(cancelPos)
+
+        # 本次逛街所需总时长, 弹框时长就是逛街总时长,则肯定是被检测了, 不用再等待
+        guangjie_secs = kwargs.get('guangjie_secs', -9999)
+        if guangjie_secs != -9999 and secs >= guangjie_secs - 1:
+            return baseAir.tapByTuple(cancelPos)
+
+    baseAir.logWarn(f'jixu_guankan secs={secs}, ocrStr={ocrStr}')
+
+    if baseAir.tapByTuple(pos):
+        if secs > 0:
+            if restSecs == -9999:
+                baseAir.sleep(secs)
+            elif restSecs >= secs:
+                baseAir.sleep(secs)
+
+        if _can_do_other_action(**kwargs):
+            if kwargs.get('needSwipeUp', False):
+                baseAir.logWarn(f'jixu_guankan needSwipeUp secs={secs}')
+                startTs = time.time()
+                swipeUp: bool = True
+                while True:
+                    if swipeUp:
+                        baseAir.swipeUp(durationMs=1500)
+                    else:
+                        baseAir.swipeDown(durationMs=1500)
+                    swipeUp = not swipeUp
+                    if time.time() - startTs >= secs:
+                        break
+            else:
+                baseAir.continue_watch_ad_videos(max_secs=90 if '直播' in ocrStr else 30, breakIfHitText=breakIfHitText)
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def check_sign(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     检测签到弹框
+    '恭喜你获得' 偶尔会识别为 '赫喜你获得'
     形式可能多种,以下格式依次是: 标题   内容     按钮    其他按钮
     * '每日签到'    '已经连续签到2天'     '立即签到+1200金币'       '签到提醒' 开关
     * '每日签到'    '已经连续签到2天'    '签到奖励已翻倍+70金币'      '签到提醒' 开关
     * '每日签到'    '已经连续签到2天'    '看视频签到+400金币金币'     '签到提醒' 开关
     """
     targetText: str = r'(^看.*视频签到.*金.|^立即签到|签到奖励已翻倍|^明天签到|^立即领取$|^领取$|^开心收下|^好的$|^点击领取$|^我知道了|知道啦)'
-    prefixText: str = r'(恭喜.*获得|今日可领|今日签到可领|明天可领|明日签到|每日签到|签到成功|连签\d天必得|签到专属福利|青少年模式|成长护航|百科精选|成功领取\d+金.)'
+    prefixText: str = r'(.喜.*获得|签到礼包|今日可领|今日签到可领|明天可领|明日签到|每日签到|签到成功|连签\d天必得|签到专属福利|青少年模式|成长护航|百科精选|成功领取\d+金.|专属红包)'
 
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     return baseAir.tapByTuple(pos)
@@ -663,8 +740,8 @@ def xiaoshuo_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
           '208金币'
     按钮: '看视频再赚 40 金币' 右上角有关闭按钮
     """
-    targetText: str = r'(看视频再赚.*金.)'
-    prefixText: str = r'(恭喜你获得)'
+    targetText: str = r'(看.*视频再赚.*金.)'
+    prefixText: str = r'(.喜你获得)'
 
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if baseAir.tapByTuple(pos):
@@ -682,8 +759,8 @@ def check_sign2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
     形式可能多种,以下格式依次是: 标题   内容     按钮    其他按钮
     * '明日签到+300金币'    '已经连续签到2天'    '看广告视频再赚65金币'      '签到提醒' 开关
     """
-    targetText: str = r'^看广告视频再赚\d+金.'
-    prefixText: str = r'明日签到.*\d+金.'
+    targetText: str = r'看广告视频再赚.*'
+    prefixText: str = r'明日签到.*金.'
 
     pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
                                prefixText=prefixText, fromX=fromX, fromY=fromY)
@@ -920,9 +997,13 @@ def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
     标题: '再看一个视频额外获得'
          '+18金币
     按钮: '领取奖励' '坚持退出'
+
+    标题: '再看一个视频金币最高可得'
+         '+800金币'
+    按钮: '领取奖励' '坚持退出'
     """
     targetText: str = r'领取奖励'
-    prefixText: str = r'再看一个视频额外获得'
+    prefixText: str = r'再看一个视频'
     pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
                                prefixText=prefixText, fromX=fromX, fromY=fromY)
 
