@@ -471,7 +471,7 @@ class AdbUtil(object):
         if CommonUtil.isNoneOrBlank(appPkgName):  # kill所有三方进程
             runningProcessInfo = \
                 self.exeShellCmds(cmdArr=['ps |grep u0'], deviceId=deviceId, printCmdInfo=printCmdInfo)[0]
-            pkgs = self.getAllPkgs("3")
+            pkgs = self.getAllPkgs("3", deviceId=deviceId)
             for pkg in pkgs:
                 if CommonUtil.isNoneOrBlank(runningProcessInfo) or pkg in runningProcessInfo:
                     self.exeShellCmds(['am force-stop %s' % pkg], deviceId, printCmdInfo=printCmdInfo)
