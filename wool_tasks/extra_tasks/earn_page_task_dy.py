@@ -20,9 +20,11 @@ __tag = 'earn_page_action_dy'
 
 def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
-              fromX: int = 0, fromY: int = 0, height: int = 0, appendStrFlag: str = ' ',
+              fromX: int = 0, fromY: int = 0, height: int = 0,
+              maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
               maxSwipeRetryCount: int = 1) -> tuple:
     """
+    :param maxDeltaY: 匹配到的文本允许的最大高度差, 此处单行文本计为70像素
     返回tuple:
         元素0: 按钮位置tuple
         元素1: ocr识别文本字符串
@@ -32,11 +34,13 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
         pos, ocrStr, ocrResList = baseAir.findTextByOCR(targetText=targetText, prefixText=prefixText,
                                                         subfixText=subfixText, appendStrFlag=appendStrFlag,
                                                         fromX=fromX, fromY=fromY, height=height,
+                                                        maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY,
                                                         maxSwipeRetryCount=maxSwipeRetryCount)
     else:
         pos, ocrStr, _ = baseAir.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText,
                                                        subfixText=subfixText,
-                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY)
+                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY,
+                                                       maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY)
     pos = baseAir.calcCenterPos(pos)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.logWarn(
@@ -90,7 +94,7 @@ def guangjie(baseAir: AbsBaseAir, ocrResList: list,
         return False
 
     btnText: str = r'去逛街'  # 按钮名称,用于跳转到逛街页面
-    title: str = r'(.街赚钱|.街领金币)'  # 逛街item的标题 逛街偶尔会识别为 狂街
+    title: str = r'(.街赚钱|.街领金.)'  # 逛街item的标题 逛街偶尔会识别为 狂街 迁街
     subTitle: str = r'(\d{1,2}/\d{1,2})'  # 逛街item的子标题,用于获取可完成次数
     minSecEachTime: int = 90  # 每次浏览的时长,页面要求90s左右,增加加载时长等因素,留10%左右的冗余量
 
@@ -261,6 +265,7 @@ def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
     """
     标题:  '逛热销爆品赚金币'
     子标题: '浏览180s得305金币'
+    上述两行文本单行大概70像素, 两行总高度大概140像素
     按钮: '赚金币'
     跳转到爆品页面后, 需要一直滑动才会计时
     """
@@ -274,7 +279,7 @@ def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
     subTitle: str = r'浏览(\d+)[秒s].*[赚得].*'
     targetText: str = subTitle
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText,
-                                        prefixText=title, fromX=fromX, fromY=fromY)
+                                        prefixText=title, fromX=fromX, fromY=fromY, maxDeltaY=140)
     if CommonUtil.isNoneOrBlank(pos):
         return False
 
@@ -341,7 +346,7 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
     subTitle: str = r'浏览(\d+)[秒s].*[赚得].*'  # ocr时subTile不一定是在btnText之后,谨慎使用
     targetText: str = subTitle
     pos, ocrStr, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText,
-                                        prefixText=title, fromX=fromX, fromY=fromY)
+                                        prefixText=title, fromX=fromX, fromY=fromY, maxDeltaY=140)
     if CommonUtil.isNoneOrBlank(pos):
         return False
 

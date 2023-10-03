@@ -503,6 +503,7 @@ class AbsBaseAir(AbsWoolProject):
                       subfixText: str = None,
                       fromX: int = 0, fromY: int = 0,
                       width: int = 0, height: int = 0,
+                      maxDeltaX: int = 0, maxDeltaY: int = 0,
                       swipeOverlayHeight: int = 100,
                       maxSwipeRetryCount: int = 10,
                       saveAllImages: bool = False,
@@ -523,6 +524,8 @@ class AbsBaseAir(AbsWoolProject):
         :param fromY: 区域截图左上角的Y坐标,默认(0,0)
         :param width: 区域截图宽度,0或负数表示截图到屏幕右侧边缘
         :param height: 区域截图的高度,若为0或负数,则表示截屏到屏幕底部
+        :param maxDeltaX: 识别到的 prefixText/targetText/subfixText pos坐标的x方向允许的最大阈值, 大于0才有效
+        :param maxDeltaY: 识别到的 prefixText/targetText/subfixText pos坐标的y方向允许的最大阈值, 大于0才有效
         :param swipeOverlayHeight:上滑时,少滑动该距离, 负数表示height的1/10
         :param maxSwipeRetryCount: 最多上滑截图的次数, 一次表示不上滑
         :param saveAllImages:是否保存每张截图,若为False,则仅保存匹配失败的截图
@@ -578,6 +581,8 @@ class AbsBaseAir(AbsWoolProject):
                                                                              prefixText=prefixText,
                                                                              subfixText=subfixText,
                                                                              fromX=fromX, fromY=fromY,
+                                                                             maxDeltaX=maxDeltaX,
+                                                                             maxDeltaY=maxDeltaY,
                                                                              appendStrFlag=appendStrFlag,
                                                                              ignoreCase=ignoreCase,
                                                                              autoConvertQuotes=autoConvertQuotes)
@@ -630,7 +635,8 @@ class AbsBaseAir(AbsWoolProject):
 
     def findTextByCnOCRResult(self, cnocr_result: list, targetText: str, prefixText: str = None,
                               subfixText: str = None,
-                              fromX: int = 0, fromY: int = 0, autoConvertQuotes: bool = True,
+                              fromX: int = 0, fromY: int = 0, maxDeltaX: int = 0, maxDeltaY: int = 0,
+                              autoConvertQuotes: bool = True,
                               appendStrFlag: str = ' ', ignoreCase: bool = True,
                               printCmdInfo: bool = False) -> tuple:
         """
@@ -642,6 +648,8 @@ class AbsBaseAir(AbsWoolProject):
         :param subfixText: 要求在 targetText 之后应存在的字符串正则表达式,若为空,则表示不做判断
         :param fromX: 区域截图左上角的x坐标,默认(0,0)
         :param fromY: 区域截图左上角的Y坐标,默认(0,0)
+        :param maxDeltaX: 识别到的 prefixText/targetText/subfixText pos坐标的x方向允许的最大阈值, 大于0才有效
+        :param maxDeltaY: 识别到的 prefixText/targetText/subfixText pos坐标的y方向允许的最大阈值, 大于0才有效
         :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
         :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
         :param ignoreCase: 正则匹配字符串时,是否忽略大小写
@@ -658,6 +666,8 @@ class AbsBaseAir(AbsWoolProject):
             return None, self.composeOcrStr(cnocr_result), None
 
         targetDict: dict = None  # 目标文本信息, 包含 text/score/position
+        prefixDict: dict = None  # prefixText信息, 包含 text/score/position,非none有效
+        subfixDict: dict = None  # subfixText信息, 包含 text/score/position,非none有效
         ocr_str_result: str = ''  # 最后一次ocr识别的文本
         hitTargetText: bool = False  # 是否匹配到目标文字
         hitPrefixText: bool = CommonUtil.isNoneOrBlank(prefixText)
@@ -675,6 +685,8 @@ class AbsBaseAir(AbsWoolProject):
             if not hitPrefixText:
                 resultList = prefixTextPattern.findall(t)
                 hitPrefixText = not CommonUtil.isNoneOrBlank(resultList)
+                if hitPrefixText:
+                    prefixDict = dictItem
                 continue
 
             # 匹配目标文本
@@ -689,11 +701,27 @@ class AbsBaseAir(AbsWoolProject):
             if not hitSubfixText:
                 resultList = None if subfixTextPattern is None else subfixTextPattern.findall(t)
                 hitSubfixText = not CommonUtil.isNoneOrBlank(resultList)
+                if hitSubfixText:
+                    subfixDict = dictItem
 
-        # 偏移得到屏幕中的绝对坐标
+        # 对 prefixText 坐标偏移得到屏幕中的绝对坐标
+        prefixPosList = None if prefixDict is None else prefixDict.get('position', None)
+        if not CommonUtil.isNoneOrBlank(prefixPosList):
+            for item in prefixPosList:
+                item[0] = item[0] + fromX
+                item[1] = item[1] + fromY
+
+        # 对 targetText 坐标偏移得到屏幕中的绝对坐标
         posList = None if targetDict is None else targetDict.get('position', None)
         if not CommonUtil.isNoneOrBlank(posList):
             for item in posList:
+                item[0] = item[0] + fromX
+                item[1] = item[1] + fromY
+
+        # 对 subfixText 坐标偏移得到屏幕中的绝对坐标
+        subfixPosList = None if subfixDict is None else subfixDict.get('position', None)
+        if not CommonUtil.isNoneOrBlank(subfixPosList):
+            for item in subfixPosList:
                 item[0] = item[0] + fromX
                 item[1] = item[1] + fromY
 
@@ -709,6 +737,31 @@ class AbsBaseAir(AbsWoolProject):
                 f',ocr_str={ocr_str_result}')
         if not valid:
             return None, ocr_str_result, None
+
+        # 计算总偏移区域是否满足 maxDeltaX 和 maxDeltaY 的要求
+        if prefixDict is None:
+            prefixDict = targetDict
+        if subfixDict is None:
+            subfixDict = targetDict
+        prefixPosList = None if prefixDict is None else prefixDict.get('position', None)
+        subfixPosList = None if subfixDict is None else subfixDict.get('position', None)
+
+        deltaX = abs(prefixPosList[0][0] - subfixPosList[2][0])
+        deltaY = abs(prefixPosList[0][1] - subfixPosList[2][1])
+        successDelta: bool = True
+        if maxDeltaX > 0:
+            successDelta = deltaX <= maxDeltaX
+        if maxDeltaY > 0:
+            successDelta = successDelta and deltaY <= maxDeltaY
+
+        self.logWarn(
+            f'findTextByCnOCRResult success={successDelta} deltaX,Y={deltaX},{deltaY},maxDeltaX,y={maxDeltaX},{maxDeltaY}')
+        try:
+            if not successDelta:
+                return None, ocr_str_result, None
+        except Exception as e:
+            self.logWarn(f'findTextByCnOCRResult exception {e}')
+
         return posList, ocr_str_result, targetDict
 
     @log_wrap(print_caller=True, exclude_arg=['self', 'ocrResList'])
@@ -871,7 +924,9 @@ class AbsBaseAir(AbsWoolProject):
                         ocrResList = self.getScreenOcrResult()
             self.back_until_earn_page(ocrResList=ocrResList)  # 返回到赚钱页面
             self.swipeUp(minDeltaY=1000, maxDeltaY=1000, keepVerticalSwipe=True, durationMs=1500)  # 下滑一页
-            ocrResList = self.check_dialog(breakIfHitText=earnKeyword)  # 检测可能的弹框
+            self.check_dialog(breakIfHitText=earnKeyword)  # 检测可能的弹框
+            # self.closeDialog(minY=500)  # 可能有一些新型弹框未添加识别, 此处统一尝试进行关闭
+            ocrResList = self.getScreenOcrResult()
 
         self.back_until_earn_page()  # 执行完成,返回到赚钱页面
         if back2HomeStramTab:
@@ -889,9 +944,15 @@ class AbsBaseAir(AbsWoolProject):
 
 
 if __name__ == '__main__':
-    air = AbsBaseAir(deviceId='0A221FDD40006J')
-    pos1, ocr_str, _ = air.findTextByOCR('看小说', swipeOverlayHeight=300,
-                                         height=1200, saveDirPath='H:/wool_cache/', )
+    air = AbsBaseAir(deviceId='5d4ea2a7')
+    # targetText: str = r'\d{2}:\d{2}:\d{2}.再开.次'
+    # targetText: str = r'立即开宝箱'
+    # prefixText: str = r'(已开启|已开后|再开\d+次|必得全部奖励)'
+    targetText: str = r'(看视频最高得\d+金.|看.告视频再.\d+金.|看.{0.6}直播.{0,6}赚\d+金.)'
+    prefixText: str = r'(宝箱|恭.*得|明日签到|签到成功|本轮宝箱已开启|已开启|已开后|再开\d+次|必得全部奖励)'
+    pos1, ocr_str, _ = air.findTextByOCR(targetText=targetText, prefixText=prefixText,
+                                         maxSwipeRetryCount=1, saveDirPath='H:/wool_cache/')
+    print('ocr_str=%s' % ocr_str)
     print('pos=%s' % pos1)
     cx, cy = air.calcCenterPos(pos1)
     print('cx,cy=%s,%s' % (cx, cy))

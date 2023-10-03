@@ -1,5 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
+import inspect
 import re
 import time
 from typing import Union
@@ -17,9 +18,22 @@ from wool_tasks.base_airtest import AbsBaseAir
 __tag = 'check_dialog'
 
 
+def _match_max_retry_count(curFuncName: str, maxHitCount: int = 2, **kwargs) -> bool:
+    """
+    当前方法是否已经连续触发过最大次数,若是,建议选择退出执行
+    """
+    lastHitFuncName = kwargs.get('lastHitFuncName', '')
+    if CommonUtil.isNoneOrBlank(lastHitFuncName) or CommonUtil.isNoneOrBlank(
+            curFuncName) or curFuncName != lastHitFuncName:
+        return False
+    lastHitFuncCount = kwargs.get('lastHitFuncCount', 0)
+    return lastHitFuncCount >= maxHitCount
+
+
 def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
-              fromX: int = 0, fromY: int = 0, height: int = 0, appendStrFlag: str = ' ',
+              fromX: int = 0, fromY: int = 0, height: int = 0,
+              maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
               maxSwipeRetryCount: int = 1) -> tuple:
     """
     返回tuple:
@@ -31,15 +45,18 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
         pos, ocrStr, ocrResList = baseAir.findTextByOCR(targetText=targetText, prefixText=prefixText,
                                                         subfixText=subfixText, appendStrFlag=appendStrFlag,
                                                         fromX=fromX, fromY=fromY, height=height,
+                                                        maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY,
                                                         maxSwipeRetryCount=maxSwipeRetryCount)
     else:
         pos, ocrStr, _ = baseAir.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText,
                                                        subfixText=subfixText,
-                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY)
+                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY,
+                                                       maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY)
     pos = baseAir.calcCenterPos(pos)
     if not CommonUtil.isNoneOrBlank(pos):
+        caller_func_name = inspect.getframeinfo(inspect.currentframe().f_back)[2]
         baseAir.logWarn(
-            f'${__tag} _find_pos hit targetText={targetText},prefixText={prefixText}'
+            f'${__tag} _find_pos hit fromCaller={caller_func_name},targetText={targetText},prefixText={prefixText}'
             f',subfixText={subfixText},pos={pos},ocrStr={ocrStr}')
     return pos, ocrStr, ocrResList
 
@@ -49,18 +66,6 @@ def _can_do_other_action(defaultValue: bool = True, **kwargs) -> bool:
     除了关闭弹框外,是否还可以继续执行后续操作,比如:观看广告视频
     """
     return kwargs.get('canDoOtherAction', defaultValue)
-
-
-def _match_max_retry_count(curFuncName: str, maxHitCount: int = 2, **kwargs) -> bool:
-    """
-    当前方法是否已经连续触发过最大次数,若是,建议选择退出执行
-    """
-    lastHitFuncName = kwargs.get('lastHitFuncName', '')
-    if CommonUtil.isNoneOrBlank(lastHitFuncName) or CommonUtil.isNoneOrBlank(
-            curFuncName) or curFuncName != lastHitFuncName:
-        return False
-    lastHitFuncCount = kwargs.get('lastHitFuncCount', 0)
-    return lastHitFuncCount >= maxHitCount
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
@@ -109,6 +114,23 @@ def restart(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
         baseAir.sleep(10)
         return True
     return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def shoujihao_shouquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                       fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    手机卡广告可能会弹出授权获取手机号的弹框
+    标题: '橙子建站 申请授权使用'
+         '你的登录手机号'
+         '请阅读并同意<授权书>, 系统将自动获取你的登录手机号, 用于本次及后续表单自动填写'
+    按钮: '允许' '拒绝'
+    """
+    prefixText: str = r'你的登录手机号'
+    targetText: str = r'拒绝'
+    pos, _, ocrResList = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText,
+                                   fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos)
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
@@ -253,8 +275,8 @@ def search_add_desktop_widget(baseAir: AbsBaseAir, ocrResList: list, breakIfHitT
 def gongxi_zhouzhou_zhuanjianbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """恭喜获得金币大礼包 周周赚金币弹框, 无法通过返回取消"""
-    targetText = r'^点击领取金.$'  # '点击领取金币' '提现至微信秒到账'
-    prefixText = r'周周赚金币'  # '超级星期五 周周赚金币'
+    targetText = r'点击领取金.'  # '点击领取金币' '提现至微信秒到账'
+    prefixText = r'周周赚金.'  # '超级星期五 周周赚金币'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.closeDialog(r'bd_assets/tpl1685624986007.png')
@@ -272,7 +294,7 @@ def pk_jinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
     按钮: '去领取'  右上角有关闭按钮
     """
     targetText = r'点击即领.手慢.'
-    prefixText = r'^你有\d+PK金币.*待领取'
+    prefixText = r'有\d+PK金.*待领取'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.closeDialog(r'bd_assets/tpl1685198790981.png')
@@ -336,8 +358,8 @@ def dati_ying_xianjin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str
          '7088金币'
     按钮: '立即购物拿金币'  右上角有关闭按钮
     """
-    targetText = r'^立即购物拿金币'
-    prefixText = r'^当前活动页下单'
+    targetText = r'立即购物拿金,'
+    prefixText = r'当前活动页下单'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.closeDialog(r'bd_assets/tpl1685624986007.png')
@@ -534,6 +556,23 @@ def kan_xiaoshuo_tianjiang_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakI
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def haoyou_kan_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                      fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '恭喜获得好友看视频奖励'
+         ' 1588金币'
+    按钮: '继续邀请赚89元' 左上角有关闭按钮
+    """
+    targetText = r'继续邀请.{1,6}元'
+    prefixText = r'好友看视频奖励'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.closeDialog()
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def jiaru_paihang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
@@ -724,8 +763,8 @@ def check_sign(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None
     * '每日签到'    '已经连续签到2天'    '签到奖励已翻倍+70金币'      '签到提醒' 开关
     * '每日签到'    '已经连续签到2天'    '看视频签到+400金币金币'     '签到提醒' 开关
     """
-    targetText: str = r'(^看.*视频签到.*金.|^立即签到|签到奖励已翻倍|^明天签到|^立即领取$|^领取$|^开心收下|^好的$|^点击领取$|^我知道了|知道啦)'
-    prefixText: str = r'(.喜.*获得|签到礼包|今日可领|今日签到可领|明天可领|明日签到|每日签到|签到成功|连签\d天必得|签到专属福利|青少年模式|成长护航|百科精选|成功领取\d+金.|专属红包)'
+    targetText: str = r'(^看.{0,6}视频签到.{0.6}金.|^立即签到|签到奖励已翻倍|明天签到|^立即领取$|^领取$|^开心收下|^好的$|^点击领取$|^我知道了|知道啦)'
+    prefixText: str = r'(.喜.*获得|签到礼包|今日可领|今日签到可领|明天可领|明日签到|每日签到|签到成功|连签\d天必得|签到专属福利|青少年模式|成长护航|百科精选|成功领取\d+金.|专属红包|连续签到)'
 
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     return baseAir.tapByTuple(pos)
@@ -736,12 +775,18 @@ def xiaoshuo_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
                     fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 看小说后的领金币弹框, 可能会提示看视频额外赚金币
+    '恭喜你获得' 偶尔会识别为 '恭喜你庆得'  '恭三你庆得'
+
     标题:  '恭喜你获得'
           '208金币'
     按钮: '看视频再赚 40 金币' 右上角有关闭按钮
+
+    标题: '恭喜你获得'
+         '312金币'
+    按钮: '看内容最高可得500金币'
     """
-    targetText: str = r'(看.*视频再赚.*金.)'
-    prefixText: str = r'(.喜你获得)'
+    targetText: str = r'(看.*视频再赚.*金.|看内容最高可得\d+金.)'
+    prefixText: str = r'(.喜你.得)'
 
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     if baseAir.tapByTuple(pos):
@@ -759,8 +804,8 @@ def check_sign2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
     形式可能多种,以下格式依次是: 标题   内容     按钮    其他按钮
     * '明日签到+300金币'    '已经连续签到2天'    '看广告视频再赚65金币'      '签到提醒' 开关
     """
-    targetText: str = r'看广告视频再赚.*'
-    prefixText: str = r'明日签到.*金.'
+    targetText: str = r'看广告视频再赚'
+    prefixText: str = r'明日签到.{0.6}金.'
 
     pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
                                prefixText=prefixText, fromX=fromX, fromY=fromY)
@@ -775,12 +820,45 @@ def check_sign2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 def check_sign3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     # 可能会自动弹出签到提醒
-    targetText: str = r'(邀请好友立赚高额现金|邀请新用户可得|打开签到提醒|签到专属福利|\d+天必得.*金.)'
+    targetText: str = r'(邀请好友立赚高额现金|邀请新用户可得|签到提醒|签到专属福利|\d+天必得.*金.)'
     # prefixText: str = r'恭喜你获得'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, fromX=fromX, fromY=fromY)
     if not CommonUtil.isNoneOrBlank(pos):
+
+        # 若超过最大次数，则尝试重启app
+        if _match_max_retry_count('check_sign3', maxHitCount=3, **kwargs):
+            baseAir.killApp()
+            baseAir.startApp()
+            baseAir.sleep(5)
+            return baseAir.goto_home_earn_tab()
+
         baseAir.logWarn(f'check_dialog 关闭邀请好友/打开签到提醒等弹框')
         baseAir.closeDialog(r'bd_assets/tpl1685624986007.png')
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def song_pengyou(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    标题: '已获得52金币'
+         '再去 [去朋友页送金币] 得'
+         '100金币 最高'
+    按钮: '送好友' 右上角有关闭按钮
+
+    标题: '已获得52金币'
+         '再去 [逛街赚钱] 得'
+         '3000金币 最高'
+    按钮: '去逛街' 右上角有关闭按钮
+    """
+    targetText: str = r'再去.*得'
+    prefixText: str = r'已获得\d+金.'
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText,
+                          fromX=fromX, fromY=fromY)
+    if not CommonUtil.isNoneOrBlank(pos):
+        baseAir.logWarn(f'check_dialog 关闭送好友/去逛街得金币等弹框')
+        baseAir.closeDialog(r'bd_assets/tpl1685198790981.png')
         return True
     return False
 
@@ -806,8 +884,8 @@ def cunqianguan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 def remind_rest(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """ 夜间提醒休息弹框 """
-    targetText = r'(^取消$|^退出$)'
-    prefixText = r'(累了吧.*休息一下$|猜你喜欢)'
+    targetText = r'(取消|退出)'
+    prefixText = r'(累了吧.*休息一下|猜你喜欢|休息提醒|合理分配时间)'
     pos, _, _ = _find_pos(baseAir, ocrResList, targetText=targetText, prefixText=prefixText, fromX=fromX, fromY=fromY)
     return baseAir.tapByTuple(pos)
 
@@ -905,7 +983,7 @@ def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
     # 若超过最大次数，则尝试退出
     if _match_max_retry_count('jixu_guankan', **kwargs):
-        cancelPos, _, _ = _find_pos(baseAir, ocrResList, targetText=cancelTargetText,
+        cancelPos, _, _ = _find_pos(baseAir, ocrResList, targetText=cancelText,
                                     prefixText=prefixText, fromX=fromX, fromY=fromY)
         if baseAir.tapByTuple(cancelPos):
             return True
@@ -1094,17 +1172,6 @@ def xiazai_tiyan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
-                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
-    """ 点击开宝箱得金币logo """
-    # 第一步尝试开宝箱
-    name, keyword = baseAir.get_earn_monkey_tab_name()
-    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=r'(^开宝箱得金.)', prefixText=keyword,
-                          fromX=fromX, fromY=fromY)
-    return baseAir.tapByTuple(pos)
-
-
-@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def kai_baoxiang2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """宝箱开启过程检测"""
@@ -1125,22 +1192,78 @@ def kai_baoxiang2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 def kai_baoxiang3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
+    新人福利, 转盘宝箱,开启完成后停留在转盘页面
+    标题: '本轮宝箱已开启'  --> 偶尔识别为: 'AE宝已开启' '本牧主术已开后'
+         '再开6次'
+          '必得全部奖励'
+    按钮: '00:19:59后再开一次' 下方是关闭按钮
+         若在弹出框中等待倒计时结束, 则按钮文本会变为: '立即开宝箱' 见 kai_baoxiang4()
+    """
+    targetText: str = r'\d{2}:\d{2}:\d{2}.再开.次'
+    prefixText: str = r'(已开启|已开后|再开\d+次|必得全部奖励)'
+    pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
+                               prefixText=prefixText, fromX=fromX, fromY=fromY)
+    if baseAir.tapByTuple(pos):
+        baseAir.closeDialog()
+        return True
+    return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def kai_baoxiang4(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    新人福利, 转盘宝箱,开启完成后停留在转盘页面
+    标题: '本轮宝箱已开启'  --> 偶尔识别为: 'AE宝已开启' '本牧主术已开后'
+         '再开6次'
+          '必得全部奖励'
+    按钮: '00:19:59后再开一次' 下方是关闭按钮
+         若在弹出框中等待倒计时结束, 则按钮文本会变为: '立即开宝箱'
+    """
+    targetText: str = r'立即开宝箱'
+    prefixText: str = r'(已开启|已开后|再开\d+次|必得全部奖励)'
+    pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
+                               prefixText=prefixText, fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos, sleepSec=5)
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def kai_baoxiang5(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
     宝箱开启结果检测
     '恭喜你获得' 偶尔会识别为 '恭喜你庆得'  '恭三你庆得'
     '看广告视频再赚18金币' 偶尔会识别为 '看厂告机频再赚18金币'
     '看视频最高得400金币'
+    '看广告视频再得1200金币'
+    '看内容最高可得500金币'
     """
-    targetText: str = r'(看视频最高得\d+金.|看.告视频再赚\d+金.|看.*直播.*赚\d+金.)'
-    prefixText: str = r'(宝箱|恭.*得|明日签到|签到成功|本轮宝箱已开启)'
+    targetText: str = r'(看视频最高得\d+金.|看.告视频再.\d+金.|看.{0.6}直播.{0,6}赚\d+金.|看内容最高可得\d+金.)'
+    prefixText: str = r'(宝箱|恭.*得|明日签到|签到成功|本轮宝箱已开启|已开启|已开后|再开\d+次|必得全部奖励)'
     pos, ocrStr, _ = _find_pos(baseAir, ocrResList, targetText=targetText,
                                prefixText=prefixText, fromX=fromX, fromY=fromY)
-
     # 持续观看广告视频,结束后自动返回当前页面
     if baseAir.tapByTuple(pos):
         if _can_do_other_action(**kwargs):
             baseAir.continue_watch_ad_videos(max_secs=90 if '直播' in ocrStr else 30, breakIfHitText=breakIfHitText)
         return True
     return False
+
+
+@taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
+def kai_baoxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
+    """
+    点击开宝箱得金币logo
+    有两种文本:
+    '开宝箱得金币'
+    '12倍金币待领' '03分29秒' 后才可领取, 两个文本框上下滚动显示
+    """
+    # 第一步尝试开宝箱
+    name, keyword = baseAir.get_earn_monkey_tab_name()
+    pos, _, _ = _find_pos(baseAir, ocrResList, targetText=r'(^开宝箱得金.|\d+倍金.待领)', prefixText=keyword,
+                          fromX=fromX, fromY=fromY)
+    return baseAir.tapByTuple(pos)
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
@@ -1201,8 +1324,8 @@ def tuichu_zhibojian(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str 
     标题: '猜你对这些直播感兴趣'
     按钮: '更多直播'  '退出直播间'
     """
-    pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(^退出直播间$|^退出$)',
-                                   prefixText=r'(^关注并退出|^大家还在搜.*|猜你对这些直播感兴趣)', fromX=fromX,
+    pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(退出直播间|退出$)',
+                                   prefixText=r'(关注并退出|^大家还在搜.*|猜你对这些直播感兴趣)', fromX=fromX,
                                    fromY=fromY)
     return baseAir.tapByTuple(pos)
 

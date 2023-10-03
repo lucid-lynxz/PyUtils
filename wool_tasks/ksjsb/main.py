@@ -155,7 +155,7 @@ class KsAir(BDJsbBaseAir):
         """
         获取 去赚钱 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '去赚钱', '(任务中心|抵用金|现金收益|开宝箱得金币|金币收益|赚钱任务|交友广场|金币购划算)'
+        return '去赚钱', '(任务中心|抵用金|现金收益|开宝箱得金.|金.收益|赚钱任务|交友广场|金.购划算)'
 
     def shipin_biaotai(self, count: int = 36, minDurationSec: int = -1,
                        titlePattern: str = r'给视频表态赚金.',

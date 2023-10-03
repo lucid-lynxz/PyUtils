@@ -534,7 +534,7 @@ class AbsWoolProject(ABC, Runnable):
         """
         获取 去赚钱 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '来赚钱', '(任务中心|抵用金|现金收益|开宝箱得金币|金币收益|赚钱任务|交友广场)'
+        return '来赚钱', '(任务中心|抵用金|现金收益|倍金币待领|开宝箱得金币|金币收益|赚钱任务|交友广场)'
 
     def get_info_stream_tab_name(self) -> tuple:
         """

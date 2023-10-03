@@ -20,9 +20,11 @@ __tag = 'earn_page_action'
 
 def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
-              fromX: int = 0, fromY: int = 0, height: int = 0, appendStrFlag: str = ' ',
+              fromX: int = 0, fromY: int = 0, height: int = 0,
+              maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
               maxSwipeRetryCount: int = 1) -> tuple:
     """
+    :param maxDeltaY: 匹配到的文本允许的最大高度差, 此处单行文本计为70像素, 默认最大4行文本
     返回tuple:
         元素0: 按钮位置tuple
         元素1: ocr识别文本字符串
@@ -32,11 +34,13 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
         pos, ocrStr, ocrResList = baseAir.findTextByOCR(targetText=targetText, prefixText=prefixText,
                                                         subfixText=subfixText, appendStrFlag=appendStrFlag,
                                                         fromX=fromX, fromY=fromY, height=height,
+                                                        maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY,
                                                         maxSwipeRetryCount=maxSwipeRetryCount)
     else:
         pos, ocrStr, _ = baseAir.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText,
                                                        subfixText=subfixText,
-                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY)
+                                                       appendStrFlag=appendStrFlag, fromX=fromX, fromY=fromY,
+                                                       maxDeltaX=maxDeltaX, maxDeltaY=maxDeltaY)
     pos = baseAir.calcCenterPos(pos)
     if not CommonUtil.isNoneOrBlank(pos):
         baseAir.logWarn(
@@ -223,14 +227,15 @@ def search_ks(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 def kan_zhibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
               fromX: int = 0, fromY: int = 0) -> bool:
     """
-    '去赚钱' -> '看直播得3000金币'
+    标题: '看直播得3000金币' 或者 '看直播广告可得1.3万金币 或者 '看6次直播领金币'
+    按钮:'领福利'
     ks可以看6个, dy可以看10个
     """
     key = 'kan_zhibo'  # 是否已完成
     if baseAir.getStateValue(key, False):
         return False
 
-    titleText: str = r'看直播.*金.'  # 赚钱任务页面中的看直播item标题
+    titleText: str = r'看.{0,2}直播.{0,10}金.'  # 赚钱任务页面中的看直播item标题
     subTileText: str = r'\d+/\d+'  # 赚钱任务的看直播item子标题
     btnText: str = '领福利'  # 赚钱页面的看直播按钮名称
     zhiboHomePageTitle: str = r'看直播领金.'  # 直播列表首页的标题名,用于判断是否跳转到直播详情成功
@@ -297,6 +302,32 @@ def jinbi_gouhuasuan_qiandao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
     return True
 
 
+def _dy_kan_xiaoshuo_liing_jinbi(baseAir: AbsBaseAir) -> bool:
+    """
+    dy看小说页面领取金币
+    """
+    if baseAir.pkgName != 'com.ss.android.ugc.aweme.lite':
+        return False
+    pos, _, ocrResList = baseAir.findTextByOCR(targetText=r'\d{2,4}金.',
+                                               prefixText=r'(排行榜|小说|我的书架)',
+                                               fromY=1000,  # 默认位于屏幕下方区域, 可左可右
+                                               maxSwipeRetryCount=1)
+    if baseAir.tapByTuple(pos):
+        prefixText: str = r'(阅读赚金.|看小说赚金.|待领取|今日已赚|再看\d+分钟可得|已领取|待领取|明天签到)'
+        for _ in range(6):
+            pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'(领取金.|去领取)',
+                                           prefixText=prefixText)
+            baseAir.logWarn(f'_dy_kan_xiaoshuo_liing_jinbi 检测领取金币 ocrStr2={baseAir.composeOcrStr(ocrResList)}')
+            if baseAir.tapByTuple(pos):  # 若可以领金币,则会弹出 "我知道了" 弹框
+                baseAir.check_dialog(canDoOtherAction=True, breakIfHitText=prefixText)
+            else:
+                pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'看小说', prefixText=prefixText)
+                baseAir.tapByTuple(pos)  # 点击底部 '看小说' 按钮,回到小说主页面
+                break
+        return True
+    return False
+
+
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
 def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0) -> bool:
@@ -336,9 +367,11 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
     # 检测 '一键领取' 按钮, 可能会识别为: '一键领取'/'一健领取'/'键建领取'
     pos, _, ocrResList = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'(.键领取|·健领取|.建领取)',
-                                   prefixText='^认真阅读.金.')
+                                   prefixText='认真阅读.金.')
     baseAir.logWarn(f'kan_xiaoshuo 检测一键领取 ocrStr={baseAir.composeOcrStr(ocrResList)}')
     if baseAir.tapByTuple(pos):  # 直接点击,仅有toast提示结果而已
+        ocrResList = baseAir.getScreenOcrResult()
+    elif _dy_kan_xiaoshuo_liing_jinbi(baseAir):  # 检测抖音的看小说奖励
         ocrResList = baseAir.getScreenOcrResult()
 
     # 检测是否已完成看小说任务,若已完成则不用再读
@@ -356,7 +389,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
     pos, _, ocrResList = _find_pos(baseAir, None, targetText=btnText, maxSwipeRetryCount=5)
     baseAir.tapByTuple(pos, sleepSec=3)  # 点击跳转到小说页面进行阅读
 
-    keywordInNovelDetail: str = r'(书籍介绍|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读)'
+    keywordInNovelDetail: str = r'(书籍介绍|书籍简介|第.{1,7}章|弟.{1,7}草|第.{1,7}草|弟.{1,7}章|继续阅读下一页|下一章|左滑开始阅读|\d+.\d+%)'
     if not baseAir.check_if_in_page(keywordInNovelDetail, autoCheckDialog=True):
         baseAir.logError(f'kan_xiaoshuo 跳转小说阅读详情页失败,退出读小说')
         baseAir.back_until_earn_page()  # 回到赚钱页面
@@ -408,15 +441,15 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
         if curNovelSecs >= eachNovelSec:
             baseAir.logWarn(f'kan_xiaoshuo 已达到阅读时长 {curNovelSecs}, eachNovelSec={eachNovelSec}')
             # 抖音需要自己点击金币,在弹框中选择 "领取金币", 快手不需要
-            ocrResList = baseAir.getScreenOcrResult(toY=200)
-            pos, _, _ = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'\d+金币')
+            ocrResList = baseAir.getScreenOcrResult(toY=400, fromX=400)
+            pos, _, _ = _find_pos(baseAir, ocrResList=ocrResList, targetText=r'\d+金.')
             if baseAir.tapByTuple(pos):
                 for _ in range(10):
-                    pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'(领取金币|去领取)',
-                                                   prefixText=r'阅读赚金币')
+                    pos, _, ocrResList = _find_pos(baseAir, ocrResList=None, targetText=r'(领取金.|去领取)',
+                                                   prefixText=r'(阅读赚金.|看小说赚金.)')
                     baseAir.logWarn(f'kan_xiaoshuo 检测领取金币 ocrStr2={baseAir.composeOcrStr(ocrResList)}')
                     if baseAir.tapByTuple(pos):  # 若可以领金币,则会弹出 "我知道了" 弹框
-                        baseAir.check_dialog(canDoOtherAction=True, breakIfHitText='阅读赚金币')
+                        baseAir.check_dialog(canDoOtherAction=True, breakIfHitText='阅读赚金.')
                     else:
                         break
 

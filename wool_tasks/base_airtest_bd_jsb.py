@@ -59,6 +59,8 @@ class BDJsbBaseAir(AbsBaseAir):
         for i in range(5):  # 尝试重启获取收益情况
             # self.closeDialog()
             self.swipeUp(minDeltaY=600)  # 上滑一次
+            self.check_dialog()
+            # self.closeDialog()
             self.saveScreenShot('查看收益全图', autoAppendDateInfo=True)
             _, ocrResult, _ = self.findTextByOCR('', height=ocrHeight, maxSwipeRetryCount=1, imgPrefixName='查看收益_')
             if CommonUtil.isNoneOrBlank(ocrResult):
@@ -104,7 +106,7 @@ class BDJsbBaseAir(AbsBaseAir):
         """
         获取 去赚钱 页面的跳转按钮名称和目标页面的关键字(用于确认有跳转成功)
         """
-        return '来赚钱', '(任务中心|抵用金|现金收益|开宝箱得金币|金币收益|赚钱任务|交友广场)'
+        return '来赚钱', r'(任务中心|抵用金|现金收益|开宝箱得金币|倍金.\d+待领|金币收益|赚钱任务|交友广场)'
 
     def get_info_stream_tab_name(self) -> tuple:
         """
