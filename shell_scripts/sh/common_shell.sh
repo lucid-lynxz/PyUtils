@@ -117,6 +117,14 @@ if [ -z "$finalPythonCmd" ]; then
 fi
 echo "final python3 command:$finalPythonCmd"
 
+echo "which $finalPythonCmd"
+which "$finalPythonCmd"
+
+# 查看是否安装aes加密库
+#$finalPythonCmd -m pip list |grep pycryptodome
+# 安装指定的库, 注意,若使用的是项目内聚的离线版本的python,则不支持pip, 需要将所需的库文件下载放到 third_tools/python3/windows/ 下
+#$finalPythonCmd -m pip install airtest pocoui psutil cnocr zstd -i https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 获取其他参数(剔除有特定含义的参数1和2)并透传到python脚本中
 otherParams=${@/$1/}
 otherParams=${otherParams/$2/}

@@ -1,6 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
+import importlib.util
 import os
 import platform
 
@@ -45,9 +46,13 @@ class CommonUtil(object):
         with os.popen(cmd) as fp:
             bf = fp._stream.buffer.read()
         try:
-            return bf.decode('utf8', 'ignore').strip()
+            cmd_result = bf.decode('utf8', 'ignore').strip()
         except UnicodeDecodeError:
-            return bf.decode('gbk', 'ignore').strip()
+            cmd_result = bf.decode('gbk', 'ignore').strip()
+
+        if printCmdInfo:
+            print("%s execute cmd: %s result=%s" % (TimeUtil.getTimeStr(), cmd, cmd_result))
+        return cmd_result
 
     @classmethod
     def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
@@ -209,6 +214,24 @@ class CommonUtil(object):
                 print(f'killPid {pid}')
         except Exception as e:
             print(f'killPid {pid} fail: {e}')
+
+    @staticmethod
+    def is_library_installed(library_name):
+        """
+        检查给定的库是否已安装
+        """
+        return importlib.util.find_spec(library_name) is not None
+
+    @staticmethod
+    def get_module_path(module_name):
+        """
+        获取指定库的所在路径
+        """
+        spec = importlib.util.find_spec(module_name)
+        if spec is not None:
+            return spec.origin
+        else:
+            return None
 
 
 if __name__ == "__main__":
