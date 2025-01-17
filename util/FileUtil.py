@@ -52,7 +52,7 @@ class FileUtil(object):
             try:
                 pPath = os.path.dirname(pPath)
             except Exception as e:
-                print('getParentPath error: %s' % e)
+                CommonUtil.printLog('getParentPath error: %s' % e)
         return FileUtil.recookPath('%s/' % pPath)
 
     @staticmethod
@@ -187,13 +187,13 @@ class FileUtil(object):
         :return: 是否移动成功
         """
         if not FileUtil.isFileExist(src):
-            print('移动文件失败：源文件不存在 %s' % src)
+            CommonUtil.printLog('移动文件失败：源文件不存在 %s' % src)
             return False
         try:
             shutil.move(src, dst)
             return True
         except (OSError, EnvironmentError) as reason:
-            print('移动文件失败：%s' % reason)
+            CommonUtil.printLog('移动文件失败：%s' % reason)
             return False
 
     @staticmethod
@@ -248,7 +248,7 @@ class FileUtil(object):
         if autoRecookPath:
             path = FileUtil.recookPath(path)
         if path.endswith('/'):  # 目录路径则提取目录名信息
-            # print("getFileName oriPath=%s, curPath=%s" % (path, path[:-1]))
+            # CommonUtil.printLog("getFileName oriPath=%s, curPath=%s" % (path, path[:-1]))
             path = path[:-1]
         fileName = os.path.basename(path)
         arr = os.path.splitext(fileName)
@@ -262,7 +262,7 @@ class FileUtil(object):
         """
         folder_path = FileUtil.recookPath(folder_path)
         if os.path.exists(folder_path) and not os.path.isdir(folder_path):
-            print("makeDir() 文件已存在但并非目录, 进行删除: %s" % folder_path)
+            CommonUtil.printLog("makeDir() 文件已存在但并非目录, 进行删除: %s" % folder_path)
             os.remove(folder_path)
 
         if not os.path.exists(folder_path):
@@ -346,7 +346,7 @@ class FileUtil(object):
 
         FileUtil.createFile(path, recreateIfExist=False)
         if FileUtil.isDirFile(path):
-            print("append2File fail as %s is a folder" % path)
+            CommonUtil.printLog("append2File fail as %s is a folder" % path)
             return False
 
         with open(path, "a" if append else "w", encoding=encoding) as f:
@@ -385,16 +385,16 @@ class FileUtil(object):
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"
-    # print(FileUtil.getParentPath(tPath, 1))
-    # print(FileUtil.getParentPath(tPath, 2))
-    # print(FileUtil.getParentPath(tPath, 3))
-    # print(FileUtil.getParentPath(tPath, 4))
-    # print(FileUtil.getParentPath(tPath, 30))
+    # CommonUtil.printLog(FileUtil.getParentPath(tPath, 1))
+    # CommonUtil.printLog(FileUtil.getParentPath(tPath, 2))
+    # CommonUtil.printLog(FileUtil.getParentPath(tPath, 3))
+    # CommonUtil.printLog(FileUtil.getParentPath(tPath, 4))
+    # CommonUtil.printLog(FileUtil.getParentPath(tPath, 30))
     # FileUtil.createFile(tPath, True)
     # FileUtil.write2File(tPath, "hello")
     # lines = FileUtil.readFile(tPath)
     # for line in lines:
-    #     print(line)
+    #     CommonUtil.printLog(line)
     #
     #
     # def filterLog(path: str) -> bool:
@@ -402,9 +402,9 @@ if __name__ == '__main__':
     #     return re.search(r'%s' % pattern, path) is not None
     #
     #
-    # print(FileUtil.listAllFilePath('/Users/lynxz/temp/', 1, 0, filterLog))
+    # CommonUtil.printLog(FileUtil.listAllFilePath('/Users/lynxz/temp/', 1, 0, filterLog))
     b, info = FileUtil.getFileSize('H:/Workspace/Python/wool/temp.air/tpl1682432948047.png')
-    print('file size=%s,size1=%s' % (b, info))
+    CommonUtil.printLog('file size=%s,size1=%s' % (b, info))
     # b, info = FileUtil.getDirSize('H:/Workspace/Python/wool/temp.air/')
     b, info = FileUtil.getDirSize('D:/Downloads/Tencent/斗破苍穹666')
-    print('dir size=%s,size1=%s' % (b, info))
+    CommonUtil.printLog('dir size=%s,size1=%s' % (b, info))

@@ -29,6 +29,15 @@ class CommonUtil(object):
         import sys
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
+    @staticmethod
+    def printLog(msg: str, condition: bool = True):
+        if condition:
+            # 此处保持使用原始的 print() 语句
+            try:
+                print("%s %s" % (TimeUtil.getTimeStr(), msg))
+            except Exception as e:
+                print("printLog exception %s" % e)
+
     @classmethod
     def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
         """
@@ -36,11 +45,10 @@ class CommonUtil(object):
         :param cmd: 待执行的命令
         :param printCmdInfo: 是否打印命令内容
         """
-        if printCmdInfo:
-            print("%s execute cmd: %s" % (TimeUtil.getTimeStr(), cmd))
+        CommonUtil.printLog("execute cmd: %s" % cmd, printCmdInfo)
         # readlines = os.popen(cmd).readlines()
         # result = "".join(readlines)
-        # print("result=%s" % result)
+        # CommonUtil.printLog("result=%s" % result)
         # return result
 
         with os.popen(cmd) as fp:
@@ -50,8 +58,7 @@ class CommonUtil(object):
         except UnicodeDecodeError:
             cmd_result = bf.decode('gbk', 'ignore').strip()
 
-        if printCmdInfo:
-            print("%s execute cmd: %s result=%s" % (TimeUtil.getTimeStr(), cmd, cmd_result))
+        CommonUtil.printLog("execute cmd result=%s" % cmd_result, printCmdInfo)
         return cmd_result
 
     @classmethod
@@ -59,8 +66,7 @@ class CommonUtil(object):
         """
         通过os.system(xxx) 执行命令, 无返回信息
         """
-        if printCmdInfo:
-            print("execute cmd by os.system: %s" % cmd)
+        CommonUtil.printLog("execute cmd by os.system: %s" % cmd, printCmdInfo)
         os.system(cmd)
 
     @classmethod
@@ -180,7 +186,7 @@ class CommonUtil(object):
         if autoAddExeSuffix:
             path = CommonUtil.recookExeSuffix(path)
         path = CommonUtil.recookPath(path)
-        print('checkThirdToolPath result=%s' % path)
+        CommonUtil.printLog('checkThirdToolPath result=%s' % path)
         return path
 
     @staticmethod
@@ -207,13 +213,13 @@ class CommonUtil(object):
 
         try:
             if CommonUtil.isWindows():
-                CommonUtil.exeCmdByOSSystem(f'taskkill /f /pid {pid}')
+                CommonUtil.exeCmdByOSSystem("taskkill /f /pid %s" % pid)
             else:
                 import signal
                 os.kill(int(pid), signal.SIGKILL)
-                print(f'killPid {pid}')
+                CommonUtil.printLog(f'killPid {pid}')
         except Exception as e:
-            print(f'killPid {pid} fail: {e}')
+            CommonUtil.printLog(f'killPid {pid} fail: {e}')
 
     @staticmethod
     def is_library_installed(library_name):
@@ -236,4 +242,4 @@ class CommonUtil(object):
 
 if __name__ == "__main__":
     result = CommonUtil.exeCmd('git --git-dir=D:/D/987/.git/ --work-tree=D:\D\987 log -1')
-    print("===> %s" % result)
+    CommonUtil.printLog("===> %s" % result)

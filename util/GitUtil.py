@@ -219,7 +219,7 @@ class GitUtil(object):
         :param options: 额外的参数,如: -r --sort=-committerdate 表示按提交顺序列出远程分支
         :return: 分支名列表, 若是远程分支, 则分支名会带有 origin/ 前缀, 自行剔除
         """
-        print('--> getBranchList options=%s' % options)
+        CommonUtil.printLog('--> getBranchList options=%s' % options)
 
         def removeStar(name: str) -> str:
             """
@@ -288,7 +288,7 @@ class GitUtil(object):
         curBranch = self.getCurBranch()
         gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
         cmdResult = CommonUtil.exeCmd(gitCmd)
-        # print('cmdResult=%s' % cmdResult)
+        # CommonUtil.printLog('cmdResult=%s' % cmdResult)
         lines = cmdResult.split('\n')
         for line in lines:
             if '* %s' % curBranch in line:
@@ -319,7 +319,8 @@ class GitUtil(object):
         if CommonUtil.isNoneOrBlank(targetBranch):
             targetBranch = self.branch
 
-        print('--> checkoutBranch targetBranch=%s' % targetBranch)
+        _cloneOptions = '' if CommonUtil.isNoneOrBlank(cloneOptions) else cloneOptions
+        CommonUtil.printLog('--> checkoutBranch targetBranch=%s' % targetBranch)
         # 若对应git仓库目录已存在,则直接进行分支切换,代码pull
         if FileUtil.isDirFile("%s" % self._dotGitPath):
             # 查看本地现有分支,按需切换拉取远程指定分支代码
@@ -327,14 +328,14 @@ class GitUtil(object):
             cmdResult = CommonUtil.exeCmd(gitCmd)
 
             if targetBranch not in cmdResult:  # 本地分支不包含目标分支,则进行创建, 此处不会切换分支
-                gitCmd = "git %s fetch %s %s:%s" % (
-                    self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch, targetBranch)
+                gitCmd = "git %s fetch %s %s:%s %s" % (
+                    self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch, targetBranch, _cloneOptions)
                 CommonUtil.exeCmd(gitCmd)
 
             if self.getCurBranch() != targetBranch:  # 当前分支不是目标分支,需切换
                 gitCmd = "git %s checkout %s" % (self._gitDirWorkTreeInfo, targetBranch)
                 cmdResult = CommonUtil.exeCmd(gitCmd)
-                print('--> checkout targetBranch=%scurBranchName=%s,cmdResult=%s' % (
+                CommonUtil.printLog('--> checkout targetBranch=%scurBranchName=%s,cmdResult=%s' % (
                     targetBranch, self.getCurBranch(), cmdResult))
 
             if self.getCurBranch() != targetBranch:
@@ -342,14 +343,14 @@ class GitUtil(object):
 
             # 查看当前分支对应的远程分支,若不存在,则进行指定\
             if CommonUtil.isNoneOrBlank(self.getRemoteBranchName()):
-                print('当前分支的远程分支为空,进行设置')
+                CommonUtil.printLog('当前分支的远程分支为空,进行设置')
                 gitCmd = 'git %s branch --set-upstream-to=%s/%s' % (
                     self._gitDirWorkTreeInfo, self._remoteRepositoryName, targetBranch)
                 CommonUtil.exeCmd(gitCmd)
 
             # gitCmd = 'git %s branch -vv' % self._gitDirWorkTreeInfo
             # cmdResult = CommonUtil.exeCmd(gitCmd)
-            # # print('cmdResult=%s' % cmdResult)
+            # # CommonUtil.printLog('cmdResult=%s' % cmdResult)
             # lines = cmdResult.split('\n')
             # for line in lines:
             #     if '* %s' % targetBranch in line:
@@ -374,10 +375,10 @@ class GitUtil(object):
             #
             # # 分支切换
             # if not CommonUtil.isNoneOrBlank(gitCmd):
-            #     print("执行git分支切换")
+            #     CommonUtil.printLog("执行git分支切换")
             #     CommonUtil.exeCmd(gitCmd)
             #     # gitCmd = "git %s branch --set-upstream-to=origin:%s" % (self._gitDirWorkTreeInfo, targetBranch)
-            #     # print("执行git set-upstream-to:%s" % gitCmd)
+            #     # CommonUtil.printLog("执行git set-upstream-to:%s" % gitCmd)
             #     # CommonUtil.exeCmd(gitCmd)
             #
             # # 拉取分支代码
@@ -386,21 +387,20 @@ class GitUtil(object):
             #
             # gitCmd = 'git %s rebase origin/%s' % (self._gitDirWorkTreeInfo, targetBranch)
             # cmdResult = CommonUtil.exeCmd(gitCmd)
-            # print("执行git rebase更新分支代码结束: %s" % cmdResult)
+            # CommonUtil.printLog("执行git rebase更新分支代码结束: %s" % cmdResult)
         else:  # clone 仓库指定分支代码,目前首次clone耗时较长,4min+
-            _cloneOptions = '' if CommonUtil.isNoneOrBlank(cloneOptions) else cloneOptions
             gitCmd = "git clone -b %s %s %s %s %s --recurse-submodules" % (
                 targetBranch, self._getDepthOption(), self.remoteRepositoryUrl, self.localRepositoryPath, _cloneOptions)
-            print("%s 准备clone源码,请耐心等候" % TimeUtil.getTimeStr())
+            CommonUtil.printLog("%s 准备clone源码,请耐心等候" % TimeUtil.getTimeStr())
             CommonUtil.exeCmd(gitCmd)
-            print("%s git clone完成" % TimeUtil.getTimeStr())
+            CommonUtil.printLog("%s git clone完成" % TimeUtil.getTimeStr())
             gitCmd = 'git %s config remote.%s.fetch +refs/heads/*:refs/remotes/%s/*' % (
                 self._gitDirWorkTreeInfo, self._remoteRepositoryName, self._remoteRepositoryName)
             CommonUtil.exeCmd(gitCmd)
-            # print('首次clone, 准备 fetch origin, 耗时可能较长, 请耐心等待....')
+            # CommonUtil.printLog('首次clone, 准备 fetch origin, 耗时可能较长, 请耐心等待....')
             # CommonUtil.exeCmd('git %s fetch origin' % self._gitDirWorkTreeInfo)
-            # print('fetch origin结束')
-        print('%s checkoutBranch finish, curBranch=%s, targetBranch=%s' % (TimeUtil.getTimeStr(), self.getCurBranch(),
+            # CommonUtil.printLog('fetch origin结束')
+        CommonUtil.printLog('%s checkoutBranch finish, curBranch=%s, targetBranch=%s' % (TimeUtil.getTimeStr(), self.getCurBranch(),
                                                                            targetBranch))
         return self
 
@@ -427,10 +427,10 @@ class GitUtil(object):
             self.checkoutBranch(branch)  # 指定了目标分支,则进行切换到
 
         if CommonUtil.isNoneOrBlank(branch):
-            print('updateBranch error as target branch name is empty')
+            CommonUtil.printLog('updateBranch error as target branch name is empty')
             return self
 
-        print('--> updateBranch branch=%s,byRebase=%s' % (branch, byRebase))
+        CommonUtil.printLog('--> updateBranch branch=%s,byRebase=%s' % (branch, byRebase))
         # 拉取分支代码
         _fetchOptions = '' if CommonUtil.isNoneOrBlank(fetchOptions) else fetchOptions
         gitCmd = 'git %s fetch %s %s %s' % (
@@ -525,7 +525,7 @@ class GitUtil(object):
             self.checkoutBranch(targetBranch)
         headIdBefore = self.getCommitId()  # 合并前的commitId
 
-        print('-->%s mergeBranch fromBranch=%s,targetBranch=%s,byRebase=%s' % (
+        CommonUtil.printLog('-->%s mergeBranch fromBranch=%s,targetBranch=%s,byRebase=%s' % (
             TimeUtil.getTimeStr(), fromBranch, targetBranch, byRebase))
 
         if CommonUtil.isNoneOrBlank(targetBranch):
@@ -543,7 +543,7 @@ class GitUtil(object):
         failKW = ['Merge conflict', 'merge failed']
         for kw in failKW:
             if kw in mergeResult:  # 合并失败
-                print('merge into %s fail, will abort and reset... %s' % (targetBranch, mergeResult))
+                CommonUtil.printLog('merge into %s fail, will abort and reset... %s' % (targetBranch, mergeResult))
                 CommonUtil.exeCmd('git %s %s --abort' % (self._gitDirWorkTreeInfo, mergeCmd))  # 终止合并
                 self.reset('hard', 'HEAD')  # 还原代码到合并前
                 raise Exception('mergeBranch into %s 失败,存在未处理的冲突,请人工处理' % targetBranch)
@@ -556,23 +556,24 @@ class GitUtil(object):
             TimeUtil.sleep(deltaSec)
             tempCurBranchName = self.getCurBranch()
             waitSec += deltaSec
-            print('---> %s tempCurBranchName=%s 与预期分支名%s不符, 继续等待' % (
+            CommonUtil.printLog('---> %s tempCurBranchName=%s 与预期分支名%s不符, 继续等待' % (
                 TimeUtil.getTimeStr(), tempCurBranchName, targetBranch))
 
             if waitSec >= maxWaitSec:
-                print('---> 退出等待循环')
+                CommonUtil.printLog('---> 退出等待循环')
                 break
 
         # 记录下当前git状态(若处于rebasing中,如有冲突了,则会有报错)
         statusMsg = self.getStatus()
-        print('merge into %s, cur statusMsg=%s' % (targetBranch, statusMsg))
+        CommonUtil.printLog('merge into %s, cur statusMsg=%s' % (targetBranch, statusMsg))
 
         headIdAfter = self.getCommitId()  # 合并后的commitId
         # 确认是否合并完成
         if tempCurBranchName != targetBranch:
-            raise Exception('mergeBranch失败,分支名与预期%s不符,请确认是否尚未合并完成 %s' % (tempCurBranchName, targetBranch))
+            raise Exception(
+                'mergeBranch失败,分支名与预期%s不符,请确认是否尚未合并完成 %s' % (tempCurBranchName, targetBranch))
         else:
-            print('%s mergeBranch(%s)结束 headIdBefore=%s,headIdAfter=%s' % (
+            CommonUtil.printLog('%s mergeBranch(%s)结束 headIdBefore=%s,headIdAfter=%s' % (
                 TimeUtil.getTimeStr(), targetBranch, headIdBefore, headIdAfter))
         return self
 
@@ -587,7 +588,7 @@ class GitUtil(object):
         if CommonUtil.isNoneOrBlank(newCommitId):
             newCommitId = self.getCommitId()
 
-        print('--> getDiffInfo oldCommitId=%s,newCommitId=%s,options=%s' % (oldCommitId, newCommitId, options))
+        CommonUtil.printLog('--> getDiffInfo oldCommitId=%s,newCommitId=%s,options=%s' % (oldCommitId, newCommitId, options))
         gitCmd = "git %s diff %s %s %s" % (
             self._gitDirWorkTreeInfo, oldCommitId, newCommitId, options)
         cmdResult = CommonUtil.exeCmd(gitCmd)
@@ -661,14 +662,14 @@ class GitUtil(object):
         # 获取最早一次提交
         cmdResult = self.exeGitCmd('log %s..%s --oneline' % (srcBranch, targetBranch))
         if cmdResult.startswith('fatal'):
-            print('getFirstCommitId fail ascmdResult=%s' % cmdResult)
+            CommonUtil.printLog('getFirstCommitId fail ascmdResult=%s' % cmdResult)
             return ''
         lines = cmdResult.splitlines()
         n = len(lines)
         if n <= 0:
             return ''
         commitId = lines[n - 1].split(' ')[0]
-        print('getFirstCommitId(src=%s,target=%s)=%s' % (srcBranch, targetBranch, commitId))
+        CommonUtil.printLog('getFirstCommitId(src=%s,target=%s)=%s' % (srcBranch, targetBranch, commitId))
         return commitId
 
     def getFirstCommitInfoByReflog(self) -> CommitInfo:
@@ -698,7 +699,7 @@ class GitUtil(object):
         curBarnchName = self.getCurBranch()
         cmdResult = self.exeGitCmd('reflog show --date=iso %s' % curBarnchName)
         if cmdResult.startswith('fatal'):
-            print('getFirstCommitInfoByReflog fail as cmdResult=%s' % cmdResult)
+            CommonUtil.printLog('getFirstCommitInfoByReflog fail as cmdResult=%s' % cmdResult)
             commitInfo.totalInfo = cmdResult
             return commitInfo
 
