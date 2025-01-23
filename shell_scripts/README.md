@@ -53,7 +53,7 @@ P.S. 也可根据各公司需求, 创建 `sh/` 的同级目录, 如: `abc_sh/`, 
 使用的配置文件为: `config/a.ini` 其中父目录名通过文件 `config_dir_name.txt` 文件确定
 
 ```shell
-#! /bin/bash
+#!/bin/bash
 # a.sh
 
 cd $(dirname $0)                       # 切换到脚本所在目录
