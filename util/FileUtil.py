@@ -197,6 +197,18 @@ class FileUtil(object):
             return False
 
     @staticmethod
+    def get_sub_file_names(folderPath: str, extensions: list) -> list:
+        """
+        获取指定目录下包含特定后缀的文件名
+        :param folderPath: 目录路径
+        :param extensions: 允许包含的扩展名,如: ['.xlsx', '.xls', '.txt']
+        """
+        # 获取目录下的所有文件
+        all_files = os.listdir(folderPath)
+        # 筛选出指定扩展名的文件
+        return [file for file in all_files if any(file.endswith(ext) for ext in extensions)]
+
+    @staticmethod
     def listAllFilePath(folderPath: str, depth: int = 1, curDepth: int = 0,
                         getAllDepthFileInfo: bool = False, *path_filters) -> list:
         """
@@ -269,7 +281,7 @@ class FileUtil(object):
             os.makedirs(folder_path)
 
     @staticmethod
-    def createFile(path: str, recreateIfExist: bool = False):
+    def createFile(path: str, recreateIfExist: bool = False) -> bool:
         """
         创建文件
         :param path: 文件路径,若为"/" 或 "\\" 结尾,则表示目录
@@ -284,6 +296,7 @@ class FileUtil(object):
         if FileUtil.isDirPath(path):  # 创建目录
             if not FileUtil.isDirFile(path):
                 os.makedirs(path)
+                return True
         else:
             # 按需创建父目录
             parentPath = FileUtil.recookPath('%s/' % os.path.dirname(path))
@@ -294,8 +307,10 @@ class FileUtil(object):
             try:
                 with open(path, "w" if recreateIfExist else "a") as f:
                     f.close()
+                return True
             except Exception as e:
-                pass
+                CommonUtil.printLog(f"createFile fail path={path}, err:${e}")
+                return False
 
     @staticmethod
     def write2File(path: str, msg: str, encoding='utf-8',
@@ -381,6 +396,11 @@ class FileUtil(object):
         else:
             cmd = CommonUtil.changeSep('open %s' % path)
         CommonUtil.exeCmd(cmd, printCmdInfo=False)
+
+    @staticmethod
+    def absPath(path: str) -> str:
+        return os.path.abspath(path)
+
 
 
 if __name__ == '__main__':

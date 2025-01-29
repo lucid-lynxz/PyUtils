@@ -4,3 +4,4 @@ test.py
 **/*.pyc
 **/espressoAutoCmd.bat
 **/__pycache__
+assets/imgCache/*

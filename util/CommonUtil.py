@@ -30,13 +30,14 @@ class CommonUtil(object):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
-    def printLog(msg: str, condition: bool = True):
+    def printLog(msg: str, condition: bool = True, includeTime: bool = True):
         if condition:
             # 此处保持使用原始的 print() 语句
             try:
-                print("%s %s" % (TimeUtil.getTimeStr(), msg))
+                ts = f"{TimeUtil.getTimeStr()} " if includeTime else ""
+                print(f"{ts}{msg}", flush=True)
             except Exception as e:
-                print("printLog exception %s" % e)
+                print(f"printLog exception {e}", flush=True)
 
     @classmethod
     def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
@@ -238,6 +239,22 @@ class CommonUtil(object):
             return spec.origin
         else:
             return None
+
+    @staticmethod
+    def get_input_info(tip: str, defaultValue: str, quit: str = "q") -> str:
+        """
+        获取用户输入的值
+        :param tip: 提示语
+        :param defaultValue:输入为空时,返回的默认值
+        :return:
+        """
+        msg = input(tip).strip()
+        _result = defaultValue
+        if len(msg) > 0:
+            _result = msg
+        if quit is not None and quit == _result:
+            exit(0)
+        return _result
 
 
 if __name__ == "__main__":

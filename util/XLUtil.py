@@ -12,6 +12,8 @@ import openpyxl.workbook
 from openpyxl.worksheet import cell_range
 
 from util.IExcelUtil import IExcelUtil
+from util.FileUtil import FileUtil
+from util.CommonUtil import CommonUtil
 
 
 class XLUtil(IExcelUtil):
@@ -346,7 +348,7 @@ class XLUtil(IExcelUtil):
         return maxRow
 
     @staticmethod
-    def takeShot(xlPath: str, sheetName: str, area: str, imgPath: str = None) -> tuple:
+    def takeShot(xlPath: str, sheetName: str, area: str, imgPath: str = None, continueMode: bool = False) -> tuple:
         """
         python excel截图， 参考： https://blog.csdn.net/weixin_30378623/article/details/96566903
         需要安装win库：
@@ -355,9 +357,14 @@ class XLUtil(IExcelUtil):
         :param xlPath: excel源文件路径
         :param sheetName: 待截图的表格名
         :param area:待截图的区域，如: "A1:X2"
-        :param imgPath: 图片保存的绝对路径，若为空，则保存在excel同级目录下
+        :param imgPath: 图片保存的绝对路径
+        :param continueMode: 若为True,则表示若图片已经存在,则不重新截图
         :return: (bool,str) 依次表示是否截图成功，以及图片的位置
         """
+        if FileUtil.isFileExist(imgPath) and continueMode:
+            CommonUtil.printLog(f"图片已经存在，不重新截图: {imgPath}")
+            return True, imgPath
+
         # 仅系统是win时才可用
         import platform
         if "Windows" != platform.system():
@@ -366,11 +373,12 @@ class XLUtil(IExcelUtil):
         from win32com.client import DispatchEx
         # import pythoncom
         from PIL import ImageGrab
-        import uuid
+        # import uuid
 
         excel = None
         wb = None
         tXlPath = os.path.abspath(xlPath)
+        imgPath = FileUtil.recookPath(imgPath)
 
         maxRetryCnt = 3  # 重试次数限制
         for retryCnt in range(maxRetryCnt):
@@ -381,27 +389,23 @@ class XLUtil(IExcelUtil):
                 excel.DisplayAlerts = False  # 是否显示警告
                 wb = excel.Workbooks.Open(tXlPath)  # 打开excel
                 ws = wb.Worksheets(sheetName)  # 选择sheet
-
+                print(f"imgPath={imgPath}")
                 print(' 正在截图区域:%s, 表格名:%s, 图片名:%s' % (
                     area, sheetName, 'unknown' if imgPath is None else os.path.basename(imgPath)))
 
                 ws.Select()  # 选中激活某个工作表, 避免由于可能多个工作表被同时被选中，导致无法复制/粘贴单元格区域
-                ws.Range(area).CopyPicture()  # 复制图片区域
-                time.sleep(1)
-                # ws.Paste()  # 粘贴
-                ws.Paste(ws.Range('B1'))  # 将图片移动到具体位置
-
-                name = str(uuid.uuid4())  # 重命名唯一值
-                new_shape_name = name  # name[:6]
-                excel.Selection.ShapeRange.Name = new_shape_name  # 将刚刚选择的Shape重命名，避免与已有图片混淆
-                ws.Shapes(new_shape_name).Copy()  # 选择图片
-                # img = ws.pictures[len(ws.pictures) - 1]
-                # img.Copy()
-                time.sleep(1)  # 延迟下， 不然img为空
+                ws.Range(area).CopyPicture(Format=2)  # 复制图片区域
+                # time.sleep(1)
+                # # ws.Paste()  # 粘贴
+                # ws.Paste(ws.Range('B1'))  # 将图片移动到具体位置
+                # name = str(uuid.uuid4())  # 重命名唯一值
+                # new_shape_name = name  # name[:6]
+                # excel.Selection.ShapeRange.Name = new_shape_name  # 将刚刚选择的Shape重命名，避免与已有图片混淆
+                # ws.Shapes(new_shape_name).Copy()  # 选择图片
+                # # img = ws.pictures[len(ws.pictures) - 1]
+                # # img.Copy()
+                # time.sleep(1)  # 延迟下， 不然img为空
                 img = ImageGrab.grabclipboard()  # 获取剪贴板的图片数据
-
-                if imgPath is None:
-                    imgPath = "%s%s%s.png" % (os.path.dirname(tXlPath), os.sep, name)
 
                 if img is None:
                     print("剪贴板img为None,原始 pic=%s" % img)

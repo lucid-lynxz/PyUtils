@@ -9,8 +9,7 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
-
-from src.util.CommonUtil import CommonUtil
+from util.CommonUtil import CommonUtil
 
 
 class MailUtil(object):
@@ -35,7 +34,9 @@ class MailUtil(object):
         :param debugLevel: 打印调试信息 1-显示所有smtp交互日志
         """
         self.fromMail = address
-        self.server = smtplib.SMTP(smtpServer, smtpPort)  # SMTP协议默认端口是25
+        # 使用 smtp() 接口可能会报错: Connection unexpectedly closed, 改为: smtp_ssl()
+        # self.server = smtplib.SMTP(smtpServer, smtpPort)  # SMTP协议默认端口是25
+        self.server = smtplib.SMTP_SSL(smtpServer)
         self.server.set_debuglevel(debugLevel)
         self.server.login(address, pwd)
         self.mineMsg: MIMEMultipart = MIMEMultipart()  # 邮件对象
