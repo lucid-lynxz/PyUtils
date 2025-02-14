@@ -30,7 +30,7 @@ class CommonUtil(object):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
-    def printLog(msg: str, condition: bool = True, includeTime: bool = True):
+    def printLog(msg: str, condition: bool = True, prefix: str = ""):
         if condition:
             # 此处保持使用原始的 print() 语句
             try:
@@ -46,20 +46,25 @@ class CommonUtil(object):
         :param cmd: 待执行的命令
         :param printCmdInfo: 是否打印命令内容
         """
-        CommonUtil.printLog("execute cmd: %s" % cmd, printCmdInfo)
+        # CommonUtil.printLog("execute cmd: %s" % cmd, printCmdInfo)
         # readlines = os.popen(cmd).readlines()
         # result = "".join(readlines)
         # CommonUtil.printLog("result=%s" % result)
         # return result
 
-        with os.popen(cmd) as fp:
-            bf = fp._stream.buffer.read()
+        try:
+            with os.popen(cmd) as fp:
+                bf = fp._stream.buffer.read()
+        except Exception as e:
+            CommonUtil.printLog(f"exeCmd exception:{cmd}\n{e}".strip())
+            return ""
+
         try:
             cmd_result = bf.decode('utf8', 'ignore').strip()
         except UnicodeDecodeError:
             cmd_result = bf.decode('gbk', 'ignore').strip()
 
-        CommonUtil.printLog("execute cmd result=%s" % cmd_result, printCmdInfo)
+        CommonUtil.printLog(f"exeCmd:{cmd}\n{cmd_result}".strip(), printCmdInfo)
         return cmd_result
 
     @classmethod
