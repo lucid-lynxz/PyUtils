@@ -134,12 +134,8 @@ class GetLogImpl(BaseConfig):
                               printCmdInfo=print_log)
         # adbUtil.getLogcatInfo(saveDirPath, level='E', logcatFileName='logcatE.txt', deviceId=targetDeviceId)
 
-        print('尝试删除一级空白子目录')
-        allSubFiles = FileUtil.listAllFilePath(saveDirPath)
-        for subFilePath in allSubFiles:
-            if FileUtil.isDirFile(subFilePath) and len(FileUtil.listAllFilePath(subFilePath)) == 0:
-                print('  删除 %s' % subFilePath)
-                FileUtil.deleteFile(subFilePath)
+        print('递归删除空白子目录')
+        FileUtil.deleteEmptyDirsRecursively(saveDirPath)
 
         # 删除 config.ini 中指定的无用日志信息
         removeFiles = self.configParser.get(sectionName, keyExcludeRemoveFile)

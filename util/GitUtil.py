@@ -330,9 +330,9 @@ class GitUtil(object):
         # 若对应git仓库目录已存在,则直接进行分支切换,代码pull
         if FileUtil.isDirFile("%s" % self._dotGitPath):
             # 查看本地现有分支,按需切换拉取远程指定分支代码
-            cmdResult = CommonUtil.exeCmd("git branch", printCmdInfo=False)
+            branchList = self.getBranchList()
 
-            if targetBranch not in cmdResult:  # 本地分支不包含目标分支,则进行创建, 此处不会切换分支
+            if targetBranch not in branchList:  # 本地分支不包含目标分支,则进行创建, 此处不会切换分支
                 gitCmd = "git fetch %s %s:%s %s" % (self._remoteRepositoryName, targetBranch, targetBranch, _cloneOptions)
                 CommonUtil.exeCmd(gitCmd)
 

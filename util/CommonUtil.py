@@ -30,12 +30,12 @@ class CommonUtil(object):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
-    def printLog(msg: str, condition: bool = True, prefix: str = ""):
+    def printLog(msg: str, condition: bool = True, prefix: str = "", includeTime: bool = True):
         if condition:
             # 此处保持使用原始的 print() 语句
             try:
                 ts = f"{TimeUtil.getTimeStr()} " if includeTime else ""
-                print(f"{ts}{msg}", flush=True)
+                print(f"{prefix}{ts}{msg}", flush=True)
             except Exception as e:
                 print(f"printLog exception {e}", flush=True)
 

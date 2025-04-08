@@ -158,7 +158,7 @@ class FileUtil(object):
             shutil.copy(src, dst)
 
     @staticmethod
-    def deleteFile(path: str):
+    def deleteFile(path: str, printLog: bool = False):
         """
         删除文件
         :param path: 文件路径
@@ -166,6 +166,7 @@ class FileUtil(object):
         """
         path = FileUtil.recookPath(path)
         if FileUtil.isFileExist(path):
+            CommonUtil.printLog(f"deleteFile path={path}", printLog)
             if FileUtil.isDirFile(path):  # 目录
                 try:
                     shutil.rmtree(path)
@@ -401,6 +402,30 @@ class FileUtil(object):
     def absPath(path: str) -> str:
         return os.path.abspath(path)
 
+    @staticmethod
+    def deleteEmptyDirsRecursively(path: str):
+        """
+        递归删除所有空白目录
+        :param path: 要删除的空白目录的根路径
+        """
+        path = FileUtil.recookPath(path)
+        if not FileUtil.isDirFile(path):
+            return
+        elif FileUtil.isDirEmpty(path):
+            FileUtil.deleteFile(path, True)
+            return
+
+        # 递归地删除其下的空白子目录
+        for subDir in os.listdir(path):
+            subDirFullPath = os.path.join(path, subDir)
+
+            # 如果是一个子目录，递归调用自身
+            if FileUtil.isDirFile(subDirFullPath):
+                FileUtil.deleteEmptyDirsRecursively(subDirFullPath)
+
+        # 在确认所有子目录都被处理之后，再次检查当前目录是否空白, 若是,则删除
+        if FileUtil.isDirEmpty(path):
+            FileUtil.deleteFile(path, True)
 
 
 if __name__ == '__main__':

@@ -14,6 +14,7 @@ from base.BaseConfig import BaseConfig
 from util.AdbUtil import AdbUtil
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
+from util.CommonUtil import CommonUtil
 
 """
 通过adb对手机屏幕进行截图,兼容多台设备情况
@@ -23,7 +24,8 @@ from util.TimeUtil import TimeUtil
 
 class TakeScreenShotUtil(BaseConfig):
     def onRun(self):
-        picFolder = self.configParser.get('screenshot', 'save_dir')
+        section = 'screenshot'
+        picFolder = self.configParser.get(section, 'save_dir')
         picFolder = FileUtil.recookPath('%s/' % picFolder)
         FileUtil.createFile(picFolder)
 
@@ -31,10 +33,19 @@ class TakeScreenShotUtil(BaseConfig):
             print('截图保存目录不存在, 请确保已创建成功 %s' % picFolder)
             return
 
+        time_format = self.configParser.get(section, 'timeFormat')
+        includeDeviceId = self.configParser.getboolean(section, 'includeDeviceId')
+        prefix = self.configParser.get(section, 'prefix')
+        subfix = self.configParser.get(section, 'subfix')
+
         adbUtil = AdbUtil()
         targetDeviceId = adbUtil.choosePhone()  # 选择待截图的手机信息
+        prefix = "" if CommonUtil.isNoneOrBlank(prefix) else f"{prefix}_"
+        subfix = "" if CommonUtil.isNoneOrBlank(subfix) else f"_{subfix}"
+        deviceId = f"_{targetDeviceId}" if includeDeviceId else ""
+        picName = f'{prefix}{TimeUtil.getTimeStr(time_format)}{deviceId}{subfix}.png'
+
         # 手机中执行adb截图命令, 保存到sdcard/下
-        picName = 'screenshot_%s_%s.png' % (TimeUtil.getTimeStr('%Y%m%d%H%M%S'), targetDeviceId)
         screenShotPathInPhone = FileUtil.recookPath('/sdcard/%s' % picName)
         adbUtil.exeShellCmds(['screencap -p %s' % screenShotPathInPhone], targetDeviceId)
 

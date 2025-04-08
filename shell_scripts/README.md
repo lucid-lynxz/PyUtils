@@ -14,6 +14,7 @@
    以上三个文件/目录属于同一级别
 4. `jenkins_job_demo/` 提取了一份用于触发 `common_shell.sh` 脚本的jenkins job,
    具体说明见[文档](jenkins_job_demo/README.md)
+5. `sf_` 开头的脚本文件是完整功能脚本, 不涉及config.ini 和 python 脚本实现
 
 另外:
 
