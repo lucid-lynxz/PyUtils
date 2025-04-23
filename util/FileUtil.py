@@ -430,44 +430,46 @@ class FileUtil(object):
     @staticmethod
     def copyImage(image_path: str):
         """将图片保存到系统剪贴板的函数"""
-        # pip install pillow pyperclip
-        if not CommonUtil.is_library_installed(["PIL", "pyperclip"]):
-            CommonUtil.printLog("copyImage fail: 请先安装 pillow 和 pyperclip 库")
+        # pip install pillow pywin32
+        if not CommonUtil.is_library_installed(["PIL"]):
+            CommonUtil.printLog("copyImage fail: 请先安装 pillow 库")
             return
-        import sys
-        from tkinter import Tk, TclError
-        from PIL import Image, ImageTk
-        root: Tk = None
-        try:
-            # 创建虚拟Tkinter根窗口（避免弹出GUI界面）
-            root = Tk()
-            root.withdraw()  # 隐藏主窗口
-            root.update()
+        import subprocess
+        from io import BytesIO
+        from PIL import Image
+        image = Image.open(image_path)
 
-            # 打开并处理图像
-            img = Image.open(image_path)
-            img = img.convert("RGB")  # 确保没有Alpha通道
+        if CommonUtil.isWindows():
+            if not CommonUtil.is_library_installed("win32clipboard"):
+                CommonUtil.printLog("copyImage fail: 请先安装 pywin32 库")
+                return
 
-            # 使用PIL的ImageTk转换为适合Tkinter的格式
-            img_tk = ImageTk.PhotoImage(img)
+            try:
+                import win32clipboard
+            except ImportError:
+                return
 
-            # 清空剪贴板并写入图像数据
-            root.clipboard_clear()
-            root.clipboard_append(img_tk)
+            # Windows 系统
+            output = BytesIO()
+            image.convert("RGB").save(output, "BMP")
+            data = output.getvalue()[14:]
+            output.close()
 
-            # 特殊处理macOS的Tk后端问题（如果需要）
-            if sys.platform == "darwin":
-                # 使用osascript命令（macOS需额外配置）
-                import os
-                os.system(f"osascript -e 'set the clipboard to (read (POSIX file \"{image_path}\") as JPEG picture)'")
-            CommonUtil.printLog(f"成功将'{image_path}'复制到剪贴板！")
-        except FileNotFoundError:
-            CommonUtil.printLog(f"错误：无法找到图片文件 {image_path}")
-        except TclError as e:
-            CommonUtil.printLog(f"Tkinter错误：{str(e)}")
-        finally:
-            if root is not None:
-                root.destroy()
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+            win32clipboard.CloseClipboard()
+        elif CommonUtil.isMacOS():
+            # macOS 系统
+            image.save("temp_image.png", "PNG")
+            subprocess.run(['pbcopy', '-Prefer', 'png'], input=open('temp_image.png', 'rb').read())
+        elif CommonUtil.isLinux():
+            # Linux 系统  sudo apt-get install xclip
+            CommonUtil.printLog("copyImage请自行安装xclip库:sudo apt-get install xclip")
+            image.save("temp_image.png", "PNG")
+            subprocess.run(['xclip', '-selection', 'clipboard', '-t', 'image/png', 'temp_image.png'])
+        else:
+            CommonUtil.printLog("copyImage fail: 不支持的操作系统")
 
 
 if __name__ == '__main__':

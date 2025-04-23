@@ -62,7 +62,7 @@ class TakeScreenShotUtil(BaseConfig):
             print('current system is: %s' % system)
             print('提取完成,马上打开截图目录:%s' % picFolder)
             FileUtil.openDir(picFolder)
-            # FileUtil.copyImage(localShotPngPath)
+            FileUtil.copyImage(localShotPngPath)
         else:
             print('提取截图失败, 请手动提取...')
 
