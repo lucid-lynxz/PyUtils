@@ -4,6 +4,7 @@
 import importlib.util
 import os
 import platform
+from typing import Union
 
 from util.TimeUtil import TimeUtil
 
@@ -148,6 +149,14 @@ class CommonUtil(object):
         return 'windows' == CommonUtil.getPlatformName()
 
     @staticmethod
+    def isLinux() -> bool:
+        return 'linux' == CommonUtil.getPlatformName()
+
+    @staticmethod
+    def isMacOS() -> bool:
+        return 'macos' == CommonUtil.getPlatformName()
+
+    @staticmethod
     def recookExeSuffix(path: str) -> str:
         """
         仅对文件(非目录)路径有效
@@ -228,10 +237,16 @@ class CommonUtil(object):
             CommonUtil.printLog(f'killPid {pid} fail: {e}')
 
     @staticmethod
-    def is_library_installed(library_name):
+    def is_library_installed(library_name: Union[str, list]) -> bool:
         """
         检查给定的库是否已安装
+        :param library_name: 库名 如 PIL (对应pillow包), 支持传一个str, 也支持传多个 list
         """
+        if isinstance(library_name, list):
+            for name in library_name:
+                if not CommonUtil.is_library_installed(name):
+                    return False
+            return True
         return importlib.util.find_spec(library_name) is not None
 
     @staticmethod

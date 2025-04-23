@@ -131,10 +131,13 @@ fi
 
 # 执行命令
 echo "$finalPythonCmd $cmdContent"
+which $finalPythonCmd
+#$finalPythonCmd --version
+
 $finalPythonCmd $cmdContent
 
 #$SHELL
-secs=5
+secs=10
 echo will exit after $secs secs
 sleep $secs
 exit

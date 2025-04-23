@@ -5,7 +5,7 @@
 # 其中 airtest pocoui 必装
 # psutil是检测笔记本电脑电量以及是否插电,用于提醒用户,避免挂机失败
 # cnocr 是因为部分页面使用pocoui/airtest无法识别,需要文字识别
-pip3 install airtest pocoui psutil cnocr zstd -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip3 install airtest pocoui psutil cnocr zstd pillow pyperclip -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ## 注意事项：

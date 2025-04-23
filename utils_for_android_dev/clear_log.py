@@ -75,6 +75,7 @@ class ClearLogImpl(BaseConfig):
                 break
 
             for name in stdout.split():
+                print(f'name={name},fullName={fullName}')
                 name = CommonUtil.convert2str(name)
                 if re.search(r'%s' % fullName, name) is not None:
                     path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))

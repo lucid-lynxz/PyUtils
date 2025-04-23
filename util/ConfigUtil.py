@@ -71,3 +71,12 @@ class NewConfigParser(configparser.RawConfigParser):
         self.set(sectionName, key, value)
         sectionDict = self._cache.get(sectionName, dict())
         sectionDict[key] = value
+
+    def getSecionValue(self, section: str, key: str, default_value=None):
+        """
+        获取指定 section 下某个键对应的值，并且当键不存在时返回一个给定的默认值
+        """
+        if self.has_option(section, key):
+            return self.get(section, key)
+        else:
+            return default_value

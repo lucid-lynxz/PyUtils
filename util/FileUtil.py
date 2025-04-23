@@ -427,6 +427,48 @@ class FileUtil(object):
         if FileUtil.isDirEmpty(path):
             FileUtil.deleteFile(path, True)
 
+    @staticmethod
+    def copyImage(image_path: str):
+        """将图片保存到系统剪贴板的函数"""
+        # pip install pillow pyperclip
+        if not CommonUtil.is_library_installed(["PIL", "pyperclip"]):
+            CommonUtil.printLog("copyImage fail: 请先安装 pillow 和 pyperclip 库")
+            return
+        import sys
+        from tkinter import Tk, TclError
+        from PIL import Image, ImageTk
+        root: Tk = None
+        try:
+            # 创建虚拟Tkinter根窗口（避免弹出GUI界面）
+            root = Tk()
+            root.withdraw()  # 隐藏主窗口
+            root.update()
+
+            # 打开并处理图像
+            img = Image.open(image_path)
+            img = img.convert("RGB")  # 确保没有Alpha通道
+
+            # 使用PIL的ImageTk转换为适合Tkinter的格式
+            img_tk = ImageTk.PhotoImage(img)
+
+            # 清空剪贴板并写入图像数据
+            root.clipboard_clear()
+            root.clipboard_append(img_tk)
+
+            # 特殊处理macOS的Tk后端问题（如果需要）
+            if sys.platform == "darwin":
+                # 使用osascript命令（macOS需额外配置）
+                import os
+                os.system(f"osascript -e 'set the clipboard to (read (POSIX file \"{image_path}\") as JPEG picture)'")
+            CommonUtil.printLog(f"成功将'{image_path}'复制到剪贴板！")
+        except FileNotFoundError:
+            CommonUtil.printLog(f"错误：无法找到图片文件 {image_path}")
+        except TclError as e:
+            CommonUtil.printLog(f"Tkinter错误：{str(e)}")
+        finally:
+            if root is not None:
+                root.destroy()
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"

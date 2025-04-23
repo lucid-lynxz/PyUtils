@@ -24,6 +24,7 @@ class GetLogImpl(BaseConfig):
     def onRun(self):
         sectionName = 'get_log'
         keySaveDir = 'save_dir'  # 日志保存在本机的路径key
+        keytimeFormat = 'timeFormat'  # 日志子目录名时间格式
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
         keyExcludeRemoveFile = 'remove_file'  # 提取日志后, 需要删除的无用日志信息,可多条,逗号分隔
         keyCompressFile = 'compress_file'  # 待压缩的本机文件路径key
@@ -36,6 +37,7 @@ class GetLogImpl(BaseConfig):
         # 非待提取的日志路径参数
         notLogPathKeyList = list()
         notLogPathKeyList.append(keySaveDir)
+        notLogPathKeyList.append(keytimeFormat)
         notLogPathKeyList.append(keyParentLogDirInPhone)
         notLogPathKeyList.append(keyExcludeRemoveFile)
         notLogPathKeyList.append(keyCompressFile)
@@ -99,8 +101,9 @@ class GetLogImpl(BaseConfig):
 
         # 创建本机中日志保存子目录
         # 要提取保存在本机中的路径
-        timeInfo = TimeUtil.getTimeStr('%Y%m%d_%H%M%S')
-        saveDirPath = FileUtil.recookPath('%s/%s_log/' % (save_parent_dir, timeInfo))
+        timeFormat = self.configParser.getSecionValue(sectionName, keytimeFormat,"%Y%m%d_%H%M%S")
+        timeInfo = TimeUtil.getTimeStr(timeFormat)
+        saveDirPath = FileUtil.recookPath('%s/%s/' % (save_parent_dir, timeInfo))
         FileUtil.makeDir(saveDirPath)
         print('提取的日志会保存到:%s' % saveDirPath)
 
