@@ -471,6 +471,29 @@ class FileUtil(object):
         else:
             CommonUtil.printLog("copyImage fail: 不支持的操作系统")
 
+    @staticmethod
+    def delete_files_by_extensions(dir_path: str, extensions: list):
+        """
+        批量删除指定目录下包含特定后缀的文件
+
+        :param dir_path: 指定目录的路径
+        :param extensions: 要删除文件的后缀列表，例如 ['.png', '.jpg']
+        """
+        import glob
+        if FileUtil.isDirFile(dir_path):
+            return
+
+        all_files = []
+        # 遍历后缀列表，查找对应后缀的文件
+        for ext in extensions:
+            pattern = os.path.join(dir_path, f"*{ext}")
+            files = glob.glob(pattern)
+            all_files.extend(files)
+
+        # 遍历并删除符合条件的文件
+        for file_path in all_files:
+            FileUtil.deleteFile(file_path)
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"

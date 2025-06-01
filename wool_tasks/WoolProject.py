@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
@@ -12,8 +13,8 @@ if proj_dir not in sys.path:
 
 from abc import ABC, abstractmethod, ABCMeta
 import random
-import time
 import traceback
+
 from base.Interfaces import Runnable
 from util.AdbUtil import AdbUtil
 from util.TimeUtil import TimeUtil
@@ -24,6 +25,83 @@ from util.log_handler import DefaultCustomLog
 
 
 class AbsWoolProject(ABC, Runnable):
+    __metaclass__ = ABCMeta
+
+    def __init__(self, cacheDir: str = ''):
+        """
+        :param cacheDir: 缓存目录路径,主要用于存储ocr截图和日志等
+        """
+
+        self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
+        self.cacheDir: str = cacheDir
+        self.updateCacheDir(cacheDir)
+
+        # 自定义日志,参考: https://zhuanlan.zhihu.com/p/445411809
+        self.logger = DefaultCustomLog.get_log('wool', use_file_handler=True)
+        # self.logger = logging.getLogger("wool")
+        # self.logger.handlers = []  # 将当前文件的handlers 清空后再添加,否则可能会多次打印日志
+        # self.logger.setLevel(logging.INFO)
+        # # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+        # # handler = logging.StreamHandler()
+        # # handler.setFormatter(formatter)
+        # # handler.setLevel(logging.INFO)
+        # # self.logger.addHandler(handler)
+        # self.fileLoggerHandler: logging.FileHandler = None
+        self.model: str = ''  # 当前设备名称, 如android端: 'pixel 2xl
+
+    def updateCacheDir(self, cache: str):
+        self.cacheDir = FileUtil.recookPath(cache)
+        FileUtil.createFile('%s/' % cache)
+        return self
+
+    def sleep(self, sec: float = -1, minSec: float = 1, maxSec: float = 8) -> float:
+        """
+        等待sec秒, 若sec小于0, 则在[minSec,maxSec)中随机挑一个数等待
+        """
+        return TimeUtil.sleep(sec, minSec, maxSec)
+
+    def setNotificationRobotDict(self, robotSettings: dict):
+        """
+        设置消息推送配置信息
+        """
+        self.notificationRobotDict = robotSettings
+        return self
+
+    def logInfo(self, msg, printCmdInfo: bool = True):
+        if not printCmdInfo:
+            return self
+        try:
+            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
+        except Exception as e:
+            traceback.print_exc()
+        finally:
+            return self
+
+    def logWarn(self, msg, printCmdInfo: bool = True):
+        if not printCmdInfo:
+            return self
+        try:
+            self.logger.warning(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
+        except Exception as e:
+            traceback.print_exc()
+        finally:
+            return self
+
+    def logError(self, msg, printCmdInfo: bool = True):
+        if not printCmdInfo:
+            return self
+        try:
+            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
+        except Exception as e:
+            traceback.print_exc()
+        finally:
+            return self
+
+    def common_log_info(self) -> str:
+        return ''
+
+
+class AbsAndroidWoolProject(AbsWoolProject):
     __metaclass__ = ABCMeta
 
     key_minStreamSecs = 'key_minStreamSecs'  # 信息流页面需要刷多久后才允许执行其他操作,默认5min
@@ -74,20 +152,7 @@ class AbsWoolProject(ABC, Runnable):
         self.stateDict: dict = {}  # 用于子类按需存储一些状态信息
         self.initStateDict()
 
-        self.cacheDir: str = cacheDir
-        self.updateCacheDir(cacheDir)
-
-        # 自定义日志,参考: https://zhuanlan.zhihu.com/p/445411809
-        self.logger = DefaultCustomLog.get_log('wool', use_file_handler=True)
-        # self.logger = logging.getLogger("wool")
-        # self.logger.handlers = []  # 将当前文件的handlers 清空后再添加,否则可能会多次打印日志
-        # self.logger.setLevel(logging.INFO)
-        # # formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-        # # handler = logging.StreamHandler()
-        # # handler.setFormatter(formatter)
-        # # handler.setLevel(logging.INFO)
-        # # self.logger.addHandler(handler)
-        # self.fileLoggerHandler: logging.FileHandler = None
+        super().__init__(cacheDir=cacheDir)
 
         # 设备相关配置
         self.deviceId: str = deviceId  # Android设备序列号
@@ -97,15 +162,14 @@ class AbsWoolProject(ABC, Runnable):
         self.dim: int = -1  # 挂机时的屏幕亮度值, 非正数时表示不做调整
         self.dimOri: int = -1  # 设备初始的亮度
 
-        self.next: AbsWoolProject = None  # 下一个需要执行的项目
+        self.next: AbsAndroidWoolProject = None  # 下一个需要执行的项目
         self.minInfoStreamSec: int = minInfoStreamSec
         self.totalSec: int = totalSec
         self.sleepSecBetweenProjects: int = sleepSecBetweenProjects
-        self.notificationRobotDict: dict = None  # 钉钉/飞书等推送信息配置
 
-        self.updateStateKV(AbsWoolProject.key_minStreamSecs, 5 * 60)  # 间隔5min
-        self.updateStateKV(AbsWoolProject.key_lastStreamTs, 0)
-        self.updateStateKV(AbsWoolProject.key_in_stram_sec, 0)
+        self.updateStateKV(AbsAndroidWoolProject.key_minStreamSecs, 5 * 60)  # 间隔5min
+        self.updateStateKV(AbsAndroidWoolProject.key_lastStreamTs, 0)
+        self.updateStateKV(AbsAndroidWoolProject.key_in_stram_sec, 0)
 
     def initStateDict(self):
         return self
@@ -116,39 +180,6 @@ class AbsWoolProject(ABC, Runnable):
 
     def getStateValue(self, key: str, default_value: object = None):
         return self.stateDict.get(key, default_value)
-
-    def logInfo(self, msg, printCmdInfo: bool = True):
-        if not printCmdInfo:
-            return self
-        try:
-            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
-        except Exception as e:
-            traceback.print_exc()
-        finally:
-            return self
-
-    def logWarn(self, msg, printCmdInfo: bool = True):
-        if not printCmdInfo:
-            return self
-        try:
-            self.logger.warning(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
-        except Exception as e:
-            traceback.print_exc()
-        finally:
-            return self
-
-    def logError(self, msg, printCmdInfo: bool = True):
-        if not printCmdInfo:
-            return self
-        try:
-            self.logger.error(f'{self.model} {self.appName}:{msg},deviceId={self.deviceId},{self.common_log_info()}')
-        except Exception as e:
-            traceback.print_exc()
-        finally:
-            return self
-
-    def common_log_info(self) -> str:
-        return ''
 
     def runAction(self, target_func, **kwargs):
         """
@@ -166,11 +197,6 @@ class AbsWoolProject(ABC, Runnable):
             self.logError(msg)
         finally:
             return self
-
-    def updateCacheDir(self, cache: str):
-        self.cacheDir = FileUtil.recookPath(cache)
-        FileUtil.createFile('%s/' % cache)
-        return self
 
     def setDefaultIme(self, ime: str):
         """切换当前使用的输入法"""
@@ -203,16 +229,9 @@ class AbsWoolProject(ABC, Runnable):
 
     def setNext(self, woolProject):
         """设置下一个task,会自动使用当前设备id"""
-        if isinstance(woolProject, AbsWoolProject) and CommonUtil.isNoneOrBlank(woolProject.deviceId):
+        if isinstance(woolProject, AbsAndroidWoolProject) and CommonUtil.isNoneOrBlank(woolProject.deviceId):
             woolProject.updateDeviceId(deviceId=self.deviceId)
         self.next = woolProject
-        return self
-
-    def setNotificationRobotDict(self, robotSettings: dict):
-        """
-        设置消息推送配置信息
-        """
-        self.notificationRobotDict = robotSettings
         return self
 
     def startApp(self, homeActPath: str = None,
@@ -270,12 +289,6 @@ class AbsWoolProject(ABC, Runnable):
                 funcDoAfterPressBack()
         self.logWarn(f'back2HomePage end index={lastIndex},curAct:{curAct}')
         return self
-
-    def sleep(self, sec: float = -1, minSec: float = 1, maxSec: float = 8) -> float:
-        """
-        等待sec秒, 若sec小于0, 则在[minSec,maxSec)中随机挑一个数等待
-        """
-        return TimeUtil.sleep(sec, minSec, maxSec)
 
     def swipeDown(self, minX: int = 300, maxX: int = 500,
                   minY: int = 300, maxY: int = 1600,
@@ -458,7 +471,7 @@ class AbsWoolProject(ABC, Runnable):
             starTs = time.time()
             if performEarnActions:
                 cur_stream_secs = 0
-                self.updateStateKV(AbsWoolProject.key_lastStreamTs, starTs)
+                self.updateStateKV(AbsAndroidWoolProject.key_lastStreamTs, starTs)
 
             if inInfoStreamPage:  # 当前视频页面有效(有奖励),可以进行挂机
                 self.sleep(minSec=minSec, maxSec=maxSec)  # 等待，模拟正在观看视频
@@ -466,7 +479,7 @@ class AbsWoolProject(ABC, Runnable):
 
                 total_stream_secs = total_stream_secs + sec  # 刷视频流的总耗时
                 cur_stream_secs = cur_stream_secs + sec  # 挂机的有效总耗时
-                self.updateStateKV(AbsWoolProject.key_in_stram_sec, cur_stream_secs)
+                self.updateStateKV(AbsAndroidWoolProject.key_in_stram_sec, cur_stream_secs)
             else:
                 self.back_until_info_stream_page()
 
@@ -681,12 +694,12 @@ class AbsWoolProject(ABC, Runnable):
         # 测试完成后, kill调进程,并开始下一个task的执行
         self.killApp()
         self.logWarn('self.next=%s' % self.next)
-        if isinstance(self.next, AbsWoolProject):
+        if isinstance(self.next, AbsAndroidWoolProject):
             self.sleep(self.sleepSecBetweenProjects)
 
-            minStreamSecs = self.getStateValue(AbsWoolProject.key_minStreamSecs, 5 * 60)
+            minStreamSecs = self.getStateValue(AbsAndroidWoolProject.key_minStreamSecs, 5 * 60)
             self.next.updateCacheDir(self.cacheDir) \
-                .updateStateKV(AbsWoolProject.key_minStreamSecs, minStreamSecs) \
+                .updateStateKV(AbsAndroidWoolProject.key_minStreamSecs, minStreamSecs) \
                 .updateDeviceId(self.deviceId).updateDim(self.dim, self.dimOri) \
                 .setNotificationRobotDict(self.notificationRobotDict).run()
         else:
@@ -736,7 +749,7 @@ class AbsWoolProject(ABC, Runnable):
         pass
 
 
-class WoolProjectImpl(AbsWoolProject):
+class WoolProjectImpl(AbsAndroidWoolProject):
     """AbsWoolProject的默认实现类, 不做扩展"""
 
     def onRun(self, **kwargs):

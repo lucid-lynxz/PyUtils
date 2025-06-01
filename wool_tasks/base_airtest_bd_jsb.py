@@ -14,7 +14,7 @@ if proj_dir not in sys.path:
 import random
 from airtest.core.api import *
 
-from wool_tasks.base_airtest import AbsBaseAir
+from wool_tasks.base_airtest import AbsBaseAir4Android
 from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
@@ -26,7 +26,7 @@ auto_setup(__file__)
 using(os.path.dirname(__file__))
 
 
-class BDJsbBaseAir(AbsBaseAir):
+class BDJsbBaseAir(AbsBaseAir4Android):
 
     def check_info_stream_valid(self, forceRecheck: bool = False) -> tuple:
         return super().check_info_stream_valid(forceRecheck=forceRecheck)

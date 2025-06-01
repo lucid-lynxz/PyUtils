@@ -8,7 +8,7 @@ from typing import Union
 
 from base.TaskManager import taskWrapper, TaskLifeCycle
 from util.CommonUtil import CommonUtil
-from wool_tasks.base_airtest import AbsBaseAir
+from wool_tasks.base_airtest import AbsBaseAir4Android
 
 """
 赚钱页面任务分解
@@ -18,7 +18,7 @@ from wool_tasks.base_airtest import AbsBaseAir
 __tag = 'earn_page_action'
 
 
-def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
+def _find_pos(baseAir: AbsBaseAir4Android, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
               fromX: int = 0, fromY: int = 0, height: int = 0,
               maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
@@ -50,7 +50,7 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def dao_fandian_ling_fanbu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def dao_fandian_ling_fanbu(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                            fromX: int = 0, fromY: int = 0) -> bool:
     """
     ks '去赚钱' -> '到饭点领饭补' 按钮 '去查看'/'去领取' ->
@@ -138,7 +138,7 @@ def dao_fandian_ling_fanbu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def watch_ad_video(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                    fromX: int = 0, fromY: int = 0) -> bool:
     """
     ks: '去赚钱' -> '看视频得5000金币' 按钮 '领福利'
@@ -178,7 +178,7 @@ def watch_ad_video(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def search_ks(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def search_ks(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
               fromX: int = 0, fromY: int = 0) -> bool:
     """
     '去赚钱' -> '搜索 "xxx" 赚金币' 可能没有中间的双引号部分
@@ -224,7 +224,7 @@ def search_ks(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kan_zhibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kan_zhibo(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
               fromX: int = 0, fromY: int = 0) -> bool:
     """
     标题: '看直播得3000金币' 或者 '看直播广告可得1.3万金币 或者 '看6次直播领金币'
@@ -264,7 +264,7 @@ def kan_zhibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jinbi_gouhuasuan_qiandao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jinbi_gouhuasuan_qiandao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                              fromX: int = 0, fromY: int = 0) -> bool:
     """
     '去赚钱'  -> '金币购划算' -> '今日签到' 每天可以签到一次 , '看直播可领' 300金币, 看三个直播视频
@@ -302,7 +302,7 @@ def jinbi_gouhuasuan_qiandao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
     return True
 
 
-def _dy_kan_xiaoshuo_liing_jinbi(baseAir: AbsBaseAir) -> bool:
+def _dy_kan_xiaoshuo_liing_jinbi(baseAir: AbsBaseAir4Android) -> bool:
     """
     dy看小说页面领取金币
     """
@@ -329,7 +329,7 @@ def _dy_kan_xiaoshuo_liing_jinbi(baseAir: AbsBaseAir) -> bool:
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kan_xiaoshuo(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0) -> bool:
     """
     dy: '来赚钱' -> '看小说赚金币' -> '看更多'
@@ -481,7 +481,7 @@ def kan_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kanshipin_fanbei(baseAir: AbsBaseAir, ocrResList: list,
+def kanshipin_fanbei(baseAir: AbsBaseAir4Android, ocrResList: list,
                      breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """ 查看 '去赚钱' 页面是否有金币翻倍特权 """
     key = 'kanshipin_fanbei_ts'  # 上次尝试翻倍的时间戳,单位: s

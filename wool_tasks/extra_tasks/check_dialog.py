@@ -7,7 +7,7 @@ from typing import Union
 
 from base.TaskManager import taskWrapper, TaskLifeCycle
 from util.CommonUtil import CommonUtil
-from wool_tasks.base_airtest import AbsBaseAir
+from wool_tasks.base_airtest import AbsBaseAir4Android
 
 """
 检测弹框
@@ -30,7 +30,7 @@ def _match_max_retry_count(curFuncName: str, maxHitCount: int = 2, **kwargs) -> 
     return lastHitFuncCount >= maxHitCount
 
 
-def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
+def _find_pos(baseAir: AbsBaseAir4Android, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
               fromX: int = 0, fromY: int = 0, height: int = 0,
               maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
@@ -69,7 +69,7 @@ def _can_do_other_action(defaultValue: bool = True, **kwargs) -> bool:
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def anr(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
         fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '抖音极速版没有响应'
@@ -85,7 +85,7 @@ def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def anr(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
         fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '抖音极速版没有响应'
@@ -101,7 +101,7 @@ def anr(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def restart(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def restart(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
             fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '抖音极速版已停止运行'
@@ -117,7 +117,7 @@ def restart(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def shoujihao_shouquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def shoujihao_shouquan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                        fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     手机卡广告可能会弹出授权获取手机号的弹框
@@ -134,7 +134,7 @@ def shoujihao_shouquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: st
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def check_contacts_update_dialog(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def check_contacts_update_dialog(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     检测版本更新弹框或者通讯录弹框,进行跳过
@@ -159,7 +159,7 @@ def check_contacts_update_dialog(baseAir: AbsBaseAir, ocrResList: list, breakIfH
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def wufa_lianjie_wangluo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def wufa_lianjie_wangluo(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                          fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     无法连接到网络弹框
@@ -179,7 +179,7 @@ def wufa_lianjie_wangluo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def faxian_tongxunlu_pengyou(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def faxian_tongxunlu_pengyou(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                              fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """发现通讯录朋友弹框2,无文字按钮关闭"""
     targetText = r'(发现通讯录朋友|你可能认识的人)'
@@ -192,7 +192,7 @@ def faxian_tongxunlu_pengyou(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def confirm_exit(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def confirm_exit(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '确认退出吗'
@@ -206,7 +206,7 @@ def confirm_exit(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def gongxi_huode_mianfei_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def gongxi_huode_mianfei_hongbao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """恭喜获得免费红包弹框, 无法通过返回取消"""
     targetText = r'点击立得奖励'
@@ -219,7 +219,7 @@ def gongxi_huode_mianfei_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakIfH
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def zhaocaiya(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def zhaocaiya(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
               fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     招财鸭弹框
@@ -238,7 +238,7 @@ def zhaocaiya(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def search_kaqi_dignwei_fuwu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def search_kaqi_dignwei_fuwu(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                              fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     搜索时,可能会要求开启定位服务, 无法通过返回取消
@@ -255,7 +255,7 @@ def search_kaqi_dignwei_fuwu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def search_add_desktop_widget(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def search_add_desktop_widget(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                               fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     搜索时,可能会弹出添加搜索框到桌面的提示, 右上角有关闭按钮
@@ -272,7 +272,7 @@ def search_add_desktop_widget(baseAir: AbsBaseAir, ocrResList: list, breakIfHitT
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def gongxi_zhouzhou_zhuanjianbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def gongxi_zhouzhou_zhuanjianbi(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """恭喜获得金币大礼包 周周赚金币弹框, 无法通过返回取消"""
     targetText = r'点击领取金.'  # '点击领取金币' '提现至微信秒到账'
@@ -285,7 +285,7 @@ def gongxi_zhouzhou_zhuanjianbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHi
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def pk_jinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def pk_jinbi(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
              fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     pk获得金币弹框, 无法通过返回取消
@@ -303,7 +303,7 @@ def pk_jinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def fanqie_mianfei_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def fanqie_mianfei_xiaoshuo(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                             fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 看小说弹出番茄免费小说弹框, 无法通过返回取消
@@ -332,7 +332,7 @@ def fanqie_mianfei_xiaoshuo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTex
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def dati_ying_xianjin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def dati_ying_xianjin(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                       fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     答题赢现金弹框, 无法通过返回取消
@@ -350,7 +350,7 @@ def dati_ying_xianjin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def dati_ying_xianjin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def dati_ying_xianjin(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                       fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy逛街等页面弹出下单赚金币弹框, 无法通过返回取消
@@ -368,7 +368,7 @@ def dati_ying_xianjin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def download_url(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def download_url(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     看广告视频偶尔会误点下载app的按钮,出现弹框:
@@ -385,7 +385,7 @@ def download_url(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def shuige_haojiao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def shuige_haojiao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     太晚了还在看视频会弹框提醒
@@ -406,7 +406,7 @@ def shuige_haojiao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def fanqie_mianfei_xiaoshuo2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def fanqie_mianfei_xiaoshuo2(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                              fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 看小说弹出番茄免费小说弹框2
@@ -425,7 +425,7 @@ def fanqie_mianfei_xiaoshuo2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitTe
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def gognxi_huode_manjian_quanyi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def gognxi_huode_manjian_quanyi(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 逛街赚金币 618弹框
@@ -446,7 +446,7 @@ def gognxi_huode_manjian_quanyi(baseAir: AbsBaseAir, ocrResList: list, breakIfHi
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def gongxi_xingyun_yonghu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def gongxi_xingyun_yonghu(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                           fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '恭喜成为幸运用户'
@@ -466,7 +466,7 @@ def gongxi_xingyun_yonghu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText:
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def gouwu_najinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def gouwu_najinbi(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '当前活动页下单，立得大额金币'
@@ -485,7 +485,7 @@ def gouwu_najinbi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def pengzhang_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def pengzhang_youhuiquan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                          fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '恭喜获得'
@@ -504,7 +504,7 @@ def pengzhang_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def hudong_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def hudong_youhuiquan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                       fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '参与互动，领取优惠券福利'
@@ -521,7 +521,7 @@ def hudong_youhuiquan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def zhubo_kaibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def zhubo_kaibo(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '你关注的主播正在开播哦'
@@ -539,7 +539,7 @@ def zhubo_kaibo(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kan_xiaoshuo_tianjiang_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kan_xiaoshuo_tianjiang_hongbao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     看小说的天降红包,点击后会跳转视频播放页面
@@ -556,7 +556,7 @@ def kan_xiaoshuo_tianjiang_hongbao(baseAir: AbsBaseAir, ocrResList: list, breakI
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def haoyou_kan_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def haoyou_kan_shipin(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                       fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '恭喜获得好友看视频奖励'
@@ -573,7 +573,7 @@ def haoyou_kan_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jiaru_paihang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jiaru_paihang(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     在dy赚钱任务页面,每天首次跳转后可能弹出签到弹框,又额外覆盖加入排行弹框
@@ -591,7 +591,7 @@ def jiaru_paihang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kaitong_tongzhi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kaitong_tongzhi(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                     fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '通知设置'
@@ -608,7 +608,7 @@ def kaitong_tongzhi(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def wangluo_cuowu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def wangluo_cuowu(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '网络错误'
@@ -631,7 +631,7 @@ def wangluo_cuowu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def xiadan_zhifu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def xiadan_zhifu(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '下单并支付'
@@ -647,7 +647,7 @@ def xiadan_zhifu(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def haoping(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def haoping(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
             fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '喜欢就给个好评吧'
@@ -663,7 +663,7 @@ def haoping(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def downlaod_app(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def downlaod_app(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     底部弹框
@@ -677,7 +677,7 @@ def downlaod_app(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jixu_guankan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     视频未观看结束就按下返回键,  弹出继续观看的弹框
@@ -753,7 +753,7 @@ def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def check_sign(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def check_sign(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     检测签到弹框
@@ -771,7 +771,7 @@ def check_sign(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def xiaoshuo_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def xiaoshuo_shipin(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                     fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 看小说后的领金币弹框, 可能会提示看视频额外赚金币
@@ -797,7 +797,7 @@ def xiaoshuo_shipin(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def check_sign2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def check_sign2(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     检测签到弹框
@@ -817,7 +817,7 @@ def check_sign2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def check_sign3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def check_sign3(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     # 可能会自动弹出签到提醒
     targetText: str = r'(邀请好友立赚高额现金|邀请新用户可得|签到提醒|签到专属福利|\d+天必得.*金.)'
@@ -839,7 +839,7 @@ def check_sign3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def song_pengyou(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def song_pengyou(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '已获得52金币'
@@ -864,7 +864,7 @@ def song_pengyou(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def cunqianguan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def cunqianguan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '送你650金币存钱罐'
@@ -881,7 +881,7 @@ def cunqianguan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def remind_rest(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def remind_rest(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """ 夜间提醒休息弹框 """
     targetText = r'(取消|退出)'
@@ -891,7 +891,7 @@ def remind_rest(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jiaru_shujia(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jiaru_shujia(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy看小说, 小说阅读页面偶尔会弹出加入书架弹框
@@ -910,7 +910,7 @@ def jiaru_shujia(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def yuedu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def yuedu_jiangli(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     ks看小说, 小说阅读页面偶尔会弹出阅读奖励弹框
@@ -928,7 +928,7 @@ def yuedu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jixu_guankan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     视频未观看结束就按下返回键,  弹出继续观看的弹框
@@ -1015,7 +1015,7 @@ def jixu_guankan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jixu_shanghua(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jixu_shanghua(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '继续上滑浏览60秒可领取'
@@ -1049,7 +1049,7 @@ def jixu_shanghua(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def shezhi_touxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def shezhi_touxiang(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                     fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     视频流页面误点喜欢或者误切到我的页面,由于没有设置头像会弹出提示框
@@ -1068,7 +1068,7 @@ def shezhi_touxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def zaikan_yige(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     视频播放完成,按下返回键后,弹出再看一个的弹框,第二种形式
@@ -1095,7 +1095,7 @@ def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def zaikan_yige(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     视频播放完成,按下返回键后,弹出再看一个的弹框
@@ -1119,7 +1119,7 @@ def zaikan_yige(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def lingqu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def lingqu_jiangli(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """宝箱开启结果检测"""
     targetText: str = r'(^领取奖励$|^再看一个$)'
@@ -1136,7 +1136,7 @@ def lingqu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def chakan_guanggao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def chakan_guanggao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                     fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy: 误点到 '拆红包' 页面会弹出
@@ -1156,7 +1156,7 @@ def chakan_guanggao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str =
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def xiazai_tiyan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def xiazai_tiyan(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     观看广告视频结束后,可能会弹出下载并体验app弹框
@@ -1172,7 +1172,7 @@ def xiazai_tiyan(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kai_baoxiang2(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """宝箱开启过程检测"""
     targetText = r'(^宝箱开启中|^恭喜获得.*福袋)'
@@ -1189,7 +1189,7 @@ def kai_baoxiang2(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kai_baoxiang3(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     新人福利, 转盘宝箱,开启完成后停留在转盘页面
@@ -1210,7 +1210,7 @@ def kai_baoxiang3(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang4(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kai_baoxiang4(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     新人福利, 转盘宝箱,开启完成后停留在转盘页面
@@ -1228,7 +1228,7 @@ def kai_baoxiang4(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang5(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kai_baoxiang5(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                   fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     宝箱开启结果检测
@@ -1251,7 +1251,7 @@ def kai_baoxiang5(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = N
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kai_baoxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kai_baoxiang(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     点击开宝箱得金币logo
@@ -1267,7 +1267,7 @@ def kai_baoxiang(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = No
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def lingqu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def lingqu_jiangli(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                    fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     观看视频退出时,可能弹框:
@@ -1294,7 +1294,7 @@ def lingqu_jiangli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def kanxiaoshuo_tuijian(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def kanxiaoshuo_tuijian(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                         fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy 退出看小说页面时弹出:
@@ -1311,7 +1311,7 @@ def kanxiaoshuo_tuijian(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: s
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def tuichu_zhibojian(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def tuichu_zhibojian(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                      fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     看直播退出时可能会弹框, 可能有以下几种
@@ -1331,7 +1331,7 @@ def tuichu_zhibojian(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def baozhang_hognbao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def baozhang_hognbao(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                      fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '哇塞！成功爆涨'
@@ -1348,7 +1348,7 @@ def baozhang_hognbao(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str 
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def xinren_fuli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def xinren_fuli(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                 fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '新人福利'
@@ -1364,7 +1364,7 @@ def xinren_fuli(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = Non
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def jairu_shujia(baseAir: AbsBaseAir, ocrResList: list, breakIfHitText: str = None,
+def jairu_shujia(baseAir: AbsBaseAir4Android, ocrResList: list, breakIfHitText: str = None,
                  fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     看小说返回时弹框是否加入书架

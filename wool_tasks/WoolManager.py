@@ -17,7 +17,7 @@ from base.BaseConfig import BaseConfig
 from wool_tasks.ksjsb.main import KsAir
 from wool_tasks.dyjsb.main import DyAir
 from wool_tasks.dragon_read.dragon_read import DragonRead
-from wool_tasks.WoolProject import AbsWoolProject, WoolProjectImpl
+from wool_tasks.WoolProject import AbsAndroidWoolProject, WoolProjectImpl
 from util.AdbUtil import AdbUtil
 from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
@@ -27,7 +27,7 @@ from util.log_handler import LogHandlerSetting
 
 
 class WoolThread(threading.Thread):
-    def __init__(self, woolProject: AbsWoolProject):
+    def __init__(self, woolProject: AbsAndroidWoolProject):
         threading.Thread.__init__(self, name=woolProject.appName)
         self.woolProject = woolProject
 
@@ -97,7 +97,7 @@ class WoolManager(BaseConfig):
                 # 获取待挂机的app信息,并拼接最终task
                 if forceRestartApp:
                     adbUtil.killApp(None, deviceId=deviceId)  # 关闭所有程序
-                project: typing.Optional[AbsWoolProject] = None
+                project: typing.Optional[AbsAndroidWoolProject] = None
                 for pkgName, value in appInfoDict.items():
                     pkgName = pkgName.split('__more__')[0]
                     arr = [] if CommonUtil.isNoneOrBlank(value) else value.split(',')
@@ -131,7 +131,7 @@ class WoolManager(BaseConfig):
 
                 t = WoolThread(project.updateCacheDir(cacheDir)
                                .updateDim(dim)
-                               .updateStateKV(AbsWoolProject.key_minStreamSecs, performEarnActionDuration)
+                               .updateStateKV(AbsAndroidWoolProject.key_minStreamSecs, performEarnActionDuration)
                                .setNotificationRobotDict(robotSection)
                                .setDefaultIme(settingDict.get('ime', ''))
                                )

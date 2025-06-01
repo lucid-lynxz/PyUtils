@@ -8,7 +8,7 @@ from airtest.core.api import *
 
 from base.TaskManager import taskWrapper, TaskLifeCycle
 from util.CommonUtil import CommonUtil
-from wool_tasks.base_airtest import AbsBaseAir
+from wool_tasks.base_airtest import AbsBaseAir4Android
 
 """
 赚钱页面任务分解
@@ -18,7 +18,7 @@ from wool_tasks.base_airtest import AbsBaseAir
 __tag = 'earn_page_action_dy'
 
 
-def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
+def _find_pos(baseAir: AbsBaseAir4Android, ocrResList: Union[list, None],
               targetText: str, prefixText: str = None, subfixText: str = None,
               fromX: int = 0, fromY: int = 0, height: int = 0,
               maxDeltaX: int = 0, maxDeltaY: int = 0, appendStrFlag: str = ' ',
@@ -50,7 +50,7 @@ def _find_pos(baseAir: AbsBaseAir, ocrResList: Union[list, None],
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def qiandao(baseAir: AbsBaseAir, ocrResList: list,
+def qiandao(baseAir: AbsBaseAir4Android, ocrResList: list,
             breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy: '来赚钱' -> 日常任务 '签到'
@@ -70,7 +70,7 @@ def qiandao(baseAir: AbsBaseAir, ocrResList: list,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def guangjie(baseAir: AbsBaseAir, ocrResList: list,
+def guangjie(baseAir: AbsBaseAir4Android, ocrResList: list,
              breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy '来赚钱' -> '逛街赚钱' 每天可以做10次, 有些可以20次
@@ -186,7 +186,7 @@ def guangjie(baseAir: AbsBaseAir, ocrResList: list,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def search(baseAir: AbsBaseAir, ocrResList: list,
+def search(baseAir: AbsBaseAir4Android, ocrResList: list,
            breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy '来赚钱' -> '搜索赚金币'
@@ -260,7 +260,7 @@ def search(baseAir: AbsBaseAir, ocrResList: list,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
+def rexiao_baopin(baseAir: AbsBaseAir4Android, ocrResList: list,
                   breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题:  '逛热销爆品赚金币'
@@ -324,7 +324,7 @@ def rexiao_baopin(baseAir: AbsBaseAir, ocrResList: list,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
+def liulan_baokuan(baseAir: AbsBaseAir4Android, ocrResList: list,
                    breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     标题: '浏览爆款赚金币'
@@ -380,7 +380,7 @@ def liulan_baokuan(baseAir: AbsBaseAir, ocrResList: list,
 
 
 @taskWrapper(__tag, taskLifeCycle=TaskLifeCycle.custom)
-def wanan_xiaodao(baseAir: AbsBaseAir, ocrResList: list,
+def wanan_xiaodao(baseAir: AbsBaseAir4Android, ocrResList: list,
                   breakIfHitText: str = None, fromX: int = 0, fromY: int = 0, *args, **kwargs) -> bool:
     """
     dy: 标题: '晚安小岛'  按钮: '去小岛'

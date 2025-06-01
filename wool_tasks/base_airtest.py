@@ -5,34 +5,29 @@ import os
 import sys
 import traceback
 
-from util.NetUtil import NetUtil
-
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if proj_dir not in sys.path:
     sys.path.insert(0, proj_dir)
 
-from abc import ABCMeta
 import logging
 import re
 
 __author__ = "Lynxz"
 
-from typing import Union
 from cnocr import CnOcr
 from airtest.core.api import *
 from airtest.aircv import *
-from base.TaskManager import TaskManager, TaskLifeCycle
 from util.CommonUtil import CommonUtil
 from WoolProject import AbsWoolProject
 from util.TimeUtil import TimeUtil
+from util.TimeUtil import log_time_consume
 from util.FileUtil import FileUtil
-from util.decorator import log_wrap
 
 """
-airtest基类, 所有子类请自行配置下: auto_setup(__file__)
-子类按需重写 check_info_stream_valid(self) 方法  
+airtest基类, 所有子类请自行配置下: auto_setup(__file__) 
+api文档: https://airtest.readthedocs.io/zh-cn/latest/index.html
 """
 auto_setup(__file__)
 
@@ -40,19 +35,23 @@ logger = logging.getLogger("airtest")
 logger.setLevel(logging.WARN)
 
 
-class AbsBaseAir(AbsWoolProject):
-    __metaclass__ = ABCMeta
+class BaseAir(AbsWoolProject):
+    def __init__(self, platform: str, uuid: str, app_name: str = '', cacheDir: str = ''):
+        """
+        :param platform: 平台, 支持 android 和 windows
+        :param uuid: 对于android表示设备序列号  对于Windows表示窗口句柄, ios则表示uuid
+        :param app_name: 应用名称
+        """
+        AbsWoolProject.__init__(self, cacheDir=cacheDir)
 
-    def __init__(self, deviceId: str, pkgName: str = '',
-                 splashActPath: str = '',
-                 homeActPath: str = '',
-                 appName: str = '',
-                 totalSec: int = 180,
-                 minInfoStreamSec: int = 180,
-                 forceRestart: bool = False):
-
+        self.platform = platform.lower()  # 当前设备平台, 支持 android 和 windows
         self.poco = None
         self.airtest_device = None  # airtest设备列表中的当前设备
+        self.uuid = uuid
+        self.appName = app_name
+        self.adbUtil = None  # 对于android有效,表示adb工具对象
+        self.deviceId = uuid  # 对于android有效,此时uuid表示设备序列号
+        self.snapshot_img = None  # 当前屏幕截图对象, 每次调用 snapshot() 后更新
 
         # 测试使用 cnocr 进行解析
         # 文档: https://cnocr.readthedocs.io/zh/latest/usage/
@@ -60,172 +59,67 @@ class AbsBaseAir(AbsWoolProject):
         # https://huggingface.co/breezedeus/cnstd-cnocr-models/tree/main/models/cnocr/2.2
         self.cnocrImpl: CnOcr = CnOcr()  # cnocr识别对象
 
-        super().__init__(pkgName=pkgName,
-                         splashActPath=splashActPath,
-                         homeActPath=homeActPath,
-                         appName=appName,
-                         deviceId=deviceId,
-                         totalSec=totalSec,
-                         minInfoStreamSec=minInfoStreamSec,
-                         forceRestart=forceRestart)
+        # 连接设备
+        self.connect()
 
-    def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
-                          max_sec: int = 60,  # 每个直播最多需要观看的时长
-                          zhiboHomePageTitle: str = r'^看直播领金.',  # 直播列表首页的标题名,用于判断是否跳转到直播详情成功
-                          autoBack2Home: bool = True):
-        pass
+    def isAndroid(self) -> bool:
+        return self.platform == 'android'
 
-    @log_wrap(print_out_obj=False, print_caller=True)
-    def continue_watch_ad_videos(self, max_secs: int = 90,  # 最多要观看的时长, 之后会通过检测 '已领取' / '已成功领取奖励' 来决定是否继续观看
-                                 min_secs: int = 10,
-                                 maxVideos: int = 5,
-                                 breakIfHitText: str = None):
-        """
-        当前已在广告视频页面, 会最多观看 secs 秒后, 按下返回键
-        若弹出继续浏览的弹框, 则继续浏览,最终回到前一页
-        :param max_secs: 每个广告视频观看的最大时长,单位:s, 会自动比 min_secs 多20s
-        :param min_secs: 每个广告视频观看的最小时长,单位:s
-        :param maxVideos: 最多观看多少个广告视频, >=1, 其他值会统一替代为20, 一般也只会让你连续看3个广告视频左右
-        :param breakIfHitText: 若看完一个视频进行back操作后, 识别到存在指定的文本,则退出后续的视频观看,表明已不在视频页面了
-        """
-        pass
+    def isWindows(self) -> bool:
+        return self.platform == 'windows'
 
-    # 可能会弹出获得金币弹框, 点击关闭按钮, 耗时比较久, 建议是想检测特定文本后按需触发
-    @log_wrap(print_caller=True)
-    def closeDialog(self, extraImg: str = None, autoClick: bool = True,
-                    minX: int = 200, minY: int = 200, maxX: int = 0, maxY: int = 0) -> tuple:
-        """
-        搜索并点击关闭弹框
-        :param extraImg: 其他自定义的关闭按钮图片相对路径,会优先匹配该图片
-        :param autoClick: 匹配到关闭按钮后是否直接点击
-        :param minX:匹配到的按钮必须满足的指定的区间才认为合法
-        :param maxX:匹配到的按钮必须满足的指定的区间才认为合法
-        :param minY:匹配到的按钮必须满足的指定的区间才认为合法
-        :param maxY:匹配到的按钮必须满足的指定的区间才认为合法
-        :return tuple:(float,float) 表示匹配到的按钮坐标值, 若为空,则表示未匹配到
-        """
-        pass
-
-    @log_wrap(exclude_arg={'self', 'cnocr_result'})
-    def get_rest_chance_count(self, title: str,
-                              subTitle: str,
-                              cnocr_result: list = None,
-                              appendStrFlag: str = '') -> tuple:
-        """
-        要求当前已在赚钱任务页面
-        比如搜索/看直播等活动,每天有限额,通过本方法根据 subTitle 信息获取剩余可用次数
-        1. 优先进行ocr单行匹配
-        2. 对完整的ocr结果进行匹配
-
-        :param title: 标题行
-        :param subTitle: 正则表达式要求至少包含一个 '(\\d+/\\d+)' 表示已完成次数和总次数
-        :param cnocr_result: 若已有ocr识别结果,则直接服用,否则重新ocr
-        :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
-        :return tuple: (int,int)  completeCount, totalCount 依次表示已使用的次数, 总次数
-        """
-        completeCount: int = 0
-        totalCount: int = 0
-        if cnocr_result is None:
-            pos, ocrStr, ocrResultList = self.findTextByOCR(subTitle, prefixText=title,
-                                                            swipeOverlayHeight=300,
-                                                            height=1400, appendStrFlag=appendStrFlag)
+    def connect(self):
+        if self.isAndroid():
+            from util.AdbUtil import AdbUtil
+            connect_device(f"Android:///{self.uuid}?cap_method=javacap&touch_method=adb")
+            self.adbUtil = AdbUtil()
+        elif self.isWindows():
+            connect_device(f"Windows:///{self.uuid}")
         else:
-            pos, ocrStr, ocrResultDict = self.findTextByCnOCRResult(cnocr_result, targetText=subTitle,
-                                                                    prefixText=title, appendStrFlag=appendStrFlag)
-            if not CommonUtil.isNoneOrBlank(ocrResultDict):
-                subTitleText = ocrResultDict.get('text', '')
-                ocrStr = ocrStr if CommonUtil.isNoneOrBlank(subTitleText) else subTitleText
+            pass
+        self.airtest_device = device()
 
-        if CommonUtil.isNoneOrBlank(ocrStr):
-            return completeCount, totalCount
+    # def connectAndroid(self, deviceId: str):
+    #     connect_device("Android:///%s?cap_method=javacap&touch_method=adb" % deviceId)
+    #
+    # def connectWindows(self, handle_id: str = None, title_re: str = None):
+    #     """
+    #     连接到指定的windows窗口,支持指定窗口句柄id(优先)或者窗口名称表达式, 若二者都为空,则直接连接整个桌面
+    #     具体见airtest文档: https://airtest.doc.io.netease.com/IDEdocs/3.2device_connection/5_windows_connection/#2-windows
+    #     :param handle_id 句柄id, 每次重启软件可能变化
+    #     :param title_re 窗口标题, 正则表达式
+    #     """
+    #     isIdEmpty = CommonUtil.isNoneOrBlank(handle_id)
+    #     isTitleEmpty = CommonUtil.isNoneOrBlank(title_re)
+    #
+    #     if isIdEmpty and isTitleEmpty:
+    #         auto_setup(__file__, devices=["Windows:///"])  # 连接Windows桌面
+    #     elif isIdEmpty:
+    #         auto_setup(__file__, devices=[f"Windows:///?title_re={title_re}"])
+    #     else:
+    #         auto_setup(__file__, devices=[f"Windows:///{handle_id}"])
+    #     self.airtest_device = device()
+    #     return self
 
-        pattern = re.compile(subTitle)  # 如果已搜索过,还有剩余搜索机会的话,此时可能没有 '去搜索' 按钮, 而是倒计时按钮
-        resultList = pattern.findall(ocrStr)
-        if CommonUtil.isNoneOrBlank(resultList):
-            return completeCount, totalCount
-        else:
-            chancesInfo = resultList[0]
-            if '/' in chancesInfo:
-                arr = chancesInfo.split('/')
-                if len(arr) >= 2:
-                    completeCount = CommonUtil.convertStr2Int(arr[0], 0)
-                    totalCount = CommonUtil.convertStr2Int(arr[1], 0)
-        self.logWarn(f'已完成:{chancesInfo},complete={completeCount},total={totalCount},ocrStr={ocrStr}')
-        return completeCount, totalCount
-
-    def search_by_input(self, keyword: str, hintListKeyword: str = r'搜索有奖',
-                        viewSec: int = 20, ignoreCase: bool = True) -> bool:
+    def calcCenterPos(self, ltrb: list, deltaXY: tuple = (0, 0)) -> tuple:
         """
-        要求当前已在搜索页面,且光标已定位到搜索输入框
-        则会自动输入部分keyword,并尝试匹配:
-         1. '搜索有奖'
-         2. 入参的 'keyword' 完整内容
-         3. 比输入的部分keyword更长的提示项
-         返回是否输入搜索成功
-         :param keyword: 完整的搜索关键字
-         :param hintListKeyword: 输入keyword后可能会弹出提示列表,点选带有 hintListKeyword 的item
-         :param viewSec: 若搜索成功,则浏览搜索结果的时长,单位:s, 大于0有效,浏览完成后仍在当前页面
-         :param ignoreCase: 是否忽略大小写
-         :return bool:是否搜索成功
+        给定矩形框4个顶点的坐标,计算其中心点坐标(x,y)
+        :param ltrb: 4个顶点坐标,依次为左上,右上,右下,左下, 每个元素包含是个list, list中包含两个float子元素,依次表示x,y的位置
+        :param deltaXY : 偏移量, 依次为x,y的偏移量, 默认为(0,0)
+        :return tuple: 中心点的坐标(x,y) x,y的类型是float, 若输入为空,则返回空白元组 ()
         """
-        # 由于使用 yosemite 等输入直接键入文本时,获得金币约等于无,此处尝试只输入一半内容,然后通过下拉提示列表进行点击触发关键字输入
-        length = len(keyword)
-        inputKWIndex: int = length if length <= 8 else int(length / 2)
-        inputKW: str = keyword[0:inputKWIndex]  # 实际输入的关键字内容
-        self.logWarn(f'尝试输入搜索关键字: {inputKW}  完整的关键字为:{keyword}')
-        self.text(inputKW, search=False)  # 输入关键字,进行搜索
-        self.sleep(2)
-
-        pos, ocrStr, ocrResList = self.findTextByOCR(targetText=inputKW, subfixText=r'搜索',
-                                                     height=800, maxSwipeRetryCount=1)
-        if CommonUtil.isNoneOrBlank(pos):
-            img_path = self.saveScreenShot(f'search_by_input_fail_input_fail', autoAppendDateInfo=True)
-            self.logWarn(f'search_by_input fail 未输入成功,kw={inputKW},img_path={img_path}')
-            return False
-
-        # 检测下拉提示列表
-        success: bool = False
-        for checkIndex in range(3):
-            pos, ocrStr, ocrResList = self.findTextByOCR(hintListKeyword, prefixText=inputKW,
-                                                         height=800, maxSwipeRetryCount=1)
-            success = self.tapByTuple(self.calcCenterPos(pos))
-            self.logWarn(f'search_by_input 尝试匹配搜索有奖提示语 success={success},ocrStr={ocrStr}')
-            if not success:  # 未找到 '搜索有奖' 时,表明对关键字无要求,直接点击比输入值更长的文本即可
-                pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, keyword, prefixText='搜索')
-                success = self.tapByTuple(self.calcCenterPos(pos))
-                if not success:
-                    pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'%s.+' % inputKW, prefixText=inputKW)
-                    pos = self.calcCenterPos(pos)
-                    self.logWarn(f'search_by_input 查找比输入更长的提示语 pos={pos}')
-                    success = self.tapByTuple(pos)
-                    if not success:
-                        pos, ocrStr, _ = self.findTextByCnOCRResult(ocrResList, r'搜索')
-                        pos = self.calcCenterPos(pos)
-                        self.logWarn(f'search_by_input fail 直接点击 "搜索" 按钮: pos={pos}')
-                        success = self.tapByTuple(pos)
-
-                if self.findTextByCnOCRResult(cnocr_result=ocrResList, targetText=r'浏览\d+秒可得搜索金币'):
-                    success = True
-
-            if not success:
-                self.logWarn(f'search input kw fail wait 3s:{inputKW}')
-                self.sleep(3)
-            else:
-                self.logWarn(f'search input kw success:{inputKW}, ocrStr={ocrStr}')
-                break
-
-        # 浏览指定的时长
-        if success and viewSec > 0:
-            totalSec: float = 0
-            while True:
-                self.sleep(4)
-                self.swipeUp(durationMs=1000)
-                totalSec = totalSec + 5
-                if totalSec > viewSec:
-                    break
-        return success
+        if CommonUtil.isNoneOrBlank(ltrb) or len(ltrb) < 3:
+            return ()
+        lt = ltrb[0]
+        rt = ltrb[1]
+        rb = ltrb[2]
+        # lb = ltrb[3]
+        centerX = lt[0] + (rt[0] - lt[0]) / 2
+        centerY = rt[1] + (rb[1] - rt[1]) / 2
+        return centerX + deltaXY[0], centerY + deltaXY[1]
 
     @logwrap
+    # @log_time_consume()
     def snapshot(self, filename=None, msg="", quality=None, max_size=None):
         if not quality:
             quality = ST.SNAPSHOT_QUALITY
@@ -235,8 +129,9 @@ class AbsBaseAir(AbsWoolProject):
             if not os.path.isabs(filename):
                 logdir = ST.LOG_DIR or "."
                 filename = os.path.join(logdir, filename)
-        return self.airtest_device.snapshot(filename, quality=quality, max_size=max_size)
+        self.snapshot_img = self.airtest_device.snapshot(filename, quality=quality, max_size=max_size)
         # return self.try_log_screen(screen, quality=quality, max_size=max_size)
+        return self.snapshot_img
 
     @logwrap
     def exists(self, v):
@@ -358,281 +253,6 @@ class AbsBaseAir(AbsWoolProject):
             return {"screen": filename, "resolution": aircv.get_resolution(screen)}
         return None
 
-    @log_wrap(print_out_obj=False, print_caller=True)
-    def updateDeviceId(self, deviceId: str):
-        if not CommonUtil.isNoneOrBlank(
-                self.deviceId) and self.deviceId == deviceId and self.airtest_device is not None:
-            return self
-
-        super().updateDeviceId(deviceId)
-        connect_device("Android:///%s?cap_method=javacap&touch_method=adb" % self.deviceId)
-        wake()  # 唤醒设备
-        set_current(self.deviceId)
-        self.airtest_device = G.DEVICE
-        # for dev in G.DEVICE_LIST:
-        #     if self.deviceId == dev.serialno:
-        #         self.airtest_device = dev
-        #         break
-        self.init_poco()
-        return self
-
-    def getWH(self) -> tuple:
-        """
-        获取当前设备的宽高
-        """
-        # 经测试, pixel2xl 耗时1.6s左右,因此做下缓存, 一般挂机时不做横竖屏切换
-        height = self.getStateValue('height', 0)
-        width = self.getStateValue('width', 0)
-        if height > 0 and width > 0:
-            return width, height
-
-        if self.airtest_device.display_info['orientation'] in [1, 3]:  # 横屏
-            height = self.airtest_device.display_info['width']
-            width = self.airtest_device.display_info['height']
-        else:
-            height = self.airtest_device.display_info['height']
-            width = self.airtest_device.display_info['width']
-        self.updateStateKV('height', height)
-        self.updateStateKV('width', width)
-        return width, height
-
-    def saveScreenShot(self, imgName: str, fromX: int = 0, fromY: int = 0, toX: int = -1, toY: int = -1,
-                       autoAppendDateInfo: bool = False) -> str:
-        """
-        屏幕截图后, 截取区域图像并保存到文件中, 若 toX/toY 小于等于0, 则表示到屏幕右下角位置
-        截图保存在 self.cacheDir 目录下, 若未指定目录,则保存失败
-        :param imgName: 图片名(不包括后缀), 会自动拼接: .png,
-                        文件路径: {cacheDir}/{deviceId}/{imgName}_{appName}.png
-        :return str: 截图保存的路径, 若截图失败,则返回 ''
-        """
-        sWidth, sHeight = self.getWH()  # 获取当前设备宽度
-        toX = toX if 0 < toX < sWidth else sWidth
-        toY = toY if 0 < toY < sHeight else sHeight
-        screen = self.snapshot()  # 截屏
-        img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
-        imgNameOpt = '' if CommonUtil.isNoneOrBlank(imgName) else ('%s_' % imgName)
-        if CommonUtil.isNoneOrBlank(imgName) or autoAppendDateInfo:
-            timeStr = TimeUtil.getTimeStr(format='%m%d_%H%M%S')
-            imgName = '%s%s_%s_%s_%s_%s' % (imgNameOpt, timeStr, fromX, fromY, toX, toY)
-        return self.saveImage(img, imgName)
-
-    def saveImage(self, img, imgName: str = None, dirPath: str = None,
-                  autoAppendDateInfo: bool = False, replaceFlag: str = '_') -> str:
-        """
-        保存图片到 {cacheDir} 中
-        实测耗时大概0.8s左右
-
-        :param imgName: 文件名, 会自动拼接 self.appName 和 '.png' 后缀
-        :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍未空,则保存失败
-        :param replaceFlag: 若 imageName 中存在无效字符时,替代为该字符串
-        :return str: 最终保存的路径名, 若为空,则表示保存失败
-        """
-        if img is None:
-            return ''
-
-        if CommonUtil.isNoneOrBlank(dirPath):
-            dirPath = self.cacheDir
-
-        if CommonUtil.isNoneOrBlank(dirPath):
-            return ''
-
-        if CommonUtil.isNoneOrBlank(imgName):
-            autoAppendDateInfo = True
-            imgName = ''
-
-        if autoAppendDateInfo:
-            imgName = '%s_%s' % (imgName, TimeUtil.getTimeStr(format='%m%d_%H%M%S'))
-        imgName = imgName.replace('(', replaceFlag).replace(')', replaceFlag) \
-            .replace('|', replaceFlag).replace('.*', replaceFlag).replace('[', replaceFlag).replace(']', replaceFlag)
-
-        try:
-            pil_img = cv2_2_pil(img)
-            FileUtil.createFile('%s/' % dirPath)
-            model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
-            img_path = '%s/%s_%s/%s_%s.png' % (dirPath, model, self.deviceId, imgName, self.appName)
-            img_path = FileUtil.recookPath(img_path)
-            FileUtil.createFile(img_path)  # 按需创建父目录
-            pil_img.save(img_path, quality=99, optimize=True)
-            # self.logWarn('saveScreenShot imgPath=%s' % img_path)
-            return img_path
-        except Exception as e:
-            traceback.print_exc()
-            return ''
-
-    def getScreenOcrResult(self, autoSwitchPointerLocation: bool = True,
-                           fromX: int = 0, fromY: int = 0, toX: int = 0, toY: int = 0) -> list:
-        """获取当前屏幕截图的ocr结果对象"""
-        # 记录当前是否开启了 "指针位置" 功能,以便最后进行恢复
-        pointerLocationOri: int = self.adbUtil.pointerLocation(value=-1, deviceId=self.deviceId)
-        if autoSwitchPointerLocation:
-            self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
-
-        screen = self.snapshot()  # 截屏
-
-        # 恢复指针位置开关设置
-        if autoSwitchPointerLocation:
-            self.adbUtil.pointerLocation(value=pointerLocationOri, deviceId=self.deviceId)
-
-        # screen = self.airtest_device.snapshot()  # 截屏
-        if screen is None:
-            self.logError(f'getScreenOcrResult fail as screenshot return null')
-            return None
-
-        if not fromX == fromY == toX == toY == 0:
-            sWidth, sHeight = self.getWH()  # 获取当前设备宽度
-            toX = toX if 0 < toX < sWidth else sWidth
-            toY = toY if 0 < toY < sHeight else sHeight
-            screen = self.snapshot()  # 截屏
-            screen = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
-
-        return self.cnocrImpl.ocr(screen)  # cnocr进行解析, 实测耗时大概0.2s
-
-    def composeOcrStr(self, cnocr_result: list, appendStrFlag: str = ' ') -> str:
-        """根据cnocr识别结果拼接生成text信息"""
-        ocr_str_result: str = ''
-        if CommonUtil.isNoneOrBlank(cnocr_result):
-            return ocr_str_result
-        for index in range(len(cnocr_result)):
-            dictItem: dict = cnocr_result[index]
-            t = dictItem.get('text', '')
-            ocr_str_result = '%s%s%s' % (ocr_str_result, appendStrFlag, t)
-        return ocr_str_result
-
-    def findTextByOCR(self, targetText: str,
-                      prefixText: str = None,
-                      subfixText: str = None,
-                      fromX: int = 0, fromY: int = 0,
-                      width: int = 0, height: int = 0,
-                      maxDeltaX: int = 0, maxDeltaY: int = 0,
-                      swipeOverlayHeight: int = 100,
-                      maxSwipeRetryCount: int = 10,
-                      saveAllImages: bool = False,
-                      autoSwitchPointerLocation: bool = True,
-                      saveDirPath: str = None,
-                      imgPrefixName: str = '',
-                      autoConvertQuotes: bool = True,
-                      appendStrFlag: str = ' ',
-                      ignoreCase: bool = True,
-                      printCmdInfo: bool = False) -> tuple:
-        """
-        通过每次截图指定 height 的图片进行OCR识别,若识别到目标文本(targetText),则返回True
-        每次截图前会屏幕向上滑动 height 高度, 然后截取 (fromX,fromY) -> (fromX+width,fromY+height) 长条形区域图片进行OCR
-        :param targetText: 必填,要识别的文本正则表达式, 若为空, 则返回的是区域截图的ocr识别结果, pos列表为空
-        :param prefixText: 要求在 targetText 之前应存在的字符串正则表达式,若为空,则表示不做判断
-        :param subfixText: 要求在 targetText 之后应存在的字符串正则表达式,若为空,则表示不做判断
-        :param fromX: 区域截图左上角的x坐标,默认(0,0)
-        :param fromY: 区域截图左上角的Y坐标,默认(0,0)
-        :param width: 区域截图宽度,0或负数表示截图到屏幕右侧边缘
-        :param height: 区域截图的高度,若为0或负数,则表示截屏到屏幕底部
-        :param maxDeltaX: 识别到的 prefixText/targetText/subfixText pos坐标的x方向允许的最大阈值, 大于0才有效
-        :param maxDeltaY: 识别到的 prefixText/targetText/subfixText pos坐标的y方向允许的最大阈值, 大于0才有效
-        :param swipeOverlayHeight:上滑时,少滑动该距离, 负数表示height的1/10
-        :param maxSwipeRetryCount: 最多上滑截图的次数, 一次表示不上滑
-        :param saveAllImages:是否保存每张截图,若为False,则仅保存匹配失败的截图
-                        文件名格式: {cacheDir}/{deviceId}/{imgPrefixName}_{time}_index_fromX_fromY_toX_toY_{appName}.png
-        :param autoSwitchPointerLocation: 是否自动关闭指针位置(避免ocr时被干扰), 识别结束后自动恢复初始状态
-        :param saveDirPath: 截图保存的目录,若为空,则尝试保存到 {self.cacheDir} 中
-        :param imgPrefixName: 截图前缀名称
-        :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
-        :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
-        :param ignoreCase: 正则匹配字符串时,是否忽略大小写
-        :param printCmdInfo: 是否打印命令内容
-        :return tuple (list,str,dict):
-            第一个元素list: 表示匹配到的targetText区域在屏幕的四个角的坐标(已自行累加了fromX,fromY的偏移量), 若为空,则表示未识别到
-            第二个元素str: 表示最终ocr得到的文本
-            第三个元素list: cnocr识别的原始结果list
-        """
-        ocrStartTs: float = time.time()
-        sWidth, sHeight = self.getWH()  # 获取当前设备宽度
-        width = sWidth if width <= 0 else width
-        height = sHeight if height <= 0 else height
-
-        # 结算区域子截图的右下角坐标
-        maxY = sHeight
-        toX: int = fromX + width
-        toY: int = fromY + height
-        toX = toX if toX <= sWidth else sWidth
-        toY = toY if toY <= maxY else maxY
-        height = toY - fromY
-
-        # 记录当前是否开启了 "指针位置" 功能,以便最后进行恢复
-        pointerLocationOri: int = self.adbUtil.pointerLocation(value=-1, deviceId=self.deviceId)
-        if autoSwitchPointerLocation:
-            self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
-
-        hit: bool = False  # 是否匹配到目标文字
-        posList: list = None  # 识别到的文本位置矩形框4个点的坐标列表
-        ocr_str_result: str = ''  # 最后一次ocr识别的文本
-        cnocr_result: list = None  # cnocr对区域截图进行识别的原始结果对象
-
-        for i in range(maxSwipeRetryCount):
-            try:
-                screen = self.snapshot()  # 截屏
-            except Exception as e:
-                screen = None
-                self.logError(f'snapshot fail {e}')
-            if screen is None:
-                self.logError(f'findTextByOCR fail as screenshot return null')
-                return None, '', None
-            img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图, 整体耗时0.15s左右
-
-            cnocr_result = self.cnocrImpl.ocr(img)  # cnocr进行解析, 实测耗时大概0.2s
-            posList, ocr_str_result, targetDict = self.findTextByCnOCRResult(cnocr_result, targetText=targetText,
-                                                                             prefixText=prefixText,
-                                                                             subfixText=subfixText,
-                                                                             fromX=fromX, fromY=fromY,
-                                                                             maxDeltaX=maxDeltaX,
-                                                                             maxDeltaY=maxDeltaY,
-                                                                             appendStrFlag=appendStrFlag,
-                                                                             ignoreCase=ignoreCase,
-                                                                             autoConvertQuotes=autoConvertQuotes)
-            hit = hit or not CommonUtil.isNoneOrBlank(posList)  # 是否匹配到目标文字
-
-            # 按需保存截图
-            ocr_str_result = '' if ocr_str_result is None else ocr_str_result.strip()
-            saveDirPath = self.cacheDir if CommonUtil.isNoneOrBlank(saveDirPath) else saveDirPath
-            saveImg: bool = not CommonUtil.isNoneOrBlank(saveDirPath) and (saveAllImages or not hit)
-            if saveImg:  # 保存图片还是耗时的0.8s左右, 占据方法的大头,因此默认只对失败的部分做截图
-                loopStartTs = time.time()
-                imgName = '%s_%s_%s_%s_%s_%s_%s.png' % (
-                    imgPrefixName, i, fromX, fromY, toX, toY, TimeUtil.getTimeStr(format='%m%d_%H%M%S'))
-                img_path = self.saveImage(img, imgName=imgName)
-                self.logWarn(
-                    f'findTextByOCR loopCheck {i} saveImg duration={time.time() - loopStartTs},hit={hit},'
-                    f'targetText={targetText},img_path={img_path},prefix={prefixText}', printCmdInfo=printCmdInfo)
-
-            # 匹配到目标文本,则退出重试
-            if hit:
-                break
-            elif maxSwipeRetryCount > 1:
-                swipeOverlayHeight = swipeOverlayHeight if swipeOverlayHeight >= 0 else int(height * 0.1)
-                swipeHeight = height - swipeOverlayHeight
-                swipeHeight = height if swipeHeight <= 0 else swipeHeight
-
-                maxSwipeHeight = sHeight * 0.7  # 预留底部部分空间,不免触发home操作
-                if swipeHeight >= maxSwipeHeight:
-                    swipeHeight = maxSwipeHeight
-
-                # 滑动耗时稍微长点,避免onMoveUp后,页面因为惯性继续滑动
-                self.swipeUp(minDeltaY=swipeHeight, maxDeltaY=swipeHeight,
-                             keepVerticalSwipe=True, durationMs=1500, printCmdInfo=printCmdInfo)
-
-        # 恢复指针位置开关设置
-        if autoSwitchPointerLocation:
-            self.adbUtil.pointerLocation(value=pointerLocationOri, deviceId=self.deviceId)
-
-        self.logWarn(f'findTextByOCR {not CommonUtil.isNoneOrBlank(posList)},'
-                     f'{time.time() - ocrStartTs}秒,target={targetText},prefix={prefixText},'
-                     f'ocr_str_result={ocr_str_result}',
-                     printCmdInfo=printCmdInfo)
-        return posList, ocr_str_result, cnocr_result
-
-    def _make_re_compile_obj(self, targetText: str, ignoreCase: bool = True) -> re.Pattern:
-        targetTextPattern = None
-        if not CommonUtil.isNoneOrBlank(targetText):
-            targetTextPattern = re.compile(targetText, re.IGNORECASE) if ignoreCase else re.compile(targetText)
-        return targetTextPattern
-
     def findTextByCnOCRResult(self, cnocr_result: list, targetText: str, prefixText: str = None,
                               subfixText: str = None,
                               fromX: int = 0, fromY: int = 0, maxDeltaX: int = 0, maxDeltaY: int = 0,
@@ -730,7 +350,7 @@ class AbsBaseAir(AbsWoolProject):
             ocr_str_result = ocr_str_result.replace('＂', '"').replace('“', '"').replace('”', '"')
 
         valid = not CommonUtil.isNoneOrBlank(posList) and hitSubfixText
-        if printCmdInfo or valid:
+        if printCmdInfo:
             self.logWarn(
                 f'findTextByCnOCRResult {valid},hitSubfixText={hitSubfixText}'
                 f',targetText={targetText},prefixText={prefixText},subfix={subfixText}'
@@ -754,8 +374,9 @@ class AbsBaseAir(AbsWoolProject):
         if maxDeltaY > 0:
             successDelta = successDelta and deltaY <= maxDeltaY
 
-        self.logWarn(
-            f'findTextByCnOCRResult success={successDelta} deltaX,Y={deltaX},{deltaY},maxDeltaX,y={maxDeltaX},{maxDeltaY}')
+        if printCmdInfo:
+            self.logWarn(
+                f'findTextByCnOCRResult success={successDelta} deltaX,Y={deltaX},{deltaY},maxDeltaX,y={maxDeltaX},{maxDeltaY}')
         try:
             if not successDelta:
                 return None, ocr_str_result, None
@@ -764,196 +385,431 @@ class AbsBaseAir(AbsWoolProject):
 
         return posList, ocr_str_result, targetDict
 
-    @log_wrap(print_caller=True, exclude_arg=['self', 'ocrResList'])
-    def check_if_in_page(self, targetText: str, prefixText: str = None, ocrResList=None, height: int = 0,
-                         maxRetryCount: int = 1, autoCheckDialog: bool = True, minOcrLen: int = 20) -> bool:
+    def findTextByOCR(self, targetText: str,
+                      img=None,
+                      prefixText: str = None,
+                      subfixText: str = None,
+                      fromX: int = 0, fromY: int = 0,
+                      width: int = 0, height: int = 0,
+                      maxDeltaX: int = 0, maxDeltaY: int = 0,
+                      swipeOverlayHeight: int = 100,
+                      maxSwipeRetryCount: int = 10,
+                      saveAllImages: bool = False,
+                      autoSwitchPointerLocation: bool = True,
+                      saveDirPath: str = None,
+                      imgPrefixName: str = '',
+                      autoConvertQuotes: bool = True,
+                      appendStrFlag: str = ' ',
+                      ignoreCase: bool = True,
+                      printCmdInfo: bool = False) -> tuple:
         """
-        检测当前是否在指定的页面
-        :param targetText:页面上必须存在的信息,正则表达式,若为空,则直接返回True
-        :param prefixText: 特定信息前面必须存在的字符串,支持正则
-        :param ocrResList: cnocr识别结果,若为空,则会进行一次ocr识别
-        :param height: 若需要进行截图ocr,则ocr的高度是多少
-        :param maxRetryCount: 识别重试次数, 若当前识别失败,则下一轮必然重新ocr
-        :param autoCheckDialog: 是否自动检测弹框,默认True
-        :param minOcrLen: 要求ocr得到的文本总长度不能小于该值,否则认为识别失败
-        :return bool: 是否在目标页面
+        通过每次截图指定 height 的图片进行OCR识别,若识别到目标文本(targetText),则返回True
+        每次截图前会屏幕向上滑动 height 高度, 然后截取 (fromX,fromY) -> (fromX+width,fromY+height) 长条形区域图片进行OCR
+        :param img: 图片对象, 若为空,则表示使用当前屏幕截图进行识别
+        :param targetText: 必填,要识别的文本正则表达式, 若为空, 则返回的是区域截图的ocr识别结果, pos列表为空
+        :param prefixText: 要求在 targetText 之前应存在的字符串正则表达式,若为空,则表示不做判断
+        :param subfixText: 要求在 targetText 之后应存在的字符串正则表达式,若为空,则表示不做判断
+        :param fromX: 区域截图左上角的x坐标,默认(0,0)
+        :param fromY: 区域截图左上角的Y坐标,默认(0,0)
+        :param width: 区域截图宽度,0或负数表示截图到屏幕右侧边缘
+        :param height: 区域截图的高度,若为0或负数,则表示截屏到屏幕底部
+        :param maxDeltaX: 识别到的 prefixText/targetText/subfixText pos坐标的x方向允许的最大阈值, 大于0才有效
+        :param maxDeltaY: 识别到的 prefixText/targetText/subfixText pos坐标的y方向允许的最大阈值, 大于0才有效
+        :param swipeOverlayHeight:上滑时,少滑动该距离, 负数表示height的1/10
+        :param maxSwipeRetryCount: 最多上滑截图的次数, 一次表示不上滑
+        :param saveAllImages:是否保存每张截图,若为False,则仅保存匹配失败的截图
+                        文件名格式: {cacheDir}/{deviceId}/{imgPrefixName}_{time}_index_fromX_fromY_toX_toY_{appName}.png
+        :param autoSwitchPointerLocation: 仅对android有效, 是否自动关闭指针位置(避免ocr时被干扰), 识别结束后自动恢复初始状态
+        :param saveDirPath: 截图保存的目录,若为空,则尝试保存到 {self.cacheDir} 中
+        :param imgPrefixName: 截图前缀名称
+        :param autoConvertQuotes: 是否将ocr字符串中的双引号统一转为半角字符双引号
+        :param appendStrFlag: 根据ocr结果列表拼接生成完整字符串时,连续两个文本之间的连接符号,默认为一个空格
+        :param ignoreCase: 正则匹配字符串时,是否忽略大小写
+        :param printCmdInfo: 是否打印命令内容
+        :return tuple (list,str,dict):
+            第一个元素list: 表示匹配到的targetText区域在屏幕的四个角的坐标(已自行累加了fromX,fromY的偏移量), 若为空,则表示未识别到
+            第二个元素str: 表示最终ocr得到的文本
+            第三个元素list: cnocr识别的原始结果list
         """
-        if CommonUtil.isNoneOrBlank(targetText):
-            return True
-        for index in range(maxRetryCount):
-            if ocrResList is None:  # 重新ocr
-                pos, ocrResStr, ocrResList = self.findTextByOCR(targetText, height=height, prefixText=prefixText,
-                                                                maxSwipeRetryCount=1)
-            else:  # 复用原先的ocr结果
-                pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, targetText=targetText, prefixText=prefixText)
+        ocrStartTs: float = time.time()
+        sWidth, sHeight = self.airtest_device.get_current_resolution()  # self.getWH()  # 获取当前设备宽度
+        width = sWidth if width <= 0 else width
+        height = sHeight if height <= 0 else height
 
-            if not CommonUtil.isNoneOrBlank(pos):  # 找到目标文本
-                return True
+        # 计算区域子截图的右下角坐标
+        maxY = sHeight
+        toX: int = fromX + width
+        toY: int = fromY + height
+        toX = toX if toX <= sWidth else sWidth
+        toY = toY if toY <= maxY else maxY
+        height = toY - fromY
 
-            if maxRetryCount <= 1:  # 只允许匹配一次,则直接返回
-                return False
+        # 记录当前是否开启了 "指针位置" 功能,以便最后进行恢复
+        if self.isAndroid():
+            pointerLocationOri: int = self.adbUtil.pointerLocation(value=-1, deviceId=self.uuid)
+            if autoSwitchPointerLocation:
+                self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
 
-            # 检测文本长度
-            if CommonUtil.isNoneOrBlank(ocrResStr) or len(ocrResStr) <= minOcrLen:
-                self.logWarn(f'check_if_in_page fail ocrResStr is too short,wait:ocrResStr={ocrResStr}')
-                ocrResList = None
-                self.sleep(2)
-                continue
+        hit: bool = False  # 是否匹配到目标文字
+        posList: list = None  # 识别到的文本位置矩形框4个点的坐标列表
+        ocr_str_result: str = ''  # 最后一次ocr识别的文本
+        cnocr_result: list = None  # cnocr对区域截图进行识别的原始结果对象
 
-            img_path = self.saveScreenShot(f'未找到_{targetText}_{prefixText}_{index}', autoAppendDateInfo=True)
-            self.logWarn(
-                f'check_if_in_page 未找到:{targetText}, index={index},prefixText={prefixText},'
-                f'img_path={img_path}\nocrResStr={ocrResStr}')
-            if autoCheckDialog:
-                ocrResList = self.check_dialog(breakIfHitText=targetText)  # 可能是有弹框覆盖, 此处不做弹框检测,避免死循环
-            else:
-                self.sleep(2)  # 可能是未加载完成,等待2s再试
-                ocrResList = None  # 置空,下一轮强制重新ocr
-        return False
+        for i in range(maxSwipeRetryCount):
+            try:
+                screen = self.snapshot() if img is None else img  # 截屏
+            except Exception as e:
+                screen = None
+                self.logError(f'snapshot fail {e}')
+            if screen is None:
+                self.logError(f'findTextByOCR fail as screenshot return null')
+                return None, '', None
+            img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图, 整体耗时0.15s左右
 
-    def calcCenterPos(self, ltrb: list) -> tuple:
+            cnocr_result = self.cnocrImpl.ocr(img)  # cnocr进行解析, 实测耗时大概0.2s
+            posList, ocr_str_result, targetDict = self.findTextByCnOCRResult(cnocr_result, targetText=targetText,
+                                                                             prefixText=prefixText,
+                                                                             subfixText=subfixText,
+                                                                             fromX=fromX, fromY=fromY,
+                                                                             maxDeltaX=maxDeltaX,
+                                                                             maxDeltaY=maxDeltaY,
+                                                                             appendStrFlag=appendStrFlag,
+                                                                             ignoreCase=ignoreCase,
+                                                                             autoConvertQuotes=autoConvertQuotes)
+            hit = hit or not CommonUtil.isNoneOrBlank(posList)  # 是否匹配到目标文字
+
+            # 按需保存截图
+            ocr_str_result = '' if ocr_str_result is None else ocr_str_result.strip()
+            saveDirPath = self.cacheDir if CommonUtil.isNoneOrBlank(saveDirPath) else saveDirPath
+            saveImg: bool = not CommonUtil.isNoneOrBlank(saveDirPath) and (saveAllImages or not hit)
+            if saveImg:  # 保存图片还是耗时的0.8s左右, 占据方法的大头,因此默认只对失败的部分做截图
+                loopStartTs = time.time()
+                imgName = '%s_%s_%s_%s_%s_%s_%s.png' % (
+                    imgPrefixName, i, fromX, fromY, toX, toY, TimeUtil.getTimeStr(f='%m%d_%H%M%S'))
+                img_path = self.saveImage(img, imgName=imgName)
+                self.logWarn(
+                    f'findTextByOCR loopCheck {i} saveImg duration={time.time() - loopStartTs},hit={hit},'
+                    f'targetText={targetText},img_path={img_path},prefix={prefixText}', printCmdInfo=printCmdInfo)
+
+            # 匹配到目标文本,则退出重试
+            if hit:
+                break
+            elif maxSwipeRetryCount > 1:
+                swipeOverlayHeight = swipeOverlayHeight if swipeOverlayHeight >= 0 else int(height * 0.1)
+                swipeHeight = height - swipeOverlayHeight
+                swipeHeight = height if swipeHeight <= 0 else swipeHeight
+
+                maxSwipeHeight = sHeight * 0.7  # 预留底部部分空间,不免触发home操作
+                if swipeHeight >= maxSwipeHeight:
+                    swipeHeight = maxSwipeHeight
+
+                # 滑动耗时稍微长点,避免onMoveUp后,页面因为惯性继续滑动
+                if self.isAndroid():
+                    self.swipeUp(minDeltaY=swipeHeight, maxDeltaY=swipeHeight,
+                                 keepVerticalSwipe=True, durationMs=1500, printCmdInfo=printCmdInfo)
+
+        # 恢复指针位置开关设置
+        if self.isAndroid() and autoSwitchPointerLocation:
+            self.adbUtil.pointerLocation(value=pointerLocationOri, deviceId=self.deviceId)
+
+        self.logWarn(f'findTextByOCR {not CommonUtil.isNoneOrBlank(posList)},'
+                     f'{time.time() - ocrStartTs}秒,target={targetText},prefix={prefixText},'
+                     f'ocr_str_result={ocr_str_result}',
+                     printCmdInfo=printCmdInfo)
+        return posList, ocr_str_result, cnocr_result
+
+    def composeOcrStr(self, cnocr_result: list, appendStrFlag: str = ' ') -> str:
+        """根据cnocr识别结果拼接生成text信息"""
+        ocr_str_result: str = ''
+        if CommonUtil.isNoneOrBlank(cnocr_result):
+            return ocr_str_result
+        for index in range(len(cnocr_result)):
+            dictItem: dict = cnocr_result[index]
+            t = dictItem.get('text', '')
+            ocr_str_result = '%s%s%s' % (ocr_str_result, appendStrFlag, t)
+        return ocr_str_result
+
+    def _make_re_compile_obj(self, targetText: str, ignoreCase: bool = True) -> re.Pattern:
+        targetTextPattern = None
+        if not CommonUtil.isNoneOrBlank(targetText):
+            targetTextPattern = re.compile(targetText, re.IGNORECASE) if ignoreCase else re.compile(targetText)
+        return targetTextPattern
+
+    def saveScreenShot(self, imgName: str, fromX: int = 0, fromY: int = 0, toX: int = -1, toY: int = -1,
+                       autoAppendDateInfo: bool = False) -> str:
         """
-        给定矩形框4个顶点的坐标,计算其中心点坐标(x,y)
-        :param ltrb: 4个顶点坐标,依次为左上,右上,右下,左下, 每个元素包含是个list, list中包含两个float子元素,依次表示x,y的位置
-        :return tuple: 中心点的坐标(x,y) x,y的类型是float, 若输入为空,则返回空白元组 ()
+        屏幕截图后, 截取区域图像并保存到文件中, 若 toX/toY 小于等于0, 则表示到屏幕右下角位置
+        截图保存在 self.cacheDir 目录下, 若未指定目录,则保存失败
+        :param imgName: 图片名(不包括后缀), 会自动拼接: .png,
+                        文件路径: {cacheDir}/{deviceId}/{imgName}_{appName}.png
+        :return str: 截图保存的路径, 若截图失败,则返回 ''
         """
-        if CommonUtil.isNoneOrBlank(ltrb) or len(ltrb) < 3:
-            return ()
-        lt = ltrb[0]
-        rt = ltrb[1]
-        rb = ltrb[2]
-        # lb = ltrb[3]
-        centerX = lt[0] + (rt[0] - lt[0]) / 2
-        centerY = rt[1] + (rb[1] - rt[1]) / 2
-        return centerX, centerY
+        sWidth, sHeight = self.getWH()  # 获取当前设备宽度
+        toX = toX if 0 < toX < sWidth else sWidth
+        toY = toY if 0 < toY < sHeight else sHeight
+        screen = self.snapshot()  # 截屏
+        img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
+        imgNameOpt = '' if CommonUtil.isNoneOrBlank(imgName) else ('%s_' % imgName)
+        if CommonUtil.isNoneOrBlank(imgName) or autoAppendDateInfo:
+            timeStr = TimeUtil.getTimeStr(f='%m%d_%H%M%S')
+            imgName = '%s%s_%s_%s_%s_%s' % (imgNameOpt, timeStr, fromX, fromY, toX, toY)
+        return self.saveImage(img, imgName)
 
-    def tapByTuple(self, posTuple: tuple, deviceId: str = None, times: int = 1, sleepSec: float = 3,
-                   printCmdInfo: bool = False) -> bool:
-        return self.adbUtil.tapByTuple(posTuple, deviceId=deviceId, times=times, sleepSec=sleepSec,
-                                       printCmdInfo=printCmdInfo)
-
-    def init_poco(self):
-        """若有需要使用到poco,请启用本方法进行初始化"""
-        # if self.poco is None:
-        #     self.poco = AndroidUiautomationPoco(device=self.airtest_device,
-        #                                         use_airtest_input=True,
-        #                                         screenshot_each_action=False)
-        return self
-
-    def onRun(self, **kwargs):
-        self.runAction(self.informationStreamPageAction, totalSec=self.totalSec, func=self.check_info_stream_valid)
-
-    def canDoOthersWhenInStream(self) -> bool:
+    # @log_time_consume(exclude_params=['img', 'dirPath', 'autoAppendDateInfo', 'replaceFlag'])
+    def saveImage(self, img, imgName: str = None, dirPath: str = None,
+                  autoAppendDateInfo: bool = False, replaceFlag: str = '_') -> str:
         """
-        当前正在刷信息流页面时,是否允许跳转到其他页面执行刷金币操作
-        在信息流页面每刷一页就会重新计算一次
+        保存图片到 {cacheDir} 中
+        实测耗时大概0.8s左右
+
+        :param imgName: 文件名, 会自动拼接 self.appName 和 '.png' 后缀
+        :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍未空,则保存失败
+        :param replaceFlag: 若 imageName 中存在无效字符时,替代为该字符串
+        :return str: 最终保存的路径名, 若为空,则表示保存失败
         """
-        minStreamSec: int = self.getStateValue(AbsBaseAir.key_minStreamSecs, 0)  # 最短间隔时长,单位:s
-        inStramSec: int = self.getStateValue(AbsBaseAir.key_in_stram_sec, 0)  # 已连续刷信息流的时长,单位:s
-        lastStreamTs: float = self.getStateValue(AbsBaseAir.key_lastStreamTs, 0)  # 上次跳转的时间戳, 单位:s
-        curTs: float = time.time()
-        if inStramSec >= minStreamSec:
-            self.logWarn(
-                f'canDoOthersWhenInStream true minStreamSec={minStreamSec},inStramSec={inStramSec}'
-                f',lastStreamTs={lastStreamTs},curTs={curTs}')
-            return True
+        if img is None:
+            return ''
+
+        if CommonUtil.isNoneOrBlank(dirPath):
+            dirPath = self.cacheDir
+
+        if CommonUtil.isNoneOrBlank(dirPath):
+            return ''
+
+        if CommonUtil.isNoneOrBlank(imgName):
+            autoAppendDateInfo = True
+            imgName = ''
         else:
-            return False
+            imgName = f'{imgName}_'
 
-    def check_info_stream_valid(self, forceRecheck: bool = False) -> tuple:
-        """
-        当前在信息流页面,检测是否可执行赚钱任务,默认是每5min可跳转赚钱任务一次
-        :return tuple: (bool,bool)
-                        第一个元素表示当前时候仍在信息流页面
-                        第二个元素表示是否有跳转执行赚钱任务
-        """
-        performEarnActions: bool = self.canDoOthersWhenInStream()
-        if performEarnActions:
-            self.perform_earn_tab_actions()
-            self.back_until_info_stream_page()  # 返回首页
-            forceRecheck = True  # 可能跳转新页面了,需要重新检测
-        return self.check_if_in_info_stream_page(forceRecheck=forceRecheck), performEarnActions
+        if autoAppendDateInfo:
+            imgName = f"{imgName}{TimeUtil.getTimeStr(f='%m%d_%H%M%S')}"
+        imgName = imgName.replace('(', replaceFlag).replace(')', replaceFlag) \
+            .replace('|', replaceFlag).replace('.*', replaceFlag).replace('[', replaceFlag).replace(']', replaceFlag)
 
-    @log_wrap(print_out_obj=False)
-    def perform_earn_tab_actions(self, tag: Union[str, list] = 'earn_page_action', maxSwipeCount: int = 8,
-                                 back2HomeStramTab: bool = False, filterFuncNames: set = None):
-        """
-        跳转到去赚钱页面,然后执行各任务
-        :param tag: 需要自行的任务task tag, 可只传入一个,或者list
-        :param maxSwipeCount: 在赚钱任务页面最多下滑次数
-        :param back2HomeStramTab: 执行完毕后是否回退到首页信息流页面
-        :param filterFuncNames: 若非空,则只执行包含的方法
-        """
-        self.goto_home_earn_tab()
-        if not self.check_if_in_earn_page():
-            self.logWarn(f'perform_earn_tab_actions fail as not in earn page')
-            return self
+        try:
+            pil_img = cv2_2_pil(img)
+            FileUtil.createFile('%s/' % dirPath)
 
-        earnName, earnKeyword = self.get_earn_monkey_tab_name()
-        earnFuncList = list()
-        if isinstance(tag, str):
-            earnFuncList = TaskManager.getTaskList(tag, taskLifeCycle=TaskLifeCycle.custom)
-        elif isinstance(tag, list):
-            for tTag in tag:
-                tEarnFuncList = TaskManager.getTaskList(tTag, taskLifeCycle=TaskLifeCycle.custom)
-                if not CommonUtil.isNoneOrBlank(tEarnFuncList):
-                    earnFuncList = earnFuncList + tEarnFuncList
+            if self.isAndroid():
+                model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
+                img_path = '%s/%s_%s/%s_%s.png' % (dirPath, model, self.deviceId, imgName, self.appName)
+            else:
+                img_path = '%s/%s.png' % (dirPath, imgName)
+            img_path = img_path.replace('_.png', ".png").replace(".png.png", ".png")
 
-        ocrResList = self.getScreenOcrResult()
-        for _ in range(maxSwipeCount):
-            for item in earnFuncList:
-                funcName: str = item.__name__
-                if not CommonUtil.isNoneOrBlank(filterFuncNames) and funcName not in filterFuncNames:
+            img_path = FileUtil.recookPath(img_path)
+            FileUtil.createFile(img_path)  # 按需创建父目录
+            pil_img.save(img_path, quality=99, optimize=True)
+            # self.logWarn('saveScreenShot imgPath=%s' % img_path)
+            return img_path
+        except Exception as e:
+            traceback.print_exc()
+            return ''
+
+    @log_time_consume(exclude_params=['autoSwitchPointerLocation'])
+    def getScreenOcrResult(self, autoSwitchPointerLocation: bool = True,
+                           fromX: int = 0, fromY: int = 0, toX: int = 0, toY: int = 0, img_name: str = None) -> list:
+        """
+        获取当前屏幕截图的ocr结果对象
+        :param autoSwitchPointerLocation: 仅对android有效, 是否自动关闭指针位置(避免ocr时被干扰), 识别结束后自动恢复初始状态
+        :param fromX: 区域截图左上角的x位置,若大于0, 会进行裁剪后再ocr , fromY/toX/toY 同理
+        :param img_name: 保存图片的名称, 若不为空, 则会保存图片到 {self.cacheDir} 目录下
+        :return list: 识别结果对象, 若失败,则返回None
+                        每个元素包含属性: text/score/position, 其中 position 是一个4个元素的列表, 分别是该文本的四个角的(x,y)坐标
+        """
+        # 记录当前是否开启了 "指针位置" 功能,以便最后进行恢复
+        if self.isAndroid():
+            pointerLocationOri: int = self.adbUtil.pointerLocation(value=-1, deviceId=self.deviceId)
+            if autoSwitchPointerLocation:
+                self.adbUtil.pointerLocation(value=0, deviceId=self.deviceId)  # 关闭指针位置
+
+        screen = self.snapshot()  # 截屏
+
+        # 恢复指针位置开关设置
+        if self.isAndroid() and autoSwitchPointerLocation:
+            self.adbUtil.pointerLocation(value=pointerLocationOri, deviceId=self.deviceId)
+
+        # screen = self.airtest_device.snapshot()  # 截屏
+        if screen is None:
+            self.logError(f'getScreenOcrResult fail as screenshot return null')
+            return list()
+        screen = self.crop_img(screen, fromX, fromY, toX, toY, img_name)  # 局部截图
+        return self.cnocrImpl.ocr(screen)  # cnocr进行解析, 实测耗时大概0.2s
+
+    def crop_img(self, full_img,
+                 fromX: int = 0, fromY: int = 0,
+                 toX: int = 0, toY: int = 0,
+                 img_name: str = None):
+        """
+        对指定的图片进行裁剪,并保存裁剪后的图片
+        本方法主要用于列表行图片, 由于整图识别时, 不同列信息有发现会有被合并的情况,导致无法区分
+        因此可以尝试先提取列明宽度, 然后对每列进行裁剪, 再单独执行ocr识别
+        :param full_img: 完整的截图, 一般调用 self.snapshot() 即可
+        :param fromX: 区域截图左上角的x位置,若大于0, 会进行裁剪后再ocr, fromY/toX/toY 同理
+        :param img_name: 保存图片的名称, 若不为空, 则会保存图片到 {self.cacheDir} 目录下
+        :return 区域截图后的图片对象
+        """
+        if full_img is None:
+            self.logError(f'crop_img fail as full_img null')
+            return full_img
+
+        target_img = full_img
+        if not fromX == fromY == toX == toY == 0:
+            sWidth, sHeight = self.getWH()  # 获取当前设备宽度
+            toX = toX if 0 < toX < sWidth else sWidth
+            toY = toY if 0 < toY < sHeight else sHeight
+            target_img = aircv.crop_image(full_img, (fromX, fromY, toX, toY))  # 局部截图
+
+        if not CommonUtil.isNoneOrBlank(img_name):
+            self.saveImage(target_img, img_name, autoAppendDateInfo=True)
+        return target_img
+
+    # @log_time_consume(exclude_params=['full_img']) #大概0.1s左右就能执行完成
+    def crop_then_ocr(self, full_img,
+                      fromX: int = 0, fromY: int = 0,
+                      toX: int = 0, toY: int = 0,
+                      img_name: str = None) -> list:
+        """
+        对指定的图片进行裁剪, 并对裁剪后的子图片执行ocr识别,返回识别结果
+        本方法主要用于列表行图片, 由于整图识别时, 不同列信息有发现会有被合并的情况,导致无法区分
+        因此可以尝试先提取列明宽度, 然后对每列进行裁剪, 再单独执行ocr识别
+        :param full_img: 完整的截图, 一般调用 self.snapshot() 即可
+        :param fromX: 区域截图左上角的x位置,若大于0, 会进行裁剪后再ocr, fromY/toX/toY 同理
+        :param img_name: 保存图片的名称, 若不为空, 则会保存图片到 {self.cacheDir} 目录下
+        """
+        target_img = self.crop_img(full_img, fromX, fromY, toX, toY, img_name)
+        if target_img is None:
+            self.logError(f'crop_img fail as target_img null')
+            return list()
+        return self.cnocrImpl.ocr(target_img)
+
+    @log_time_consume(exclude_params=['full_img', 'title_key_dict'])
+    def ocr_grid_view(self, full_img, title_key_dict: dict, vertical_mode: bool = False, expand: int = 18) -> list:
+        """
+        对于带标题行的表格区域进行识别
+        支持按行识别或者按列识别
+        按行识别时,只要对full_img进行ocr一次, 然后按行进行解析即可,速度较快,但可能无法保证每列都解析正确(可能会出现列内容跨列的情况)
+        按列识别时,需要对full_img进行多次ocr(每列进行区域截图再ocr), 然后按列进行解析,速度较慢,但能保证每列都解析正确
+        :param full_img: 完整的图片, 包含标题行和表格内容的截图, 不包含其他内容
+        :param title_key_dict: 列标题映射, 格式: {列标题名: 标题key}, 请保证包含所有列信息, 且顺序与表格列顺序一致
+                                其中 '列标题名' 是表格中列标题的文本, '标题key' 是该列的唯一标识, 最终会作为结果字典的key
+        :param vertical_mode: 是否是列识别模式
+        :param expand: 列识别模式时, 对每列进行区域截图时, 额外增加的宽度, 默认为18
+        :return: 除标题行外的表格内容, 每个元素是一个dict, 格式为: [{'标题key1': '列1内容', '标题key2': '列2内容', ...}, ...]
+        """
+
+        # 请使用python3.7以上的版本,此时dict是按插入顺序存储的
+        keys = list(title_key_dict.keys())  # 获取所有键的列表
+        values = list(title_key_dict.values())  # 获取所有值的列表
+        size = len(keys)  # 要求记录的列数量, ocr可能识别更多的列, 但是最终只会记录这些列
+
+        # 按行提取持仓信息
+        center_y = -9999  # 当前识别的行y值, 用于确定是否换行了
+        delta: int = 20  # 允许的误差
+        line_dict = dict()  # 每行内容字典
+        horizont_index = 0  # 该属性信息索引
+        result = list()  # 最终结果
+        # self.saveImage(full_img, imgName='ocr_grid_view', autoAppendDateInfo=True)  # 调试时保存图片
+
+        if vertical_mode:  # 列模式识别
+            # 获取每列的范围, 左/上/右 边界通过列标题获取, 下边界通过截图的高来确定
+            title_ocr_result: list = None
+            for i in range(len(keys)):
+                key = keys[i]
+                value = values[i]
+                prefixText: str = ''
+                subfixText: str = ''
+
+                if i > 0:
+                    for index in range(i):
+                        prefixText = keys[index]
+                        if not CommonUtil.isNoneOrBlank(prefixText):
+                            break
+                if i < size - 1:
+                    for index in range(i + 1, size - 1):
+                        subfixText = keys[index]
+                        if not CommonUtil.isNoneOrBlank(subfixText):
+                            break
+
+                # self.crop_then_ocr(full_img)
+                if title_ocr_result is None:
+                    pos, ocrResStr, ocrResList = self.findTextByOCR(key, full_img, prefixText=prefixText,
+                                                                    subfixText=subfixText, maxSwipeRetryCount=1)
+                    title_ocr_result = ocrResList
+                else:
+                    pos, _, _ = self.findTextByCnOCRResult(title_ocr_result, key, prefixText=prefixText,
+                                                           subfixText=subfixText)
+                if pos is None:
+                    print(f'列模式定位失败: {key},pre={prefixText},sub={subfixText},ocrStr={ocrResStr}')
+                    continue
+                CommonUtil.printLog(
+                    f'列模式定位成功: {key},pre={prefixText},sub={subfixText},pos={self.calcCenterPos(pos)}')
+
+                # 根据标题列的坐标, 偏移获取到内容区域的返回
+                pos_left = pos[0][0] - expand  # 左边界往左偏移一点
+                pos_right = pos[1][0] + expand  # 右边界往右偏移一点
+                pos_top = pos[3][1]  # 左下角y值,向下偏移一点
+                w, h, d = full_img.shape
+                pos_bottom = h - 10  # 截图底部向上偏移一点
+
+                # 每列进行区域截图并ocr
+                ocr_result = self.crop_then_ocr(full_img, fromX=pos_left, fromY=pos_top, toX=pos_right, toY=pos_bottom)
+
+                # 每行对应一个dict对象的属性
+                center_y = -9999  # 当前正在处理的行y值, 用于判断是否换行了, 有可能一行数据被解析呢多个, 因此不能纯粹按照下表来判断
+                line_num = -1
+                for item in ocr_result:
+                    content: str = item['text'].strip()  # 文本内容
+                    pos: list = item['position']  # 文本边框四个角的(x,y)坐标
+                    center_pos = self.calcCenterPos(pos)  # 文本中心点的(x,y)坐标
+
+                    y = center_pos[1]  # 当前处理的文本y坐标
+                    if y - center_y > delta:  # 新的一行
+                        result.append(dict())
+                        line_num += 1
+                        center_y = y
+
+                    cur_value = result[line_num].get(value, None)
+                    if CommonUtil.isNoneOrBlank(cur_value):
+                        result[line_num][value] = content
+                    else:
+                        result[line_num][value] += content
+
+                # for line_num, item in enumerate(ocr_result):
+                #     # print(f"行号 {line_num}: 值为 {item}")
+                #     content: str = item['text'].strip()  # 文本内容
+                #     if len(result) < line_num + 1:  # 新一行,创建行内容dict对象
+                #         result.append(dict())
+                #     result[line_num][value] = content  # 获取第N行对象dict, 并将其 'value' 属性值指定为 ocr 结果
+        else:
+            ocr_result = self.crop_then_ocr(full_img)
+            for item in ocr_result:
+                content: str = item['text'].strip()  # 文本内容
+                pos: list = item['position']  # 文本边框四个角的(x,y)坐标
+                center_pos = self.calcCenterPos(pos)  # 文本中心点的(x,y)坐标
+
+                y = center_pos[1]  # 当前处理的文本y坐标
+                if y - center_y > delta:  # 新的一行
+                    line_dict = dict()
+                    horizont_index = 0
+                    center_y = y
+                    result.append(line_dict)
+
+                # 对于无需记录的字段, 直接跳过
+                if horizont_index >= size:
+                    horizont_index += 1
                     continue
 
-                self.logWarn(f'perform_earn_tab_actions action: {funcName},ocrStr={self.composeOcrStr(ocrResList)}')
-                consumed = item(baseAir=self, ocrResList=ocrResList, breakIfHitText=earnKeyword)
-                if consumed:
-                    self.logWarn(f'perform_earn_tab_actions consumed: {funcName}')
-                    if not self.check_if_in_earn_page(autoCheckDialog=True):
-                        if self.check_if_in_info_stream_page():
-                            self.goto_home_earn_tab()
-                        else:
-                            self.back_until_info_stream_page()
-                            self.goto_home_earn_tab()
+                # 需要可能记录的字段, 获取key值, 非空才记录
+                value = values[horizont_index]
+                if not CommonUtil.isNoneOrBlank(value):
+                    line_dict[value] = content
+                horizont_index += 1
+        return result
 
-                        if not self.check_if_in_earn_page(autoCheckDialog=True):
-                            self.logWarn(f'当前已不在赚钱页面,退出继续执行赚钱任务')
-                            break
-                        self.sleep(2)  # 页面信息可能变化, 等待一会再ocr
-                        ocrResList = self.getScreenOcrResult()
-            self.back_until_earn_page(ocrResList=ocrResList)  # 返回到赚钱页面
-            self.swipeUp(minDeltaY=1000, maxDeltaY=1000, keepVerticalSwipe=True, durationMs=1500)  # 下滑一页
-            self.check_dialog(breakIfHitText=earnKeyword)  # 检测可能的弹框
-            # self.closeDialog(minY=500)  # 可能有一些新型弹框未添加识别, 此处统一尝试进行关闭
-            ocrResList = self.getScreenOcrResult()
-
-        self.back_until_earn_page()  # 执行完成,返回到赚钱页面
-        if back2HomeStramTab:
-            self.back_until_info_stream_page()  # 返回信息流页面
-        return self
-
-    def common_log_info(self) -> str:
-        if self.airtest_device is None:
-            return ''
-        serialNo = self.airtest_device.serialno
-        if self.deviceId != serialNo:
-            NetUtil.push_to_robot(f'当前设备号与air dev序列号不符,serialNo={serialNo},deviceId={self.deviceId}',
-                                  self.notificationRobotDict)
-        return ''
-
-
-if __name__ == '__main__':
-    air = AbsBaseAir(deviceId='5d4ea2a7')
-    # targetText: str = r'\d{2}:\d{2}:\d{2}.再开.次'
-    # targetText: str = r'立即开宝箱'
-    # prefixText: str = r'(已开启|已开后|再开\d+次|必得全部奖励)'
-    targetText: str = r'(看视频最高得\d+金.|看.告视频再.\d+金.|看.{0.6}直播.{0,6}赚\d+金.)'
-    prefixText: str = r'(宝箱|恭.*得|明日签到|签到成功|本轮宝箱已开启|已开启|已开后|再开\d+次|必得全部奖励)'
-    pos1, ocr_str, _ = air.findTextByOCR(targetText=targetText, prefixText=prefixText,
-                                         maxSwipeRetryCount=1, saveDirPath='H:/wool_cache/')
-    print('ocr_str=%s' % ocr_str)
-    print('pos=%s' % pos1)
-    cx, cy = air.calcCenterPos(pos1)
-    print('cx,cy=%s,%s' % (cx, cy))
-    air.adbUtil.tap(cx, cy)
+    def getWH(self) -> tuple:
+        """
+        获取当前设备的宽高 (width, height)
+        """
+        return self.airtest_device.get_current_resolution()
