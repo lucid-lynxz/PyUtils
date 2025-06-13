@@ -6,6 +6,7 @@ import traceback
 import urllib.request as urllib2
 
 from util.CommonUtil import CommonUtil
+from util.DingTaskBot import DingTalkBot
 
 
 class NetUtil(object):
@@ -62,29 +63,33 @@ class NetUtil(object):
         :param is_at_all: 是否@所有人
         :param at_mobiles: @指定人员,填入对应人员的手机号列表, 如: ['123', '456']
         """
-        headers = {"Content-type": "application/json"}
-        json_data_obj = {
-            "at": {
-                "atMobiles": at_mobiles,
-                "atUserIds": [],
-                "isAtAll": is_at_all
-            },
-            "text": {
-                "content": content
-            },
-            "msgtype": "text"
-        }
-        print('data_obj', json_data_obj)
-        # 将str类型转换为bytes类型
-        json_data_obj = json.dumps(json_data_obj).encode('utf-8')
-        # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
-        request = urllib2.Request(url='https://oapi.dingtalk.com/robot/send?access_token=%s' % access_token,
-                                  data=json_data_obj,
-                                  headers=headers, method="POST")
-        response = urllib2.urlopen(request)
-        ddResult = response.read().decode('utf-8')
-        print('push_ding_talk_robot result=%s' % ddResult)
+        result = DingTalkBot(token=access_token).send_text(content, is_at_all, at_mobiles)
+        ddResult = json.dumps(result, default=str)
+        print(f'push_ding_talk_robot result={ddResult}')
         return ddResult
+        # headers = {"Content-type": "application/json"}
+        # json_data_obj = {
+        #     "at": {
+        #         "atMobiles": at_mobiles,
+        #         "atUserIds": [],
+        #         "isAtAll": is_at_all
+        #     },
+        #     "text": {
+        #         "content": content
+        #     },
+        #     "msgtype": "text"
+        # }
+        # print('data_obj', json_data_obj)
+        # # 将str类型转换为bytes类型
+        # json_data_obj = json.dumps(json_data_obj).encode('utf-8')
+        # # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
+        # request = urllib2.Request(url='https://oapi.dingtalk.com/robot/send?access_token=%s' % access_token,
+        #                           data=json_data_obj,
+        #                           headers=headers, method="POST")
+        # response = urllib2.urlopen(request)
+        # ddResult = response.read().decode('utf-8')
+        # print('push_ding_talk_robot result=%s' % ddResult)
+        # return ddResult
 
     @staticmethod
     def push_feishu_robot(content: str,
@@ -135,7 +140,3 @@ class NetUtil(object):
         #         s.close()
         print('ip=', ip)
         return ip
-
-
-if __name__ == '__main__':
-    NetUtil.push_feishu_robot('你好啊', '291fce8d-4efa-4bd5-9b1e-f19085d40bbc', True)
