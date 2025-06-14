@@ -197,14 +197,14 @@ class THSTrader(BaseAir4Windows):
         sleep(0.5)
 
     @log_time_consume(separate=True)
-    def deal(self, buy: bool, code: str, price: float, amount: float) -> bool:
+    def deal(self, code: str, price: float, amount: float) -> bool:
         """
-        买卖出股票
-        :param buy: True 买入, False 卖出
+        买卖股票
         :param code: 股票代码
-        :param price: 卖出价格
-        :param amount: 卖出数量
+        :param price: 价格
+        :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
         """
+        buy = amount > 0  # true-买入 false-卖出
         if CommonUtil.isNoneOrBlank(self.position_dict):
             self.get_stock_position()
 
@@ -262,20 +262,7 @@ class THSTrader(BaseAir4Windows):
         :param 是否每次都清空目录
         :return: 缓存目录路径
         """
-        current_file = os.path.abspath(__file__)  # 获取当前文件的绝对路径
-        current_dir = os.path.dirname(current_file)  # 获取当前文件所在目录
-
-        # 创建缓存目录路径
-        cacheDir = os.path.join(current_dir, f'cache/')  # 构建缓存目录路径
-        cacheDir = FileUtil.recookPath(cacheDir)
-        if not clear and FileUtil.isDirFile(cacheDir):
-            return cacheDir
-
-        FileUtil.createFile(cacheDir, clear)
-        gitignore_file = os.path.join(cacheDir, '.gitignore')  # 构建.gitignore文件路径
-        FileUtil.write2File(gitignore_file, "*")  # 忽略所有文件
-
-        return cacheDir
+        return FileUtil.create_cache_dir(None, __file__, clear=clear)
 
 
 if __name__ == '__main__':
@@ -317,8 +304,8 @@ if __name__ == '__main__':
     # stock = trader.position_dict.get('603333', None)
     # CommonUtil.printLog(f'603333尚纬股份持仓信息:{stock}', prefix='\n')
     #
-    # trader.deal(False, '600536', 48.0, 100)  # 卖出
+    # trader.deal('600536', 48.0, -100)  # 卖出
     # trader.saveImage(trader.snapshot(), "卖出股票", autoAppendDateInfo=True)
 
-    # trader.deal(True, '603333', 3.0, 100)  # 买入100股
+    # trader.deal('603333', 3.0, 100)  # 买入100股
     # trader.saveImage(trader.snapshot(), "买入股票", autoAppendDateInfo=True)

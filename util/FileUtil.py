@@ -4,6 +4,7 @@
 import os
 import platform
 import shutil
+from typing import AnyStr, Optional
 
 from util.CommonUtil import CommonUtil
 
@@ -493,6 +494,33 @@ class FileUtil(object):
         # 遍历并删除符合条件的文件
         for file_path in all_files:
             FileUtil.deleteFile(file_path)
+
+    @staticmethod
+    def create_cache_dir(parent_dir: Optional[str], file_like: os.PathLike[AnyStr] = None,
+                         clear: bool = False, name: str = 'cache') -> str:
+        """
+        在指定目录下创建一个缓存子目录, 子目录名默认为:'cache', 会自动在里面添加 .gitignore 文件, 忽略所有文件
+        :param parent_dir: 要在哪个目录下创建缓存目录, 若为空,则请传入 file_like = __file__
+        :param file_like: 若 parent_dir 为空, 则以 file_like 所在目录为父目录
+        :param clear: 若目录已存在, 是否先清空目录
+        :param name: 缓存目录名, 默认: caches
+        :return: 缓存目录路径
+        """
+        # 创建缓存目录路径
+        if CommonUtil.isNoneOrBlank(parent_dir):
+            current_file = os.path.abspath(file_like)  # 获取当前文件的绝对路径
+            parent_dir = os.path.dirname(current_file)  # 获取文件所在目录
+
+        cacheDir = os.path.join(parent_dir, f'{name}/')  # 构建缓存目录路径
+        cacheDir = FileUtil.recookPath(cacheDir)
+        if not clear and FileUtil.isDirFile(cacheDir):
+            return cacheDir
+
+        FileUtil.createFile(cacheDir, clear)
+        gitignore_file = os.path.join(cacheDir, '.gitignore')  # 构建.gitignore文件路径
+        FileUtil.write2File(gitignore_file, "*")  # 忽略所有文件
+
+        return cacheDir
 
 
 if __name__ == '__main__':

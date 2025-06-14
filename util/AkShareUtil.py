@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 import os
 import datetime
+from typing import Union
 
 import akshare as ak
 import pandas as pd
@@ -72,9 +73,9 @@ class AkShareUtil:
         return df
 
     @staticmethod
-    def get_latest_price(code: str, hk: bool = False, n_day_ago: int = 0, period: int = 1) -> float:
+    def get_market_data(code: str, hk: bool = False, n_day_ago: int = 0, period: int = 1) -> pd.DataFrame:
         """
-        获取指定股票的最新价格(支持A股和港股)
+        获取指定股票的分钟级实时交易信息(支持A股和港股)
         :param code: 股票代码
         :param hk: 是否为港股, 默认False表示A股
         :param n_day_ago: 获取往前推多少天的数据, 0表示当天  1表示前一天  -1 表示后一天
@@ -85,6 +86,19 @@ class AkShareUtil:
             stock_min_df = AkShareUtil.query_stock_min_history_hk(code, n_day_ago, period)
         else:
             stock_min_df = AkShareUtil.query_stock_min_history(code, n_day_ago, period)
+        return stock_min_df
+
+    @staticmethod
+    def get_latest_price(code: str, hk: bool = False, n_day_ago: int = 0, period: int = 1) -> float:
+        """
+        获取指定股票的最新价格(支持A股和港股)
+        :param code: 股票代码
+        :param hk: 是否为港股, 默认False表示A股
+        :param n_day_ago: 获取往前推多少天的数据, 0表示当天  1表示前一天  -1 表示后一天
+        :param period: 分时间隔, 默认为1分钟, 支持 1, 5, 15, 30, 60 分钟的数据频率
+        :return: 最新价格, 若指定日期吴交易数据, 则返回0
+        """
+        stock_min_df = AkShareUtil.get_market_data(code, hk, n_day_ago, period)
         if not stock_min_df.empty:
             latest_data = stock_min_df.iloc[-1:]  # 最新1min的数据, 包含开盘价,收盘价,最高价,最低价,成交量,成交额等信息
             latest_price: float = latest_data['收盘'].iloc[-1]  # 最新价格
@@ -254,3 +268,73 @@ class AkShareUtil:
             return True
         else:
             return False
+
+    @staticmethod
+    def save_cache(df: pd.DataFrame, file_name: str) -> str:
+        """
+        缓存数据到本地
+        """
+        file_path = f'{AkShareUtil.cache_dir}/{file_name}.csv'
+        file_path = FileUtil.recookPath(file_path)
+        df.to_csv(file_path)
+        return file_path
+
+    @staticmethod
+    def read_cache(file_name: str,
+                   dtype: dict = None,
+                   parse_dates: list = None) -> Union[pd.DataFrame, None]:
+        """
+        从本地缓存中读取数据,若缓存文件不存在,则返回None
+        """
+        file_path = f'{AkShareUtil.cache_dir}/{file_name}.csv'
+        file_path = FileUtil.recookPath(file_path)
+        if FileUtil.isFileExist(file_path):
+            return pd.read_csv(file_path, dtype=dtype, parse_dates=parse_dates)
+        return None
+
+    @staticmethod
+    def is_trading_day(n_days_ago: int = 0) -> bool:
+        """
+        判断某一天是否为A股交易日
+        文档: https://akshare.akfamily.xyz/data/tool/tool.html#id1
+        数据示例:
+              trade_date
+        0     1990-12-19
+        1     1990-12-20
+        2     1990-12-21
+        """
+        date_str = TimeUtil.getTimeStr('%Y-%m-%d', n_days_ago)
+        _cache_name = 'trade_date_hist'
+        calendar_df = AkShareUtil.read_cache(_cache_name)
+        try:
+            if calendar_df is None or TimeUtil.dateDiff(date_str, calendar_df['trade_date'].iloc[-1], '%Y-%m-%d') > 0:
+                print(f'invoke tool_trade_date_hist_sina from net')
+                calendar_df = ak.tool_trade_date_hist_sina()
+                AkShareUtil.save_cache(calendar_df, _cache_name)
+
+            # 检查日期是否在交易日列表中
+            return date_str in calendar_df['trade_date'].values
+        except Exception as e:
+            print(f"获取交易日历失败: {e}")
+            return False
+
+
+# if __name__ == '__main__':
+#     AkShareUtil.cache_dir = FileUtil.create_cache_dir(None, __file__)
+#     print(f'is_trading_day:{AkShareUtil.is_trading_day()}')
+#     print(f'is_trading_day_1:{AkShareUtil.is_trading_day(1)}')
+#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(2)}')
+#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(-1)}')
+#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(-2)}')
+#
+#     cache_name = '九号公司'
+#     df = AkShareUtil.read_cache(cache_name)
+#     if df is None:
+#         df = AkShareUtil.get_market_data('689009', n_day_ago=1)
+#         AkShareUtil.save_cache(df, cache_name)
+#
+#     cache_name = '阿里巴巴'
+#     df = AkShareUtil.read_cache(cache_name)
+#     if df is None:
+#         df = AkShareUtil.get_market_data('09988', hk=True, n_day_ago=1)
+#         AkShareUtil.save_cache(df, cache_name)

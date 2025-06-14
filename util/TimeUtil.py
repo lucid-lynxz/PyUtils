@@ -148,17 +148,47 @@ class TimeUtil(object):
             time1 = time.mktime(time.strptime(date1, dateFormat))
             time2 = time.mktime(time.strptime(date2, dateFormat))
             diff = int(time1) - int(time2)  # 日期转化为int比较
-            print(diff)
             return int(diff / 24 / 60 / 60)
         except Exception as e:
             print('dateDiff exception %s' % e)
             print(e)
             return valueOnError
 
+    @staticmethod
+    def is_time_greater_than(target_str: str) -> bool:
+        """
+        比较当前时间是否大于等于目标时间字符串
+        支持格式: "YYYY-MM-DD", "HH:MM:SS", "YYYY-MM-DD HH:MM:SS"
+        """
+        now = datetime.now()
+        target_str = target_str.strip().replace("  ", " ")
+        try:
+            # 尝试解析为日期时间格式
+            if ' ' in target_str:
+                target = datetime.strptime(target_str, "%Y-%m-%d %H:%M:%S")
+            # 尝试解析为日期格式
+            elif '-' in target_str:
+                target = datetime.strptime(target_str, "%Y-%m-%d")
+            # 尝试解析为时间格式
+            elif ':' in target_str:
+                target = datetime.combine(now.date(), datetime.strptime(target_str, "%H:%M:%S").time())
+            else:
+                raise ValueError(f"无法解析时间格式: {target_str}")
+
+            return now >= target
+
+        except ValueError as e:
+            print(f"时间解析错误: {e}")
+            return False
+
 
 if __name__ == '__main__':
-    print(TimeUtil.convertSecsDuration(8))
-    print(TimeUtil.convertSecsDuration(59.5))
-    print(TimeUtil.convertSecsDuration(61))
-    print(TimeUtil.convertSecsDuration(3600 + 358))
-    print(TimeUtil.convertSecsDuration(5260))
+    # print(TimeUtil.convertSecsDuration(8))
+    # print(TimeUtil.convertSecsDuration(59.5))
+    # print(TimeUtil.convertSecsDuration(61))
+    # print(TimeUtil.convertSecsDuration(3600 + 358))
+    # print(TimeUtil.convertSecsDuration(5260))
+    # print(TimeUtil.is_time_greater_than("22:15:59"))
+    print(TimeUtil.is_time_greater_than(" 2025-06-14     22:15:59  "))
+    print(TimeUtil.is_time_greater_than("  2025-06-15   22:15:59  "))
+    print(TimeUtil.is_time_greater_than(" 2025-06-14 "))

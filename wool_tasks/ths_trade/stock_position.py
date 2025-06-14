@@ -14,8 +14,8 @@ class StockPosition:
     name: str = ''  # 股票名称
 
     # 数量信息
-    balance: str = '0'  # 股票余额 int
-    available_balance: str = '0'  # 可用余额 int
+    balance: str = '0'  # 股票余额 int 表示多少股
+    available_balance: str = '0'  # 可用余额 int 表示多少股
 
     # 价格信息
     cost_price: str = '0.0'  # 成本价 float
