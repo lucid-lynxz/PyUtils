@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import sys
+from typing import Optional
 
 from airtest.core.api import *
 
@@ -11,10 +12,11 @@ proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if proj_dir not in sys.path:
     sys.path.insert(0, proj_dir)
 from wool_tasks.base_airtest_4_windows_impl import BaseAir4Windows
-from wool_tasks.ths_trade.stock_position import StockPosition
+from wool_tasks.ths_trade.bean.stock_position import StockPosition
+
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
-from util.TimeUtil import TimeUtil, log_time_consume
+from util.TimeUtil import log_time_consume
 from util.AkShareUtil import AkShareUtil
 
 
@@ -60,8 +62,10 @@ class THSTrader(BaseAir4Windows):
         for line in line_list:
             # 分离属性名和属性值
             key, pos_str = line.split(':')
+            if CommonUtil.isNoneOrBlank(pos_str):
+                continue
             # 将属性值按逗号分割并转换为元组
-            pos_tuple = tuple(map(int, pos_str.split(',')))
+            pos_tuple = tuple(map(int, map(float, pos_str.split(','))))
             # 将元组赋值给对象对应的属性
             setattr(self, key, pos_tuple)
 
@@ -80,7 +84,8 @@ class THSTrader(BaseAir4Windows):
         """
         import ctypes
         user32 = ctypes.windll.user32
-        user32.ShowWindow(int(self.uuid), mode)
+        user32.SetForegroundWindow(int(self.uuid))  # 将其切换到前台
+        user32.ShowWindow(int(self.uuid), mode)  # 最大/最小化窗口
         sleep(0.5)
 
     def _find_bs_pos(self, ocr_result: list):
@@ -116,7 +121,7 @@ class THSTrader(BaseAir4Windows):
         CommonUtil.printLog(f'买入/卖出 按钮: {self.bs_confirm_btn}')
 
     @log_time_consume()
-    def get_stock_position(self) -> list:
+    def get_all_stock_position(self) -> list:
         """
         获取所有股票的持仓信息列表, 每隔元素表示一个股票对象
 
@@ -128,10 +133,12 @@ class THSTrader(BaseAir4Windows):
         # 持仓信息列表头目前从左到右, 依次是: 证券代码 证券名称 股票余额 可用余额 冻结数量 成本价 市价 盈亏盈亏比(%) 当日盈亏 当日盈亏比(%) 市值 仓位占比(%) 当日买入 当日卖出 交易市场
         # 因此此处通过 '证券代码' 和 '仓位参比'  两个字符串的位置, 来确定持仓信息(含标题含)的左/上/右边界, 然后根据坐标, 按行提取股票持仓信息
         # 另外比如港股股票代码签名可能有其他表示信息, 因此左边界适当往左便宜一点
+        CommonUtil.printLog(f'get_all_stock_position')
+        self.key_press('F2')  # '卖出[F2]'
+        self.key_press('F6')  # '持仓[F6]'
+        self.toggle_window_mode(3)  # 最大化窗口
+
         if self.position_rect is None:
-            self.key_press('F2')  # '卖出[F2]'
-            self.key_press('F6')  # '持仓[F6]'
-            self.toggle_window_mode(3)  # 最大化窗口
             self.saveImage(self.snapshot(), "持仓信息总览", autoAppendDateInfo=True)
 
             pos, ocrResStr, ocrResList = self.findTextByOCR('证券代码', img=self.snapshot_img, prefixText='持仓',
@@ -183,6 +190,20 @@ class THSTrader(BaseAir4Windows):
         self.position_dict = {objDict.code: objDict for objDict in result}
         return result
 
+    def get_stock_position(self, code: str, refresh: bool = False) -> Optional[StockPosition]:
+        """
+        获取某只股票的持仓数据,若没有持仓则返回None
+        :param code: 股票代码
+        :param refresh: 是否刷新持仓信息, 默认为False, 表示优先从已有缓存中读取
+        """
+        if refresh or CommonUtil.isNoneOrBlank(self.position_dict):
+            self.get_all_stock_position()
+
+        for position in self.position_dict.values():
+            if position.code == code:
+                return position
+        return None
+
     def refresh(self):
         """
         刷新当前界面
@@ -206,7 +227,7 @@ class THSTrader(BaseAir4Windows):
         """
         buy = amount > 0  # true-买入 false-卖出
         if CommonUtil.isNoneOrBlank(self.position_dict):
-            self.get_stock_position()
+            self.get_all_stock_position()
 
         position: StockPosition = self.position_dict[code]
         if position is None:
@@ -264,48 +285,65 @@ class THSTrader(BaseAir4Windows):
         """
         return FileUtil.create_cache_dir(None, __file__, clear=clear)
 
-
-if __name__ == '__main__':
-    AkShareUtil.cache_dir = THSTrader.create_cache_dir()  # 缓存目录
-    stock_code = '000001'  # 股票代码
-    name = AkShareUtil.get_stock_name(stock_code)
-    print(f'股票代码{stock_code}对应的名称是:{name}')
-
-    # 测试获取股票信息
-    stock_summary = AkShareUtil.get_stock_summary(stock_code)
-    print(stock_summary)
-
-    full_code = AkShareUtil.get_full_stock_code(stock_code)
-    print(f'\nfull_code={full_code}')
-
-    price = AkShareUtil.get_latest_price(stock_code)
-    print(f'股票最新价格:{price}')
-
-    price = AkShareUtil.get_latest_price('09988', True)
-    print(f'港股09988(阿里巴巴)最新价格:{price}')
-
-    # df = AkShareUtil.get_stock_summary(stock_code)
-    # print(f'\nstock_summary1:{df}')
-    #
-    # df = AkShareUtil.get_stock_summary(stock_code)
-    # # print(f'\nstock_summary2:{df}')
-    #
-    # print(f"\n涨停:{df[df['item'] == '涨停']['value'].iloc[0]}")
-    # print(f"\n跌停:{df[df['item'] == '跌停']['value'].iloc[0]}")
-    #
-    # print(f'今日是否可交易:{AkShareUtil.is_today_can_trade()}')
-
-    # trader = THSTrader()
-    # stock_position_list = trader.get_stock_position()
-    # #
-    # stock = trader.position_dict.get('09988', None)
-    # CommonUtil.printLog(f'09988阿里巴巴-W持仓信息持仓信息:{stock}', prefix='\n')
-    #
-    # stock = trader.position_dict.get('603333', None)
-    # CommonUtil.printLog(f'603333尚纬股份持仓信息:{stock}', prefix='\n')
-    #
-    # trader.deal('600536', 48.0, -100)  # 卖出
-    # trader.saveImage(trader.snapshot(), "卖出股票", autoAppendDateInfo=True)
-
-    # trader.deal('603333', 3.0, 100)  # 买入100股
-    # trader.saveImage(trader.snapshot(), "买入股票", autoAppendDateInfo=True)
+# # python your_script.py --condition_order_path /path/to/orders.csv
+# if __name__ == '__main__':
+#     while not AkShareUtil.is_trading_day():
+#         now = TimeUtil.getTimeStr(n=0)
+#         next_day = TimeUtil.getTimeStr('%Y-%m-%d', 1)
+#         diff = TimeUtil.calc_sec_diff(now, f'{next_day} 09:30:00', '%Y-%m-%d %H:%M:%S')
+#         CommonUtil.printLog(f'当前不是交易日, 等待到 {next_day} 09:30:00 后再执行, 修复 {diff}秒')
+#         TimeUtil.sleep(diff)
+#
+#     now = TimeUtil.getTimeStr(f="%H:%M:%S", n=0)
+#     diff = TimeUtil.calc_sec_diff(now, f'09:30:00', '%H:%M:%S')
+#     if diff < 0:
+#         CommonUtil.printLog(f'当前尚未达到9:30,休眠等待 {diff} 秒')
+#         TimeUtil.sleep(abs(diff))
+#
+#     _cache_dir = THSTrader.create_cache_dir()  # 缓存目录
+#     AkShareUtil.cache_dir = _cache_dir
+#
+#     # 支持从条件单缓存文件中读取配置信息
+#     parser = argparse.ArgumentParser(description='处理CSV条件单文件')  # 创建参数解析器
+#     parser.add_argument('--condition_order_path', required=True,
+#                         default=f'{AkShareUtil.cache_dir}/condition_order.csv',
+#                         help='条件单文件')
+#
+#     parser.add_argument('--config', required=True,
+#                         default=f'{AkShareUtil.cache_dir}/config.ini',
+#                         help='基础配置文件')
+#
+#     args = parser.parse_args()  # 解析命令行参数
+#     condition_order_csv_path = args.csv_order_path  # 条件单配置文件路径
+#     _config_path = args.config_path  # 基础配置文件路径
+#
+#     ths_trader = THSTrader(cacheDir=_cache_dir, config_path=_config_path)
+#     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
+#
+#     ConditionOrder.ths_trader = ths_trader
+#     ConditionOrder.robot_dict = ths_trader.configParser.getSectionItems('robot')
+#
+#     # 读取CSV文件并转换为条件单对象列表
+#     conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_csv_path, ConditionOrder, 1)
+#     for order in conditionOrderList:
+#         stock_position = ths_trader.get_stock_position(order.code)  # 该股票的持仓数据
+#         if stock_position is None:  # 未持仓
+#             ths_trader.position_dict[order.code] = order.position
+#             continue
+#         order.position = ths_trader.get_stock_position(order.code)  # 将数据更换为实际的持仓数据
+#
+#
+#     def task_condition_orders():
+#         """执行条件单"""
+#         for _order in conditionOrderList:
+#             if _order.active:
+#                 _order.run()
+#
+#
+#     # 每分钟触发一次条件单检测
+#     if AkShareUtil.is_trading_day():
+#         (SchedulerTaskManager()
+#          .add_task("task_condition_orders", task_condition_orders, interval=60)
+#          .add_task("task_condition_orders", ths_trader.get_all_stock_position, interval=5, unit='minutes')
+#          .start()
+#          )

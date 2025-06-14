@@ -2,11 +2,14 @@
 # -*- coding:utf-8 -*-
 
 import os
+import csv
 import platform
 import shutil
-from typing import AnyStr, Optional
+from typing import AnyStr, Optional, List, Type, Generic, TypeVar
 
 from util.CommonUtil import CommonUtil
+
+T = TypeVar('T')  # 泛型类型
 
 
 class FileUtil(object):
@@ -521,6 +524,57 @@ class FileUtil(object):
         FileUtil.write2File(gitignore_file, "*")  # 忽略所有文件
 
         return cacheDir
+
+    @staticmethod
+    def read_csv_to_objects(
+            file_path: str,
+            object_class: Type[T],
+            skip_rows: int = 0,
+            delimiter: str = ',',
+            encoding: str = 'utf-8'
+    ) -> List[T]:
+        """
+        读取CSV文件并转换为对象列表
+        方形对象T中必须包含有一个函数:
+
+        @classmethod
+        def from_csv_row(cls, row: List[str]):
+            pass
+
+        参数:
+        - file_path: CSV文件路径
+        - object_class: 目标对象类（需实现from_csv_row方法）
+        - skip_rows: 跳过的行数（默认为1，跳过标题行）
+        - delimiter: 分隔符（默认为逗号）
+        - encoding: 文件编码（默认为utf-8）
+
+        返回:
+        - 对象列表
+        """
+        objects = []
+        if not FileUtil.isFileExist(file_path):
+            return objects
+
+        with open(file_path, 'r', encoding=encoding) as file:
+            reader = csv.reader(file, delimiter=delimiter)
+
+            # 跳过指定行数
+            for _ in range(skip_rows):
+                next(reader, None)
+
+            # 逐行解析并转换为对象
+            for row_num, row in enumerate(reader, start=skip_rows + 1):
+                if not row or all(not cell.strip() for cell in row):  # 跳过空行
+                    continue
+
+                try:
+                    obj = object_class.from_csv_row(row)
+                    objects.append(obj)
+                except Exception as e:
+                    print(f"警告: 第{row_num}行解析失败 - {e}. 行内容: {row}")
+                    # 可选择记录错误或跳过该行，此处选择跳过
+
+        return objects
 
 
 if __name__ == '__main__':

@@ -134,25 +134,40 @@ class TimeUtil(object):
             time.sleep(sec)
         return sec
 
+    @staticmethod
+    def calc_sec_diff(time1: str, time2: str, dateFormat: str = '%Y-%m-%d', valueOnError: int = 0) -> float:
+        """
+        比较两个日期相差的天数
+        :param time1: 第一个日期字符串,如: 2022-06-27 也支持时间或者日期+时间格式,具体根据 dateFormat 来决定
+        :param time2: 第二个日期字符串,如: 2022-06-28
+        :param dateFormat: 日期格式, 默认为: '%Y-%m-%d' 也可用是: '%Y-%m-%d %H:%M:%S' 等
+        :param valueOnError: 运算出错时返回的值, 默认为0
+        :return time1 与 time2 相差的秒数, 负数表示 time1 早于 time2 ,  如: -1
+        """
+        try:
+            # 将字符串解析为datetime对象
+            time1 = datetime.strptime(time1, dateFormat)
+            time2 = datetime.strptime(time2, dateFormat)
+            time_diff = time1 - time2  # 计算时间差
+            # 获取相差的秒数
+            diff = time_diff.total_seconds()
+            return diff
+        except Exception as e:
+            print(f'calc_sec_diff exception {e}')
+            return valueOnError
+
     @classmethod
     def dateDiff(cls, date1: str, date2: str, dateFormat: str = '%Y-%m-%d', valueOnError: int = 0) -> int:
         """
         比较两个日期相差的天数
-        :param date1: 第一个日期字符串,如: 2022-06-27
+        :param date1: 第一个日期字符串,如: 2022-06-27 也支持时间或者日期+时间格式,具体根据 dateFormat 来决定
         :param date2: 第二个日期字符串,如: 2022-06-28
-        :param dateFormat: 日期格式, 默认为: '%Y-%m-%d'
+        :param dateFormat: 日期格式, 默认为: '%Y-%m-%d' 也可用是: '%Y-%m-%d %H:%M:%S' 等
         :param valueOnError: 运算出错时返回的值, 默认为0
         :return date1与date2相差的天数, 负数表示date1早于date2,  如: -1
         """
-        try:
-            time1 = time.mktime(time.strptime(date1, dateFormat))
-            time2 = time.mktime(time.strptime(date2, dateFormat))
-            diff = int(time1) - int(time2)  # 日期转化为int比较
-            return int(diff / 24 / 60 / 60)
-        except Exception as e:
-            print('dateDiff exception %s' % e)
-            print(e)
-            return valueOnError
+        diff_sec = TimeUtil.calc_sec_diff(date1, date2, dateFormat, valueOnError)
+        return int(diff_sec / 24 / 60 / 60)
 
     @staticmethod
     def is_time_greater_than(target_str: str) -> bool:
@@ -174,7 +189,7 @@ class TimeUtil(object):
                 target = datetime.combine(now.date(), datetime.strptime(target_str, "%H:%M:%S").time())
             else:
                 raise ValueError(f"无法解析时间格式: {target_str}")
-
+            # print(f'  now={now}, target={target},diff={now - target}')
             return now >= target
 
         except ValueError as e:
@@ -189,6 +204,11 @@ if __name__ == '__main__':
     # print(TimeUtil.convertSecsDuration(3600 + 358))
     # print(TimeUtil.convertSecsDuration(5260))
     # print(TimeUtil.is_time_greater_than("22:15:59"))
-    print(TimeUtil.is_time_greater_than(" 2025-06-14     22:15:59  "))
-    print(TimeUtil.is_time_greater_than("  2025-06-15   22:15:59  "))
-    print(TimeUtil.is_time_greater_than(" 2025-06-14 "))
+    # print(TimeUtil.is_time_greater_than(" 2025-06-14     22:15:59  "))
+    # print(TimeUtil.is_time_greater_than("  2025-06-15   22:15:59  "))
+    # print(TimeUtil.is_time_greater_than(" 2025-09-14 "))
+    # print(TimeUtil.dateDiff('09:30:33', "09:30:00", '%H:%M:%S'))
+    # print(TimeUtil.dateDiff('2025-06-14', "2025-06-18", '%Y-%m-%d'))
+    print(TimeUtil.getTimeStr('%Y-%m-%d', 1))  # 昨天
+    print(TimeUtil.getTimeStr('%Y-%m-%d', 0))  # 今天
+    print(TimeUtil.getTimeStr('%Y-%m-%d', -1))  # 明天

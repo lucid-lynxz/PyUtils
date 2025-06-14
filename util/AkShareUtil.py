@@ -318,6 +318,32 @@ class AkShareUtil:
             print(f"获取交易日历失败: {e}")
             return False
 
+    @staticmethod
+    def wait_next_deal_time(start_time: str = '09:30:00', end_time: str = '16:00:00'):
+        """
+        休眠等待到下一次的交易时间段
+        :param start_time: 开盘时间, 默认为 09:30:00
+        :param end_time: 收盘时间, 默认为 16:00:00
+        """
+        start_index = 0
+        now = TimeUtil.getTimeStr(f="%H:%M:%S", n=0)
+        diff = TimeUtil.calc_sec_diff(now, end_time, '%H:%M:%S')
+        if diff > 0:  # 当前时间已超过收盘时间, 则休眠到下一个交易日的开盘时间
+            CommonUtil.printLog(f'当前已超过收盘时间: {end_time}, 不管是否是交易日, 都需要等待到次日')
+            start_index = -1
+
+        next_trading_day = start_index  # 下一个交易日是几天之后?  -1 表示一天后也就是明天
+        for i in range(start_index, -30, -1):
+            if AkShareUtil.is_trading_day(i):
+                next_trading_day = i
+                break
+
+        now = TimeUtil.getTimeStr()
+        next_day = TimeUtil.getTimeStr('%Y-%m-%d', next_trading_day)
+        CommonUtil.printLog(f'wait_next_deal_time 下一个交易日是 {next_trading_day} 天之后, 即: {next_day}')
+        diff = abs(TimeUtil.calc_sec_diff(now, f'{next_day} {start_time}', '%Y-%m-%d %H:%M:%S'))
+        CommonUtil.printLog(f'wait_next_deal_time 等待到 {next_day} {start_time} 后再执行, 休眠 {diff}秒')
+        TimeUtil.sleep(diff)
 
 # if __name__ == '__main__':
 #     AkShareUtil.cache_dir = FileUtil.create_cache_dir(None, __file__)

@@ -275,8 +275,3 @@ class CommonUtil(object):
         if quit is not None and quit == _result:
             exit(0)
         return _result
-
-
-if __name__ == "__main__":
-    result = CommonUtil.exeCmd('git --git-dir=D:/D/987/.git/ --work-tree=D:\D\987 log -1')
-    CommonUtil.printLog("===> %s" % result)
