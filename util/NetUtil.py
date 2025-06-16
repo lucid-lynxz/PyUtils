@@ -10,8 +10,10 @@ from util.DingTaskBot import DingTalkBot
 
 
 class NetUtil(object):
+    robot_dict: dict = dict()  # 默认的机器人配置信息, 用于发送通知,具体字段见 push_to_robot 方法
+
     @staticmethod
-    def push_to_robot(content: str, configDict: dict) -> bool:
+    def push_to_robot(content: str, configDict: dict = None, printLog: bool = False) -> bool:
         """
         自动按需发送普通文本给钉钉/飞书自定义机器人
         :param content: 普通文本消息
@@ -26,8 +28,15 @@ class NetUtil(object):
               feishuToken: 飞书机器人链接中的token信息
               accessToken: 钉钉机器人中的accessToken
               atPhone: 钉钉机器人支持at特定人员,此处填写手机号, 可多个,逗号分隔
+        :param printLog: 是否打印日志, 默认为False
         """
-        if configDict is None or CommonUtil.isNoneOrBlank(content):
+        if CommonUtil.isNoneOrBlank(content):
+            return False
+        if printLog:
+            CommonUtil.printLog(f'push_to_robot content={content}')
+
+        configDict = NetUtil.robot_dict if configDict is None else configDict
+        if configDict is None:
             return False
         keyWord = configDict.get('keyWord', '')
         extraInfo = configDict.get('extraInfo', '')
@@ -107,7 +116,7 @@ class NetUtil(object):
             },
             "msg_type": "text"
         }
-        print('data_obj', json_data_obj)
+        # print('data_obj', json_data_obj)
         # 将str类型转换为bytes类型
         json_data_obj = json.dumps(json_data_obj).encode('utf-8')
         # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")

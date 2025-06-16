@@ -5,6 +5,7 @@ from util.AkShareUtil import AkShareUtil
 from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
+from util.NetUtil import NetUtil
 from wool_tasks.scheduler_task_manager import SchedulerTaskManager
 from wool_tasks.ths_trade.bean.condition_order import ConditionOrder
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
@@ -34,12 +35,13 @@ if __name__ == '__main__':
     condition_order_path = f'{cur_dir}/condition_order.csv' if CommonUtil.isNoneOrBlank(
         condition_order_path) else condition_order_path
     configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
-    ConditionOrder.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
+    NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
 
     # 等待到下一个交易日
     AkShareUtil.wait_next_deal_time()
 
     ths_trader = THSTrader(cacheDir=_cache_dir)
+    ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
     ConditionOrder.ths_trader = ths_trader
 

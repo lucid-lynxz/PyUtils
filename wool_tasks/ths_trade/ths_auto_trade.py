@@ -14,7 +14,7 @@ if proj_dir not in sys.path:
 from wool_tasks.base_airtest_4_windows_impl import BaseAir4Windows
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
-from util.CommonUtil import CommonUtil
+from util.CommonUtil import CommonUtil, catch_exceptions
 from util.FileUtil import FileUtil
 from util.TimeUtil import log_time_consume
 from util.AkShareUtil import AkShareUtil
@@ -77,6 +77,7 @@ class THSTrader(BaseAir4Windows):
                 if isinstance(attr_value, tuple):
                     file.write(f"{attr_name}:{','.join(map(str, attr_value))}\n")
 
+    @catch_exceptions(max_retries=1, retry_interval=5)
     def toggle_window_mode(self, mode: int = 3):
         """
         修改窗口模式
@@ -186,8 +187,21 @@ class THSTrader(BaseAir4Windows):
             # 由于解析区域可能包含了空白区域, 因此对于code或name为空的股票, 需要进行删除
             if stock_position.is_hk_stock:
                 stock_position['code'] = stock_position['code'][1:]
+
+            code = stock_position.code
+            cache_position: StockPosition = self.position_dict.get(code)
+            if cache_position is None:
+                self.position_dict[code] = stock_position
+            else:
+                cache_position.copy_from(stock_position)
+
+        # for code, position in self.position_dict.items():
+        #     if float(position.balance) == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
+        #         CommonUtil.printLog(f'{code}(${position.name})非持仓股,直接请求最新报价')
+        #         latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock())  # 获取最新价格
+        #         position.market_price = latest_price
         CommonUtil.printLog(f'持仓StockPositionList: {result}')
-        self.position_dict = {objDict.code: objDict for objDict in result}
+        # self.position_dict = {objDict.code: objDict for objDict in result}
         return result
 
     def get_stock_position(self, code: str, refresh: bool = False) -> Optional[StockPosition]:
@@ -283,7 +297,9 @@ class THSTrader(BaseAir4Windows):
         :param 是否每次都清空目录
         :return: 缓存目录路径
         """
-        return FileUtil.create_cache_dir(None, __file__, clear=clear)
+        _cache_path = FileUtil.create_cache_dir(None, __file__, clear=clear)
+        FileUtil.delete_files_by_extensions(_cache_path, ['.png', '.jpg'])
+        return _cache_path
 
 # # python your_script.py --condition_order_path /path/to/orders.csv
 # if __name__ == '__main__':

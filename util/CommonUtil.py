@@ -1,9 +1,12 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
+import functools
 import importlib.util
+import logging
 import os
 import platform
+import time
 from typing import Union
 
 from util.TimeUtil import TimeUtil
@@ -275,3 +278,46 @@ class CommonUtil(object):
         if quit is not None and quit == _result:
             exit(0)
         return _result
+
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+default_logger = logging.getLogger(__name__)
+
+
+def catch_exceptions(max_retries=0, retry_interval=1, logger=default_logger):
+    """
+    带重试功能的异常处理装饰器
+
+    参数:
+        max_retries: 最大重试次数,默认不充实
+        retry_interval: 重试间隔(秒)
+        logger: 日志记录器
+    """
+    if logger is None:
+        logger = logging.getLogger()
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        error_msg = f"任务 {func.__name__} 重试 {max_retries} 次后失败: {str(e)}"
+                        logger.error(error_msg, exc_info=True)
+                        # 发送告警
+                        # send_alert(error_msg)
+                        break
+
+                    wait_msg = f"任务 {func.__name__} 执行异常，{retry_interval} 秒后重试 ({retries}/{max_retries}): {str(e)}"
+                    logger.warning(wait_msg, exc_info=True)
+                    time.sleep(retry_interval)
+            return None
+
+        return wrapper
+
+    return decorator

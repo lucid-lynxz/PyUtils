@@ -9,6 +9,7 @@ import pandas as pd
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
+from util.NetUtil import NetUtil
 from util.TimeUtil import TimeUtil, log_time_consume
 
 """
@@ -340,9 +341,9 @@ class AkShareUtil:
 
         now = TimeUtil.getTimeStr()
         next_day = TimeUtil.getTimeStr('%Y-%m-%d', next_trading_day)
-        CommonUtil.printLog(f'wait_next_deal_time 下一个交易日是 {next_trading_day} 天之后, 即: {next_day}')
         diff = abs(TimeUtil.calc_sec_diff(now, f'{next_day} {start_time}', '%Y-%m-%d %H:%M:%S'))
-        CommonUtil.printLog(f'wait_next_deal_time 等待到 {next_day} {start_time} 后再执行, 休眠 {diff}秒')
+        msg = f'wait_next_deal_time 等待 {next_day} {start_time} 后再执行, 休眠 {diff}秒'
+        NetUtil.push_to_robot(msg, printLog=True)
         TimeUtil.sleep(diff)
 
 # if __name__ == '__main__':

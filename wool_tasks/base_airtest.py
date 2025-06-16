@@ -24,6 +24,7 @@ from WoolProject import AbsWoolProject
 from util.TimeUtil import TimeUtil
 from util.TimeUtil import log_time_consume
 from util.FileUtil import FileUtil
+from util.NetUtil import NetUtil
 
 """
 airtest基类, 所有子类请自行配置下: auto_setup(__file__) 
@@ -69,15 +70,17 @@ class BaseAir(AbsWoolProject):
         return self.platform == 'windows'
 
     def connect(self):
-        if self.isAndroid():
-            from util.AdbUtil import AdbUtil
-            connect_device(f"Android:///{self.uuid}?cap_method=javacap&touch_method=adb")
-            self.adbUtil = AdbUtil()
-        elif self.isWindows():
-            connect_device(f"Windows:///{self.uuid}")
-        else:
-            pass
-        self.airtest_device = device()
+        try:
+            if self.isAndroid():
+                from util.AdbUtil import AdbUtil
+                connect_device(f"Android:///{self.uuid}?cap_method=javacap&touch_method=adb")
+                self.adbUtil = AdbUtil()
+            elif self.isWindows():
+                connect_device(f"Windows:///{self.uuid}")
+            self.airtest_device = device()
+        except Exception as e:
+            NetUtil.push_to_robot(f'连接{self.platform}设备失败: {e}',printLog=True)
+            raise e
 
     # def connectAndroid(self, deviceId: str):
     #     connect_device("Android:///%s?cap_method=javacap&touch_method=adb" % deviceId)

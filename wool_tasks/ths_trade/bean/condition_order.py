@@ -13,7 +13,6 @@ class ConditionOrder(Runnable):
     条件单
     """
     ths_trader: THSTrader  # 同花顺工具类,用于实现买入/卖出等操作
-    robot_dict: dict = dict()  # 钉钉/飞书机器人配置信息, 用于发送通知
 
     @classmethod
     def from_csv_row(cls, row: List[str]):
@@ -140,7 +139,7 @@ class ConditionOrder(Runnable):
             基准价={self.base}, 反弹幅度={self.bounce}, 方向={self.break_upward}
             极值={self.extreme_value}, 最新价={latest_price}
             """
-            NetUtil.push_to_robot(msg, ConditionOrder.robot_dict)
+            NetUtil.push_to_robot(msg,printLog=True)
 
 #
 # if __name__ == '__main__':

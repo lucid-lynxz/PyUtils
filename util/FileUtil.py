@@ -484,7 +484,7 @@ class FileUtil(object):
         :param extensions: 要删除文件的后缀列表，例如 ['.png', '.jpg']
         """
         import glob
-        if FileUtil.isDirFile(dir_path):
+        if not FileUtil.isDirFile(dir_path):
             return
 
         all_files = []

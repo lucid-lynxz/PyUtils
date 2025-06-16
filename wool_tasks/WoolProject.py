@@ -65,6 +65,7 @@ class AbsWoolProject(ABC, Runnable):
         设置消息推送配置信息
         """
         self.notificationRobotDict = robotSettings
+        NetUtil.robot_dict = robotSettings
         return self
 
     def logInfo(self, msg, printCmdInfo: bool = True):

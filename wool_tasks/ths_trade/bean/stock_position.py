@@ -52,6 +52,10 @@ class StockPosition:
         '交易市场': "market"
     }
 
+    def has_balance(self) -> bool:
+        """是否有持仓"""
+        return int(self.balance) > 0
+
     @property
     def is_hk_stock(self) -> bool:
         """是否是港股"""
@@ -91,6 +95,13 @@ class StockPosition:
 
     def __setitem__(self, key, value):
         setattr(self, key, value)
+
+    def copy_from(self, source):
+        """复制源对象的属性值"""
+        for field in source.__dataclass_fields__:
+            if hasattr(self, field):
+                setattr(self, field, getattr(source, field))
+        return self
 
 
 # 使用示例
