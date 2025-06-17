@@ -102,18 +102,3 @@ class StockPosition:
             if hasattr(self, field):
                 setattr(self, field, getattr(source, field))
         return self
-
-
-# 使用示例
-if __name__ == "__main__":
-    position = StockPosition(
-        code="000001",
-        name="平安银行",
-        balance=1000,
-        available_balance=800,
-        frozen_quantity=200,
-        cost_price=15.25,
-        market_price=16.80
-    )
-
-    print(position)

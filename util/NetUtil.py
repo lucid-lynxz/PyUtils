@@ -40,7 +40,8 @@ class NetUtil(object):
             return False
         keyWord = configDict.get('keyWord', '')
         extraInfo = configDict.get('extraInfo', '')
-        content = "%s\n%s\n%s" % (keyWord, extraInfo, content)
+        extraInfo = '' if CommonUtil.isNoneOrBlank(extraInfo) else f'{extraInfo}\n'
+        content = f'{keyWord}\n{extraInfo}{content}'
         content = content.strip()
 
         atAll = configDict.get('atAll', 'False') == 'True'

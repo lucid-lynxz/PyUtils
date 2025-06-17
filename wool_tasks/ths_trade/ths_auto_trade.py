@@ -6,6 +6,8 @@ from typing import Optional
 
 from airtest.core.api import *
 
+from util.NetUtil import NetUtil
+
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
 proj_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -121,6 +123,8 @@ class THSTrader(BaseAir4Windows):
         self.bs_confirm_btn = self.calcCenterPos(pos)  # 确定 买入/卖出 按钮
         CommonUtil.printLog(f'买入/卖出 按钮: {self.bs_confirm_btn}')
 
+    last_msg: str = ''
+
     @log_time_consume()
     def get_all_stock_position(self) -> list:
         """
@@ -200,8 +204,15 @@ class THSTrader(BaseAir4Windows):
         #         CommonUtil.printLog(f'{code}(${position.name})非持仓股,直接请求最新报价')
         #         latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock())  # 获取最新价格
         #         position.market_price = latest_price
-        CommonUtil.printLog(f'持仓StockPositionList: {result}')
         # self.position_dict = {objDict.code: objDict for objDict in result}
+
+        # 提取最新价信息并推送机器人
+        msg_list = [f"{info.name[:4]}: {float(info.market_price):6.2f}" for code, info in self.position_dict.items()]
+        msg_str = "\n".join(msg_list)
+        if THSTrader.last_msg != msg_str:
+            CommonUtil.printLog(f'持仓StockPositionList: {result}')
+            NetUtil.push_to_robot(msg_str)
+            THSTrader.last_msg = msg_str
         return result
 
     def get_stock_position(self, code: str, refresh: bool = False) -> Optional[StockPosition]:
