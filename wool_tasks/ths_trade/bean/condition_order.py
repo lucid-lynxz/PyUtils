@@ -128,12 +128,12 @@ class ConditionOrder(Runnable):
 
             # 交易成功后,更新持仓信息
             if self.deal_count >= 0:  # 买入
-                self.position.balance = str(int(self.position.balance) + self.deal_count)
+                self.position.balance = str(self.position.balance + self.deal_count)
                 if self.is_hk:  # 港股通是T+0 买入当天可进行卖出
-                    self.position.available_balance = str(int(self.position.available_balance) + self.deal_count)
+                    self.position.available_balance = str(self.position.available_balance + self.deal_count)
             else:  # 卖出
-                self.position.balance = str(int(self.position.balance) + self.deal_count)
-                self.position.available_balance = str(int(self.position.available_balance) + self.deal_count)
+                self.position.balance = str(self.position.balance + self.deal_count)
+                self.position.available_balance = str(self.position.available_balance + self.deal_count)
             msg = f"""
             触发条件单:{self.position.code} {self.position.name}
             基准价={self.base}, 反弹幅度={self.bounce}, 方向={self.break_upward}

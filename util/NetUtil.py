@@ -7,6 +7,7 @@ import urllib.request as urllib2
 
 from util.CommonUtil import CommonUtil
 from util.DingTaskBot import DingTalkBot
+from util.TimeUtil import TimeUtil
 
 
 class NetUtil(object):
@@ -41,7 +42,7 @@ class NetUtil(object):
         keyWord = configDict.get('keyWord', '')
         extraInfo = configDict.get('extraInfo', '')
         extraInfo = '' if CommonUtil.isNoneOrBlank(extraInfo) else f'{extraInfo}\n'
-        content = f'{keyWord}\n{extraInfo}{content}'
+        content = f'{keyWord}\n{TimeUtil.getTimeStr("%H:%M:%S")}\n{extraInfo}{content}'
         content = content.strip()
 
         atAll = configDict.get('atAll', 'False') == 'True'

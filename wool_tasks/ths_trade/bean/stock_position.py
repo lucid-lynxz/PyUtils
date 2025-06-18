@@ -14,12 +14,12 @@ class StockPosition:
     name: str = ''  # 股票名称
 
     # 数量信息
-    balance: str = '0'  # 股票余额 int 表示多少股
-    available_balance: str = '0'  # 可用余额 int 表示多少股
+    balance: int = 0  # 股票余额 int 表示多少股
+    available_balance: int = 0  # 可用余额 int 表示多少股
 
     # 价格信息
-    cost_price: str = '0.0'  # 成本价 float
-    market_price: str = '0.0'  # 市价 float
+    cost_price: float = 0.0  # 成本价 float
+    market_price: float = 0.0  # 市价 float
     market: str = ''  # 交易市场
     # 以上数据是来自于同花顺的持仓数据截图ocr结果
 
@@ -54,7 +54,7 @@ class StockPosition:
 
     def has_balance(self) -> bool:
         """是否有持仓"""
-        return int(self.balance) > 0
+        return self.balance > 0
 
     @property
     def is_hk_stock(self) -> bool:
@@ -65,19 +65,19 @@ class StockPosition:
     @property
     def profit_loss(self) -> float:
         """计算盈亏金额"""
-        return (float(self.market_price) - float(self.cost_price)) * int(self.balance)
+        return (self.market_price - self.cost_price) * self.balance
 
     @property
     def profit_loss_ratio(self) -> float:
         """计算盈亏比例（百分比）"""
         if self.cost_price == 0:
             return 0.0
-        return (float(self.market_price) - float(self.cost_price)) / float(self.cost_price) * 100
+        return (self.market_price - self.cost_price) / self.cost_price * 100
 
     @property
     def market_value(self) -> float:
         """计算市值"""
-        return float(self.market_price) * int(self.balance)
+        return self.market_price * self.balance
 
     # 显示方法
     def __str__(self) -> str:

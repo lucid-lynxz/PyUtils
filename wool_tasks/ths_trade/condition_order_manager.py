@@ -6,6 +6,7 @@ from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.NetUtil import NetUtil
+from util.SystemSleepPreventer import SystemSleepPreventer
 from wool_tasks.scheduler_task_manager import SchedulerTaskManager
 from wool_tasks.ths_trade.bean.condition_order import ConditionOrder
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
@@ -46,7 +47,7 @@ if __name__ == '__main__':
     ConditionOrder.ths_trader = ths_trader
 
     # 读取CSV文件并转换为条件单对象列表
-    conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 1)
+    conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
     for order in conditionOrderList:
         code = order.position.code  # 股票代码
         stock_position = ths_trader.get_stock_position(code)  # 该股票的持仓数据
@@ -65,10 +66,11 @@ if __name__ == '__main__':
 
 
     # 每分钟触发一次条件单检测
-    scheduler = SchedulerTaskManager()
-    (scheduler
-     .add_task("task_condition_orders", task_condition_orders, interval=60)
-     .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=5, unit='minutes')
-     .start()  # 启动调度器
-     .wait_exit_event()  # 等待按下q推出
-     )
+    with SystemSleepPreventer():  # 防止系统休眠
+        scheduler = SchedulerTaskManager()
+        (scheduler
+         .add_task("task_condition_orders", task_condition_orders, interval=60)
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=5, unit='minutes')
+         .start()  # 启动调度器
+         .wait_exit_event()  # 等待按下q推出
+         )

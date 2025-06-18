@@ -535,7 +535,8 @@ class FileUtil(object):
     ) -> List[T]:
         """
         读取CSV文件并转换为对象列表
-        方形对象T中必须包含有一个函数:
+        会跳过以#开头的行以及空白行
+        泛型对象T中必须包含有一个函数:
 
         @classmethod
         def from_csv_row(cls, row: List[str]):
@@ -565,6 +566,9 @@ class FileUtil(object):
             # 逐行解析并转换为对象
             for row_num, row in enumerate(reader, start=skip_rows + 1):
                 if not row or all(not cell.strip() for cell in row):  # 跳过空行
+                    continue
+
+                if row[0].startswith('#'):  # 跳过以#开头的行
                     continue
 
                 try:

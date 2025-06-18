@@ -184,6 +184,13 @@ class THSTrader(BaseAir4Windows):
         for index in reversed(del_index_list):
             del dictList[index]
 
+        # 转换数据类型
+        for item in dictList:
+            item['market_price'] = float(item['market_price'])
+            item['cost_price'] = float(item['cost_price'])
+            item['balance'] = int(item['balance'])
+            item['available_balance'] = int(item['available_balance'])
+
         result = list()
         for i in range(len(dictList)):
             stock_position = StockPosition(**dictList[i])
@@ -199,15 +206,15 @@ class THSTrader(BaseAir4Windows):
             else:
                 cache_position.copy_from(stock_position)
 
-        # for code, position in self.position_dict.items():
-        #     if float(position.balance) == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
-        #         CommonUtil.printLog(f'{code}(${position.name})非持仓股,直接请求最新报价')
-        #         latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock())  # 获取最新价格
-        #         position.market_price = latest_price
+        for code, position in self.position_dict.items():
+            if position.balance == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
+                CommonUtil.printLog(f'{code}(${position.name})非持仓股,直接请求最新报价')
+                latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock)  # 获取最新价格
+                position.market_price = latest_price
         # self.position_dict = {objDict.code: objDict for objDict in result}
 
         # 提取最新价信息并推送机器人
-        msg_list = [f"{info.name[:4]}: {float(info.market_price):6.2f}" for code, info in self.position_dict.items()]
+        msg_list = [f"{info.name[:2]}: {float(info.market_price):6.2f}" for code, info in self.position_dict.items()]
         msg_str = "\n".join(msg_list)
         if THSTrader.last_msg != msg_str:
             CommonUtil.printLog(f'持仓StockPositionList: {result}')
@@ -229,6 +236,7 @@ class THSTrader(BaseAir4Windows):
                 return position
         return None
 
+    @catch_exceptions(max_retries=1)
     def refresh(self):
         """
         刷新当前界面
