@@ -134,12 +134,11 @@ class ConditionOrder(Runnable):
             else:  # 卖出
                 self.position.balance = str(self.position.balance + self.deal_count)
                 self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            msg = f"""
-            触发条件单:{self.position.code} {self.position.name}
-            基准价={self.base}, 反弹幅度={self.bounce}, 方向={self.break_upward}
-            极值={self.extreme_value}, 最新价={latest_price}
+            msg = f"""{self.position.code} {self.position.name}
+基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}
+极值:{self.extreme_value}, 最新:{latest_price}
             """
-            NetUtil.push_to_robot(msg,printLog=True)
+            NetUtil.push_to_robot(msg, printLog=True)
 
 #
 # if __name__ == '__main__':

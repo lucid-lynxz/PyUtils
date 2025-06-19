@@ -79,7 +79,7 @@ class BaseAir(AbsWoolProject):
                 connect_device(f"Windows:///{self.uuid}")
             self.airtest_device = device()
         except Exception as e:
-            NetUtil.push_to_robot(f'连接{self.platform}设备失败: {e}',printLog=True)
+            NetUtil.push_to_robot(f'连接{self.platform}设备失败: {e}', printLog=True)
             raise e
 
     # def connectAndroid(self, deviceId: str):
@@ -583,10 +583,10 @@ class BaseAir(AbsWoolProject):
             autoAppendDateInfo = True
             imgName = ''
         else:
-            imgName = f'{imgName}_'
+            imgName = f'_{imgName}'
 
         if autoAppendDateInfo:
-            imgName = f"{imgName}{TimeUtil.getTimeStr(f='%m%d_%H%M%S')}"
+            imgName = f"{TimeUtil.getTimeStr(f='%m%d_%H%M%S')}{imgName}"
         imgName = imgName.replace('(', replaceFlag).replace(')', replaceFlag) \
             .replace('|', replaceFlag).replace('.*', replaceFlag).replace('[', replaceFlag).replace(']', replaceFlag)
 

@@ -1,6 +1,8 @@
 import argparse
 import os
 
+from pywinauto import Desktop
+
 from util.AkShareUtil import AkShareUtil
 from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
@@ -38,9 +40,6 @@ if __name__ == '__main__':
     configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
     NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
 
-    # 等待到下一个交易日
-    AkShareUtil.wait_next_deal_time()
-
     ths_trader = THSTrader(cacheDir=_cache_dir)
     ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
@@ -57,6 +56,17 @@ if __name__ == '__main__':
         order.position = ths_trader.get_stock_position(code)  # 将数据更换为实际的持仓数据
 
 
+    def prevent_lock_screen():
+        """防止windows锁屏"""
+        if CommonUtil.isWindows():
+            CommonUtil.printLog(f'prevent_lock_screen')
+            desktop = Desktop(backend="uia")
+            desktop.mouse.move(coords=(100, 100))  # 模拟鼠标移动
+            desktop.mouse.click(button='left')  # 模拟鼠标点击
+            # desktop.keyboard.send_keys('a')  # 模拟键盘输入
+            # time.sleep(60)  # 每隔60秒执行一次操作
+
+
     def task_condition_orders():
         """执行条件单"""
         CommonUtil.printLog(f'task_condition_orders')
@@ -65,13 +75,18 @@ if __name__ == '__main__':
                 _order.run()
 
 
+    # 等待到下一个交易日
+    # AkShareUtil.wait_next_deal_time()
+
     # 每分钟触发一次条件单检测
     with SystemSleepPreventer():  # 防止系统休眠
         scheduler = SchedulerTaskManager()
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=5, unit='minutes',
-                   at_time=':00')
+         # .add_task("prevent_lock_screen", prevent_lock_screen, interval=1, unit='minutes', at_time=':30')
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=3, unit='minutes',
+                   at_time=':05')
+
          .start()  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )

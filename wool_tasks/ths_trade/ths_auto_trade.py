@@ -297,7 +297,10 @@ class THSTrader(BaseAir4Windows):
         touch(self.bs_confirm_btn)  # 确定 买入/卖出 按钮
         # win.find_element("窗口标题", "Button", "按钮名称").click()
         # win.find_element(None, "Button", None, "btn_id").click()
+
         CommonUtil.printLog(f'交易股票:{position.name}({code}) 价格:{price} 数量:{amount}')
+        img_name = f'{"买入" if buy else "卖出"}_{position.name}_{amount}股_{price}'
+        self.saveImage(self.snapshot(), img_name, autoAppendDateInfo=True)
         return True
 
     def cancel_order(self, code: str):
