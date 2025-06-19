@@ -6,8 +6,11 @@ import importlib.util
 import logging
 import os
 import platform
+import re
 import time
-from typing import Union
+from typing import Type, Union, Optional
+
+Number = Union[int, float]
 
 from util.TimeUtil import TimeUtil
 
@@ -278,6 +281,50 @@ class CommonUtil(object):
         if quit is not None and quit == _result:
             exit(0)
         return _result
+
+    @staticmethod
+    def parse_number(
+            s: str,
+            target_type: Type[Number] = float,
+            default: Optional[Number] = 0
+    ) -> Optional[Number]:
+        """
+        从字符串中提取数值部分并解析为指定类型，失败时返回默认值
+        使用示例: parse_number("(123.45)", int, 0)
+
+        参数:
+            s: 包含数值的字符串
+            target_type: 目标类型，可选int或float（默认float）
+            default: 解析失败时的默认值（默认None）
+
+        返回:
+            解析后的数值（类型为target_type），或默认值
+        """
+        if not isinstance(s, str) or not s.strip():
+            return default
+
+        s = s.strip()
+
+        # 使用正则表达式提取连续的数值部分
+        match = re.search(r'[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?', s)
+
+        if not match:
+            return default
+
+        num_str = match.group(0)
+
+        try:
+            if target_type is int:
+                # 对于int类型，先尝试直接转换（处理整数情况）
+                return int(num_str)
+            elif target_type is float:
+                # 对于float类型，先转换为float再检查是否为整数
+                num = float(num_str)
+                return int(num) if num.is_integer() and target_type is int else num
+            else:
+                raise ValueError(f"Unsupported target type: {target_type}")
+        except ValueError:
+            return default
 
 
 # 配置日志

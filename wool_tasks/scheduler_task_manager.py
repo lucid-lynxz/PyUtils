@@ -75,6 +75,7 @@ class SchedulerTaskManager:
             task_func: Callable,
             interval: int = 60,
             unit: str = "seconds",
+            at_time: str = None,
             run_immediately: bool = False
     ):
         """
@@ -85,6 +86,10 @@ class SchedulerTaskManager:
             task_func: 任务执行函数
             interval: 时间间隔
             unit: 时间单位 ('seconds', 'minutes', 'hours', 'days', 'weeks')
+            at_time: 定时在指定时间执行, 格式为 'HH:MM:SS', 默认为空, 表示不指定时间
+                    - For daily jobs -> `HH:MM:SS` or `HH:MM`
+                    - For hourly jobs -> `MM:SS` or `:MM`
+                    - For minute jobs -> `:SS`
             run_immediately: 是否立即执行一次
         """
         with self._lock:
@@ -98,6 +103,7 @@ class SchedulerTaskManager:
                 "task_func": task_func,
                 "interval": interval,
                 "unit": unit,
+                "at_time": at_time,
                 "run_immediately": run_immediately
             }))
             CommonUtil.printLog(f"添加任务 {task_id} 成功")
@@ -157,23 +163,29 @@ class SchedulerTaskManager:
             task_func: Callable,
             interval: int,
             unit: str,
+            at_time: str,
             run_immediately: bool
     ) -> None:
         """内部方法：添加任务到schedule"""
         try:
             # 根据时间单位创建任务
             if unit == "seconds":
-                job = schedule.every(interval).seconds.do(task_func)
+                job = schedule.every(interval).seconds
             elif unit == "minutes":
-                job = schedule.every(interval).minutes.do(task_func)
+                job = schedule.every(interval).minutes
             elif unit == "hours":
-                job = schedule.every(interval).hours.do(task_func)
+                job = schedule.every(interval).hours
             elif unit == "days":
-                job = schedule.every(interval).days.do(task_func)
+                job = schedule.every(interval).days
             elif unit == "weeks":
-                job = schedule.every(interval).weeks.do(task_func)
+                job = schedule.every(interval).weeks
             else:
                 raise ValueError(f"不支持的时间单位: {unit}")
+
+            # 如果指定了at_time, 则在指定时间执行任务
+            if at_time and unit in ['days', 'minutes', 'hours']:
+                job.at(at_time)
+            job.do(task_func)
 
             # 立即执行一次
             if run_immediately:
@@ -184,7 +196,7 @@ class SchedulerTaskManager:
             CommonUtil.printLog(f"任务 {task_id} 已注册到schedule: 每 {interval} {unit} 执行一次")
 
         except Exception as e:
-            CommonUtil.printLog(f"添加任务失败: {e}")
+            CommonUtil.printLog(f"添加任务 {task_id} 失败: {e}")
 
     def _remove_task_internal(self, task_id: str) -> None:
         """内部方法：从schedule移除任务"""

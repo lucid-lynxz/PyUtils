@@ -186,10 +186,10 @@ class THSTrader(BaseAir4Windows):
 
         # 转换数据类型
         for item in dictList:
-            item['market_price'] = float(item['market_price'])
-            item['cost_price'] = float(item['cost_price'])
-            item['balance'] = int(item['balance'])
-            item['available_balance'] = int(item['available_balance'])
+            item['market_price'] = CommonUtil.parse_number(item['market_price'], float, 0)
+            item['cost_price'] = CommonUtil.parse_number(item['cost_price'], float, 0)
+            item['balance'] = CommonUtil.parse_number(item['balance'], int, 0)
+            item['available_balance'] = CommonUtil.parse_number(item['available_balance'], int, 0)
 
         result = list()
         for i in range(len(dictList)):

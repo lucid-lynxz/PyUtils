@@ -14,7 +14,8 @@ class NetUtil(object):
     robot_dict: dict = dict()  # 默认的机器人配置信息, 用于发送通知,具体字段见 push_to_robot 方法
 
     @staticmethod
-    def push_to_robot(content: str, configDict: dict = None, printLog: bool = False) -> bool:
+    def push_to_robot(content: str, configDict: dict = None, printLog: bool = False,
+                      with_time: bool = True) -> bool:
         """
         自动按需发送普通文本给钉钉/飞书自定义机器人
         :param content: 普通文本消息
@@ -30,6 +31,7 @@ class NetUtil(object):
               accessToken: 钉钉机器人中的accessToken
               atPhone: 钉钉机器人支持at特定人员,此处填写手机号, 可多个,逗号分隔
         :param printLog: 是否打印日志, 默认为False
+        :param with_time: 是否在消息前面加上时间, 默认为 True
         """
         if CommonUtil.isNoneOrBlank(content):
             return False
@@ -42,7 +44,8 @@ class NetUtil(object):
         keyWord = configDict.get('keyWord', '')
         extraInfo = configDict.get('extraInfo', '')
         extraInfo = '' if CommonUtil.isNoneOrBlank(extraInfo) else f'{extraInfo}\n'
-        content = f'{keyWord}\n{TimeUtil.getTimeStr("%H:%M:%S")}\n{extraInfo}{content}'
+        timeInfo = TimeUtil.getTimeStr("%H:%M:%S") if with_time else ''
+        content = f'{keyWord} {timeInfo}\n{extraInfo}{content}'
         content = content.strip()
 
         atAll = configDict.get('atAll', 'False') == 'True'
