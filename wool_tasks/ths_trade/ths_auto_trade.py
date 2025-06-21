@@ -127,6 +127,15 @@ class THSTrader(BaseAir4Windows):
 
     @log_time_consume()
     def get_all_stock_position(self) -> list:
+        result: list = []
+        try:
+            result = self._get_all_stock_position()
+        except Exception as e:
+            NetUtil.push_to_robot(f'get_all_stock_position error:{e}', printLog=True)
+        return result
+
+    @log_time_consume()
+    def _get_all_stock_position(self) -> list:
         """
         获取所有股票的持仓信息列表, 每隔元素表示一个股票对象
 
@@ -144,7 +153,7 @@ class THSTrader(BaseAir4Windows):
         self.toggle_window_mode(3)  # 最大化窗口
 
         if self.position_rect is None:
-            self.saveImage(self.snapshot(), "持仓信息总览", autoAppendDateInfo=True)
+            self.saveImage(self.snapshot(), "持仓信息总览")
 
             pos, ocrResStr, ocrResList = self.findTextByOCR('证券代码', img=self.snapshot_img, prefixText='持仓',
                                                             subfixText='可用余额')
@@ -172,6 +181,7 @@ class THSTrader(BaseAir4Windows):
         full_img = self.crop_img(self.snapshot_img, fromX=self.position_rect[0], fromY=self.position_rect[1],
                                  toX=self.position_rect[2], toY=self.position_rect[3])
         dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True)
+        self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
         del_index_list = list()
@@ -300,7 +310,7 @@ class THSTrader(BaseAir4Windows):
 
         CommonUtil.printLog(f'交易股票:{position.name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{position.name}_{amount}股_{price}'
-        self.saveImage(self.snapshot(), img_name, autoAppendDateInfo=True)
+        self.saveImage(self.snapshot(), img_name)
         return True
 
     def cancel_order(self, code: str):

@@ -72,7 +72,11 @@ if __name__ == '__main__':
         CommonUtil.printLog(f'task_condition_orders')
         for _order in conditionOrderList:
             if _order.active:
-                _order.run()
+                try:
+                    _order.run()
+                except Exception as e:
+                    CommonUtil.printLog(f'执行条件单出错: {e}')
+                    NetUtil.push_to_robot(f'task_condition_orders 出错:{_order.summary_info}', printLog=True)
 
 
     # 等待到下一个交易日

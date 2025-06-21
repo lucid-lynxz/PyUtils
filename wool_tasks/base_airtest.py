@@ -560,13 +560,14 @@ class BaseAir(AbsWoolProject):
 
     # @log_time_consume(exclude_params=['img', 'dirPath', 'autoAppendDateInfo', 'replaceFlag'])
     def saveImage(self, img, imgName: str = None, dirPath: str = None,
-                  autoAppendDateInfo: bool = False, replaceFlag: str = '_') -> str:
+                  append_date_time: bool = True, replaceFlag: str = '_') -> str:
         """
         保存图片到 {cacheDir} 中
         实测耗时大概0.8s左右
 
-        :param imgName: 文件名, 会自动拼接 self.appName 和 '.png' 后缀
+        :param imgName: 文件名, 会自动拼接 {时间_}{self.appName}.png'
         :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍未空,则保存失败
+        :param append_date_time: 最终的图片名称上是否追加时间信息, 默认为True
         :param replaceFlag: 若 imageName 中存在无效字符时,替代为该字符串
         :return str: 最终保存的路径名, 若为空,则表示保存失败
         """
@@ -580,12 +581,12 @@ class BaseAir(AbsWoolProject):
             return ''
 
         if CommonUtil.isNoneOrBlank(imgName):
-            autoAppendDateInfo = True
+            append_date_time = True
             imgName = ''
         else:
             imgName = f'_{imgName}'
 
-        if autoAppendDateInfo:
+        if append_date_time:
             imgName = f"{TimeUtil.getTimeStr(f='%m%d_%H%M%S')}{imgName}"
         imgName = imgName.replace('(', replaceFlag).replace(')', replaceFlag) \
             .replace('|', replaceFlag).replace('.*', replaceFlag).replace('[', replaceFlag).replace(']', replaceFlag)
@@ -665,7 +666,7 @@ class BaseAir(AbsWoolProject):
             target_img = aircv.crop_image(full_img, (fromX, fromY, toX, toY))  # 局部截图
 
         if not CommonUtil.isNoneOrBlank(img_name):
-            self.saveImage(target_img, img_name, autoAppendDateInfo=True)
+            self.saveImage(target_img, img_name)
         return target_img
 
     # @log_time_consume(exclude_params=['full_img']) #大概0.1s左右就能执行完成

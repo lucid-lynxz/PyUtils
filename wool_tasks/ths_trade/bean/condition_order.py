@@ -70,6 +70,8 @@ class ConditionOrder(Runnable):
         self.start_time: str = start_time
         self.end_date: str = end_date  # 条件单截止日期(含)
 
+        self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}"""
+
     def run(self):
         """
         支持以下参数：
@@ -134,10 +136,7 @@ class ConditionOrder(Runnable):
             else:  # 卖出
                 self.position.balance = str(self.position.balance + self.deal_count)
                 self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            msg = f"""{self.position.code} {self.position.name}
-基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}
-极值:{self.extreme_value}, 最新:{latest_price}
-            """
+            msg = f'{self.summary_info}\n极值:{self.extreme_value}, 最新:{latest_price}'
             NetUtil.push_to_robot(msg, printLog=True)
 
 #
