@@ -148,6 +148,7 @@ class THSTrader(BaseAir4Windows):
         # 因此此处通过 '证券代码' 和 '仓位参比'  两个字符串的位置, 来确定持仓信息(含标题含)的左/上/右边界, 然后根据坐标, 按行提取股票持仓信息
         # 另外比如港股股票代码签名可能有其他表示信息, 因此左边界适当往左便宜一点
         CommonUtil.printLog(f'get_all_stock_position')
+        text("{ESC}")
         self.key_press('F2')  # '卖出[F2]'
         self.key_press('F6')  # '持仓[F6]'
         self.toggle_window_mode(3)  # 最大化窗口
@@ -268,31 +269,34 @@ class THSTrader(BaseAir4Windows):
         :param price: 价格
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
         """
+        CommonUtil.printLog(f'deal({code},{price},{amount})')
         buy = amount > 0  # true-买入 false-卖出
+        amount = abs(amount)
         if CommonUtil.isNoneOrBlank(self.position_dict):
             self.get_all_stock_position()
 
-        position: StockPosition = self.position_dict[code]
-        if position is None:
-            CommonUtil.printLog(f'股票代码:{code} 不存在持仓信息,买卖失败')
-            return False
-
-        # 卖出时, 不能超过当前可卖数量
+        position: Optional[StockPosition] = self.position_dict.get(code, None)
         # todo 买入时,不能超过当前可买最大数量
         if buy:
             self.key_press('F1')  # '买入[F1]'
             pass
         else:
+            if position is None and not buy:
+                CommonUtil.printLog(f'{code} 不存在持仓信息,卖出失败')
+                return False
+
             self.key_press('F2')  # '卖出[F2]'
             amount = min(amount, int(position.available_balance))
 
-        if amount <= 0:
-            CommonUtil.printLog(f'交易股票:{position.name}({code}) 可买卖数量为0,交易失败')
-            return False
+            # 卖出时, 不能超过当前可卖数量
+            if amount <= 0:
+                CommonUtil.printLog(f'交易:{position.name}({code}) 可卖数量为0,卖出失败')
+                return False
 
         touch(self.bs_rest_btn)  # 重填按钮
         touch(self.bs_code_pos)  # 证券代码输入框
         text(code)  # 输入股票代码
+        text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
 
         # todo 价格不能超过涨跌停价, 建议找其他接口直接获取而不是截图进行ocr势必诶
         touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
@@ -308,9 +312,16 @@ class THSTrader(BaseAir4Windows):
         # win.find_element("窗口标题", "Button", "按钮名称").click()
         # win.find_element(None, "Button", None, "btn_id").click()
 
-        CommonUtil.printLog(f'交易股票:{position.name}({code}) 价格:{price} 数量:{amount}')
-        img_name = f'{"买入" if buy else "卖出"}_{position.name}_{amount}股_{price}'
+        if position is None:
+            stock_name = AkShareUtil.get_stock_name(code)
+        else:
+            stock_name = position.name
+        CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
+        img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
         self.saveImage(self.snapshot(), img_name)
+
+        text("{ESC}")  # 按下esc键,部分弹框可被取消
+        text("{ENTER}")  # 按下回车键, 避免弹框干扰
         return True
 
     def cancel_order(self, code: str):
@@ -333,65 +344,12 @@ class THSTrader(BaseAir4Windows):
         FileUtil.delete_files_by_extensions(_cache_path, ['.png', '.jpg'])
         return _cache_path
 
-# # python your_script.py --condition_order_path /path/to/orders.csv
-# if __name__ == '__main__':
-#     while not AkShareUtil.is_trading_day():
-#         now = TimeUtil.getTimeStr(n=0)
-#         next_day = TimeUtil.getTimeStr('%Y-%m-%d', 1)
-#         diff = TimeUtil.calc_sec_diff(now, f'{next_day} 09:30:00', '%Y-%m-%d %H:%M:%S')
-#         CommonUtil.printLog(f'当前不是交易日, 等待到 {next_day} 09:30:00 后再执行, 修复 {diff}秒')
-#         TimeUtil.sleep(diff)
-#
-#     now = TimeUtil.getTimeStr(f="%H:%M:%S", n=0)
-#     diff = TimeUtil.calc_sec_diff(now, f'09:30:00', '%H:%M:%S')
-#     if diff < 0:
-#         CommonUtil.printLog(f'当前尚未达到9:30,休眠等待 {diff} 秒')
-#         TimeUtil.sleep(abs(diff))
-#
-#     _cache_dir = THSTrader.create_cache_dir()  # 缓存目录
-#     AkShareUtil.cache_dir = _cache_dir
-#
-#     # 支持从条件单缓存文件中读取配置信息
-#     parser = argparse.ArgumentParser(description='处理CSV条件单文件')  # 创建参数解析器
-#     parser.add_argument('--condition_order_path', required=True,
-#                         default=f'{AkShareUtil.cache_dir}/condition_order.csv',
-#                         help='条件单文件')
-#
-#     parser.add_argument('--config', required=True,
-#                         default=f'{AkShareUtil.cache_dir}/config.ini',
-#                         help='基础配置文件')
-#
-#     args = parser.parse_args()  # 解析命令行参数
-#     condition_order_csv_path = args.csv_order_path  # 条件单配置文件路径
-#     _config_path = args.config_path  # 基础配置文件路径
-#
-#     ths_trader = THSTrader(cacheDir=_cache_dir, config_path=_config_path)
-#     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
-#
-#     ConditionOrder.ths_trader = ths_trader
-#     ConditionOrder.robot_dict = ths_trader.configParser.getSectionItems('robot')
-#
-#     # 读取CSV文件并转换为条件单对象列表
-#     conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_csv_path, ConditionOrder, 1)
-#     for order in conditionOrderList:
-#         stock_position = ths_trader.get_stock_position(order.code)  # 该股票的持仓数据
-#         if stock_position is None:  # 未持仓
-#             ths_trader.position_dict[order.code] = order.position
-#             continue
-#         order.position = ths_trader.get_stock_position(order.code)  # 将数据更换为实际的持仓数据
-#
-#
-#     def task_condition_orders():
-#         """执行条件单"""
-#         for _order in conditionOrderList:
-#             if _order.active:
-#                 _order.run()
-#
-#
-#     # 每分钟触发一次条件单检测
-#     if AkShareUtil.is_trading_day():
-#         (SchedulerTaskManager()
-#          .add_task("task_condition_orders", task_condition_orders, interval=60)
-#          .add_task("task_condition_orders", ths_trader.get_all_stock_position, interval=5, unit='minutes')
-#          .start()
-#          )
+
+# python your_script.py --condition_order_path /path/to/orders.csv
+if __name__ == '__main__':
+    THSTrader.create_cache_dir()
+    ths_trader = THSTrader()
+    ths_trader.deal('09868', 70.05, 200)
+
+    time.sleep(3)
+    ths_trader.deal('000903', 3.55, 200)
