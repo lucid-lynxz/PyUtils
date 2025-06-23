@@ -326,6 +326,11 @@ class CommonUtil(object):
         except ValueError:
             return default
 
+    @staticmethod
+    def round_down_to_hundred(num: float) -> int:
+        """将浮点数向下取整到最近的100整数倍"""
+        return int(num // 100) * 100
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

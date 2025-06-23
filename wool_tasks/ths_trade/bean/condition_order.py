@@ -21,14 +21,18 @@ class ConditionOrder(Runnable):
         :param row: csv文件中的一行数据, 格式: 股票代码,股票名称,是否港股,基准价,向上突破(true/false),反弹幅度,交易股数,开始监测的时间,结束监测的日期
         :return: ConditionOrder对象
         """
-        return ConditionOrder(StockPosition(code=row[0], name=row[1], market='港股通' if row[2] else ''),
-                              base=float(row[3]),
-                              break_up=row[4].lower() == 'true',
-                              bounce_info=row[5],
-                              deal_count=int(row[6]),
-                              start_time=row[7],
-                              end_date=row[8]
-                              )
+        return ConditionOrder(
+            StockPosition(
+                code=row[0],
+                name=row[1],
+                market='港股通' if row[2].lower() == 'true' else ''),
+            base=float(row[3]),
+            break_up=row[4].lower() == 'true',
+            bounce_info=row[5],
+            deal_count=int(row[6]),
+            start_time=row[7],
+            end_date=row[8]
+        )
 
     def __init__(self, position: StockPosition,
                  base: float,

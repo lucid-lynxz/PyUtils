@@ -1,5 +1,6 @@
 import argparse
 import os
+import traceback
 
 from pywinauto import Desktop
 
@@ -75,8 +76,11 @@ if __name__ == '__main__':
                 try:
                     _order.run()
                 except Exception as e:
-                    CommonUtil.printLog(f'执行条件单出错: {e}')
-                    NetUtil.push_to_robot(f'task_condition_orders 出错:{_order.summary_info}', printLog=True)
+                    _order.active = False
+                    # traceback.print_exc()
+                    tracebackMsg = traceback.format_exc()
+                    NetUtil.push_to_robot(f'task_condition_orders 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
+                                          printLog=True)
 
 
     # 等待到下一个交易日

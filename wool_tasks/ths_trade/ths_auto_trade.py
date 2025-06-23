@@ -58,6 +58,8 @@ class THSTrader(BaseAir4Windows):
         self.bs_confirm_btn: tuple = None  # 买入/卖出 界面中的 '买入/卖出' 确定按钮中心点坐标
         self.akshare_util: AkShareUtil = AkShareUtil()  # akshare 工具类
 
+        self.available_balance_cash: float = -1  # 可用金额, 单位:元
+
         # 尝试从缓存文件中读取数据
         self.pos_cache_file = f'{cacheDir}/pos_cache.txt'  # 缓存各按钮位置信息, 对于同一台设备, 不需要每次都重新获取
         line_list = FileUtil.readFile(self.pos_cache_file)
@@ -231,6 +233,18 @@ class THSTrader(BaseAir4Windows):
             CommonUtil.printLog(f'持仓StockPositionList: {result}')
             NetUtil.push_to_robot(msg_str)
             THSTrader.last_msg = msg_str
+
+        # 切换到 f4 资金股票界面查询可用资余额
+        self.key_press('F4')  # '查询[F4]'
+        self.snapshot()
+        _, ocrStr, _ = self.findTextByOCR('可用金额', img=self.snapshot_img, prefixText='资金', subfixText='总资产')
+        # CommonUtil.printLog(f'--->可用金额xxx: {ocrStr}')
+        try:
+            cashStr: str = ocrStr.split('总资产')[0].split('可用金额')[1].replace(',', '').strip()
+            self.available_balance_cash = CommonUtil.parse_number(cashStr, float, -1.0)  # 可用金额
+            CommonUtil.printLog(f'--->可用金额: {self.available_balance_cash}')
+        except Exception as e:
+            CommonUtil.printLog(f'获取可用金额失败 {e}')
         return result
 
     def get_stock_position(self, code: str, refresh: bool = False) -> Optional[StockPosition]:
@@ -276,10 +290,20 @@ class THSTrader(BaseAir4Windows):
             self.get_all_stock_position()
 
         position: Optional[StockPosition] = self.position_dict.get(code, None)
-        # todo 买入时,不能超过当前可买最大数量
+        if position is None:
+            stock_name = AkShareUtil.get_stock_name(code)
+        else:
+            stock_name = position.name
+
         if buy:
             self.key_press('F1')  # '买入[F1]'
-            pass
+            if self.available_balance_cash >= 0:  # 获取到有效的可用金额
+                amount = min(amount, int(self.available_balance_cash / price))
+                amount = CommonUtil.round_down_to_hundred(amount)
+                # 买入时, 不能超过当前可买数量
+                if amount <= 0:
+                    CommonUtil.printLog(f'交易:{stock_name}({code}) 可买数量为0,买入失败')
+                    return False
         else:
             if position is None and not buy:
                 CommonUtil.printLog(f'{code} 不存在持仓信息,卖出失败')
@@ -290,7 +314,7 @@ class THSTrader(BaseAir4Windows):
 
             # 卖出时, 不能超过当前可卖数量
             if amount <= 0:
-                CommonUtil.printLog(f'交易:{position.name}({code}) 可卖数量为0,卖出失败')
+                CommonUtil.printLog(f'交易:{stock_name}({code}) 可卖数量为0,卖出失败')
                 return False
 
         touch(self.bs_rest_btn)  # 重填按钮
@@ -305,6 +329,7 @@ class THSTrader(BaseAir4Windows):
         text(str(price))  # 输入卖出价格
 
         touch(self.bs_amount_pos)  # 买入/卖出数量输入框
+        self.key_press('BACKSPACE', 6)  # 通过回退键来清除
         text(str(amount))  # 输入数量
 
         # 点击 买入/卖出 按钮后, 默认会有个确认弹框, 建议在设置中禁止二次确认
@@ -312,10 +337,6 @@ class THSTrader(BaseAir4Windows):
         # win.find_element("窗口标题", "Button", "按钮名称").click()
         # win.find_element(None, "Button", None, "btn_id").click()
 
-        if position is None:
-            stock_name = AkShareUtil.get_stock_name(code)
-        else:
-            stock_name = position.name
         CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
         self.saveImage(self.snapshot(), img_name)
@@ -350,6 +371,5 @@ if __name__ == '__main__':
     THSTrader.create_cache_dir()
     ths_trader = THSTrader()
     ths_trader.deal('09868', 70.05, 200)
-
     time.sleep(3)
     ths_trader.deal('000903', 3.55, 200)
