@@ -4,6 +4,7 @@ from base.Interfaces import Runnable
 from util.AkShareUtil import AkShareUtil
 from util.NetUtil import NetUtil
 from util.TimeUtil import TimeUtil
+from util.CommonUtil import CommonUtil
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 
@@ -31,7 +32,8 @@ class ConditionOrder(Runnable):
             bounce_info=row[5],
             deal_count=int(row[6]),
             start_time=row[7],
-            end_date=row[8]
+            end_time=row[8],
+            end_date=row[9]
         )
 
     def __init__(self, position: StockPosition,
@@ -40,6 +42,7 @@ class ConditionOrder(Runnable):
                  deal_count: int,
                  break_up: bool,
                  start_time: str = '09:30:00',
+                 end_time: str = '16:30:00',
                  end_date: str = '2099-12-1'):
         """
         :param position: 股票的持仓信息
@@ -47,7 +50,8 @@ class ConditionOrder(Runnable):
         :param bounce_info: 表示反弹幅度, 支持两种写法, 如:0.5% 和 0.5, 前者表示反弹0.5%, 后者表示反弹0.5元
         :param deal_count: 执行交易的股数, 正数表示买入, 负数表示卖出, 如: -100 表示卖出100股
         :param break_up: true-向上突破 false-向下突破
-        :start_time: 开始检测的时间, 默认为9:30:00开盘, 若为了减少开盘前几分钟的大波动, 可以适当后延
+        :start_time: 每日开始监测的时间, 默认为9:30:00开盘, 若为了减少开盘前几分钟的大波动, 可以适当后延
+        :end_time: 每日结束监测的时间, 默认为16:30:00
         :end_date: 条件单截止日期(含)
         """
         self.active: bool = True  # 是否有效, 超期/已触发 就会变为无效
@@ -72,9 +76,11 @@ class ConditionOrder(Runnable):
         self.deal_count = deal_count  # 执行交易时买卖的股数, 负数表示卖出
 
         self.start_time: str = start_time
+        self.end_time = end_time
         self.end_date: str = end_date  # 条件单截止日期(含)
 
         self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}"""
+        self.summary_info_1line = self.summary_info.replace('\n', '').strip()
 
     def run(self):
         """
@@ -83,12 +89,25 @@ class ConditionOrder(Runnable):
             market_info (pd.DataFrame):其他信息, 与code不能同时为空
         """
         # 若今天不是交易日,则不做检测
-        if not self.active or not AkShareUtil.is_trading_day():
+        if not self.active:
+            return
+
+        if not AkShareUtil.is_trading_day():
+            CommonUtil.printLog(f'conditionOrder 今天不是交易日,无需检测 {self.summary_info_1line}')
+            self.active = False
             return
 
         # 若时间不满足,则不做检测
         if (not TimeUtil.is_time_greater_than(self.start_time)
-                or TimeUtil.is_time_greater_than(self.end_date)):
+                or TimeUtil.is_time_greater_than(self.end_time)):
+            CommonUtil.printLog(
+                f'conditionOrder 不在检测时段内({self.start_time}-{self.end_time}),跳过 {self.summary_info_1line}')
+            self.active = False
+            return
+
+        if TimeUtil.is_time_greater_than(self.end_date):
+            CommonUtil.printLog(f'conditionOrder 超过检测日期{self.end_date},不再检测 {self.summary_info_1line}')
+            self.active = False
             return
 
         # 卖出股票时, 若可用余额不足,则调整为可用余额
@@ -98,6 +117,7 @@ class ConditionOrder(Runnable):
         # 获取最新价格
         latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
         if latest_price == 0.0:
+            CommonUtil.printLog(f'conditionOrder 最新价格为0, 应该是获取失败了, 跳过本轮检测, {self.summary_info_1line}')
             return
 
         # 若基准价为0,则优先使用成本价替代, 若无成本价,则使用最新价

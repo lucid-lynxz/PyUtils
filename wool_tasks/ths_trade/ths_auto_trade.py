@@ -139,7 +139,7 @@ class THSTrader(BaseAir4Windows):
     @log_time_consume()
     def _get_all_stock_position(self) -> list:
         """
-        获取所有股票的持仓信息列表, 每隔元素表示一个股票对象
+        获取所有股票的持仓信息列表, 每个元素表示一个股票对象
 
         可以使用以下方法将list转为dict, key值是股票代码
         result_dict = {objDict.code: objDict for objDict in stock_position_list}
@@ -184,7 +184,7 @@ class THSTrader(BaseAir4Windows):
         full_img = self.crop_img(self.snapshot_img, fromX=self.position_rect[0], fromY=self.position_rect[1],
                                  toX=self.position_rect[2], toY=self.position_rect[3])
         dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True)
-        self.saveImage(full_img, '持仓截图')
+        # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
         del_index_list = list()
@@ -221,7 +221,7 @@ class THSTrader(BaseAir4Windows):
 
         for code, position in self.position_dict.items():
             if position.balance == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
-                CommonUtil.printLog(f'{code}(${position.name})非持仓股,直接请求最新报价')
+                CommonUtil.printLog(f'{code}({position.name})非持仓股,直接请求最新报价')
                 latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock)  # 获取最新价格
                 position.market_price = latest_price
         # self.position_dict = {objDict.code: objDict for objDict in result}
@@ -272,7 +272,8 @@ class THSTrader(BaseAir4Windows):
             # CommonUtil.printLog(f'刷新pos:{pos}')
             # CommonUtil.printLog(f'刷新ocrResList:{ocrResList}')
             self.refresh_pos = self.calcCenterPos(pos)
-        touch(self.refresh_pos)
+        # touch(self.refresh_pos)
+        self.key_press('F5')  # 刷新快捷键F5
         sleep(0.5)
 
     @log_time_consume(separate=True)

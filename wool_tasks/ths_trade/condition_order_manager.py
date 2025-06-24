@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     def task_condition_orders():
         """执行条件单"""
-        CommonUtil.printLog(f'task_condition_orders')
+        # CommonUtil.printLog(f'task_condition_orders')
         for _order in conditionOrderList:
             if _order.active:
                 try:
@@ -92,7 +92,7 @@ if __name__ == '__main__':
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
          # .add_task("prevent_lock_screen", prevent_lock_screen, interval=1, unit='minutes', at_time=':30')
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=3, unit='minutes',
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
                    at_time=':05')
 
          .start()  # 启动调度器

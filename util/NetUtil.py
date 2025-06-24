@@ -52,12 +52,10 @@ class NetUtil(object):
 
         ddAccessToken = configDict.get('accessToken', '')
         atPhone = configDict.get('atPhone', '')
-
         fsToken = configDict.get('feishuToken', '')
-
         if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
             return False
-
+        # print(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
         if not CommonUtil.isNoneOrBlank(ddAccessToken):
             NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','))
         if not CommonUtil.isNoneOrBlank(fsToken):
