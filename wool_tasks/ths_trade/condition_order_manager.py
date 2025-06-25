@@ -41,6 +41,7 @@ if __name__ == '__main__':
     configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
     NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
 
+    NetUtil.push_to_robot(f'condition_order_manager 开始工作', printLog=True)
     ths_trader = THSTrader(cacheDir=_cache_dir)
     ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
@@ -91,10 +92,11 @@ if __name__ == '__main__':
         scheduler = SchedulerTaskManager()
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
-         # .add_task("prevent_lock_screen", prevent_lock_screen, interval=1, unit='minutes', at_time=':30')
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='minutes',
                    at_time=':05')
-
+         .stop_when_time_reaches('16:10:00')
          .start()  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )
+
+    NetUtil.push_to_robot(f'condition_order_manager 已退出', printLog=True)

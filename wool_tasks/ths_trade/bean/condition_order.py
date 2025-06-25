@@ -80,7 +80,7 @@ class ConditionOrder(Runnable):
         self.end_date: str = end_date  # 条件单截止日期(含)
 
         self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}"""
-        self.summary_info_1line = self.summary_info.replace('\n', '').strip()
+        self.summary_info_1line = self.summary_info.replace('\n', ' ').strip()
 
     def run(self):
         """
@@ -101,7 +101,7 @@ class ConditionOrder(Runnable):
         if (not TimeUtil.is_time_greater_than(self.start_time)
                 or TimeUtil.is_time_greater_than(self.end_time)):
             CommonUtil.printLog(
-                f'conditionOrder 不在检测时段内({self.start_time}-{self.end_time}),跳过 {self.summary_info_1line}')
+                f'conditionOrder 不在检测时段内(<={self.end_time}),跳过:{self.summary_info_1line}')
             self.active = False
             return
 

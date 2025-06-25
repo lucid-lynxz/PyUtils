@@ -1,28 +1,31 @@
-import schedule
-import time
 import threading
+import sys
+import select
+import schedule
+from datetime import datetime
 from queue import Queue
 from typing import Callable, Dict, Optional
+
 from util.CommonUtil import CommonUtil
+from util.TimeUtil import TimeUtil
 
 
 class SchedulerTaskManager:
     """
-    任务调度器类，支持动态添加/删除定时任务
+    任务调度器类，支持动态添加/删除定时任务，以及在指定时间自动停止
     使用方法:
-        scheduler = SchedulerTaskManager()
-        scheduler.start()  # 启动调度器
         # 添加任务
-        TaskScheduler()
-            .add_task(
-                task_id="task1",
-                task_func=my_task_function,
-                interval=10,
-                unit="seconds",
-                run_immediately=True
-            )
-            .start() # 启动调度器,会在子线程执行
-            .wait_exit_event() # 等待用户输入q, 主线程不退出
+        SchedulerTaskManager()
+        .add_task(
+            task_id="task1",
+            task_func=my_task_function,
+            interval=10,
+            unit="seconds",
+            run_immediately=True
+        )
+        .stop_when_time_reaches("16:30:00") # 设置停止时间
+        .start()  启动调度器
+        .wait_exit_event()  # 等待用户输入q或到达停止时间
     """
 
     def __init__(self):
@@ -31,12 +34,13 @@ class SchedulerTaskManager:
         self._stop_event = threading.Event()  # 停止标志
         self._scheduler_thread = None  # 调度器线程
         self._lock = threading.Lock()  # 线程锁
+        self._stop_time: str = ''  # 停止时间，格式为time对象
 
     def start(self):
         """启动调度器（在独立线程中运行）"""
         if self._scheduler_thread and self._scheduler_thread.is_alive():
             CommonUtil.printLog("调度器已在运行中")
-            return
+            return self
 
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop,
@@ -49,16 +53,37 @@ class SchedulerTaskManager:
 
     def wait_exit_event(self):
         """
-        等待用户按下q推出调度器
+        等待用户按下q或到达停止时间退出调度器
         """
         # 创建事件对象
         exit_event = threading.Event()
         CommonUtil.printLog("调度器已启动，输入'q'退出...")
-        # 主线程等待用户输入
+
+        # 主线程等待用户输入或停止时间到达
         while not exit_event.is_set():
-            user_input = input()
-            if user_input.lower() == 'q':
+            if not CommonUtil.isNoneOrBlank(self._stop_time) and TimeUtil.is_time_greater_than(self._stop_time):
+                CommonUtil.printLog(f"已到达停止时间 {self._stop_time}，正在停止调度器...")
+                self.stop()
                 exit_event.set()
+                break
+
+            if self._stop_event.is_set():
+                exit_event.set()
+                break
+
+            TimeUtil.sleep(0.5)
+
+            # 检查用户输入
+            try:
+                if not sys.stdin.isatty():  # 如果不是交互式终端，跳过输入检查
+                    continue
+                if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                    user_input = sys.stdin.readline().strip()
+                    if user_input.lower() == 'q':
+                        exit_event.set()
+            except (KeyboardInterrupt, SystemExit):
+                exit_event.set()
+        CommonUtil.printLog(f'wait_exit_event 已退出, 正在停止调度器')
         self.stop()
         return self
 
@@ -141,9 +166,26 @@ class SchedulerTaskManager:
                 }
             return None
 
+    def stop_when_time_reaches(self, time_str: str):
+        """
+        设置当系统时间达到或超过指定时间时停止调度器
+
+        参数:
+            stop_time_str: 指定停止时间，格式为 'HH:MM:SS'
+        """
+        self._stop_time = time_str
+        CommonUtil.printLog(f"已设置调度器将在时间 >= {time_str} 时停止")
+        return self
+
     def _scheduler_loop(self) -> None:
         """调度器主循环（在独立线程中运行）"""
         while not self._stop_event.is_set():
+            # 检查是否到达停止时间
+            if not CommonUtil.isNoneOrBlank(self._stop_time) and TimeUtil.is_time_greater_than(self._stop_time):
+                CommonUtil.printLog(f'_scheduler_loop 已到达停止时间 {self._stop_time}，正在停止调度器...')
+                self.stop()
+                break
+
             # 处理任务队列中的操作
             while not self._task_queue.empty():
                 operation, data = self._task_queue.get()
@@ -155,7 +197,7 @@ class SchedulerTaskManager:
 
             # 执行待处理的定时任务
             schedule.run_pending()
-            time.sleep(0.5)  # 减少CPU占用
+            TimeUtil.sleep(0.5)  # 减少CPU占用
 
     def _add_task_internal(
             self,
@@ -231,10 +273,8 @@ if __name__ == "__main__":
     scheduler.add_task("task1", task1, 10, "seconds")  # 每10秒执行一次
     scheduler.add_task("task2", task2, 5, "seconds")  # 每5秒执行一次
 
-    # # 5秒后移除任务1
-    # time.sleep(5)
-    # scheduler.remove_task("task1")
+    # 设置停止时间（例如今天的16:30:00）
+    scheduler.stop_when_time_reaches("16:30:00")
 
-    # 程序运行20秒后退出
-    time.sleep(30)
-    scheduler.stop()
+    # 主线程保持运行，等待停止条件
+    scheduler.wait_exit_event()
