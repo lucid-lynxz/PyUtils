@@ -535,7 +535,7 @@ class FileUtil(object):
     ) -> List[T]:
         """
         读取CSV文件并转换为对象列表
-        会跳过以#开头的行以及空白行
+        会跳过以 # 或 ; 开头的行以及空白行
         泛型对象T中必须包含有一个函数:
 
         @classmethod
@@ -568,7 +568,7 @@ class FileUtil(object):
                 if not row or all(not cell.strip() for cell in row):  # 跳过空行
                     continue
 
-                if row[0].startswith('#'):  # 跳过以#开头的行
+                if row[0].startswith('#') or row[0].startswith(';'):  # 跳过以 # 或 ; 开头的行
                     continue
 
                 try:

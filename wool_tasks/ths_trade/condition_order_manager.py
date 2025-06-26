@@ -22,7 +22,7 @@ if __name__ == '__main__':
     # 支持从条件单缓存文件中读取配置信息,优先使用 cache/ 目录下的配置文件, 若无,再从当前目录下寻找
     parser = argparse.ArgumentParser(description='处理CSV条件单文件')  # 创建参数解析器
     parser.add_argument('--condition_order_path', required=False,
-                        default=f'{AkShareUtil.cache_dir}/condition_order.csv',
+                        default=f'{AkShareUtil.cache_dir}/condition_order.ini',
                         help='条件单文件')
 
     parser.add_argument('--config', required=False,
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     # 配置文件解析器
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = f'{cur_dir}/config.ini' if CommonUtil.isNoneOrBlank(config_path) else config_path
-    condition_order_path = f'{cur_dir}/condition_order.csv' if CommonUtil.isNoneOrBlank(
+    condition_order_path = f'{cur_dir}/condition_order.ini' if CommonUtil.isNoneOrBlank(
         condition_order_path) else condition_order_path
     configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
     NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
@@ -95,7 +95,7 @@ if __name__ == '__main__':
          .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
                    at_time=':05')
          .stop_when_time_reaches('16:10:00')
-         .start('9:29:00')  # 启动调度器
+         .start('09:29:00')  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )
 

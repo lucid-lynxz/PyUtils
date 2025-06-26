@@ -79,7 +79,7 @@ class ConditionOrder(Runnable):
         self.end_time = end_time
         self.end_date: str = end_date  # 条件单截止日期(含)
 
-        self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'}"""
+        self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'},数量:{self.deal_count}"""
         self.summary_info_1line = self.summary_info.replace('\n', ' ').strip()
 
     def run(self):
@@ -117,7 +117,7 @@ class ConditionOrder(Runnable):
         # 获取最新价格
         latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
         if latest_price == 0.0:
-            CommonUtil.printLog(f'conditionOrder 最新价格为0, 应该是获取失败了, 跳过本轮检测, {self.summary_info_1line}')
+            CommonUtil.printLog(f'conditionOrder 最新价格为0,应该是获取失败了,跳过本轮检测,{self.summary_info_1line}')
             return
 
         # 若基准价为0,则优先使用成本价替代, 若无成本价,则使用最新价
