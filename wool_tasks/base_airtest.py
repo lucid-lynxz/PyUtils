@@ -488,7 +488,7 @@ class BaseAir(AbsWoolProject):
             if saveImg:  # 保存图片还是耗时的0.8s左右, 占据方法的大头,因此默认只对失败的部分做截图
                 loopStartTs = time.time()
                 imgName = '%s_%s_%s_%s_%s_%s_%s.png' % (
-                    imgPrefixName, i, fromX, fromY, toX, toY, TimeUtil.getTimeStr(f='%m%d_%H%M%S'))
+                    imgPrefixName, i, fromX, fromY, toX, toY, TimeUtil.getTimeStr(fmt='%m%d_%H%M%S'))
                 img_path = self.saveImage(img, imgName=imgName)
                 self.logWarn(
                     f'findTextByOCR loopCheck {i} saveImg duration={time.time() - loopStartTs},hit={hit},'
@@ -554,7 +554,7 @@ class BaseAir(AbsWoolProject):
         img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
         imgNameOpt = '' if CommonUtil.isNoneOrBlank(imgName) else ('%s_' % imgName)
         if CommonUtil.isNoneOrBlank(imgName) or autoAppendDateInfo:
-            timeStr = TimeUtil.getTimeStr(f='%m%d_%H%M%S')
+            timeStr = TimeUtil.getTimeStr(fmt='%m%d_%H%M%S')
             imgName = '%s%s_%s_%s_%s_%s' % (imgNameOpt, timeStr, fromX, fromY, toX, toY)
         return self.saveImage(img, imgName)
 
@@ -587,7 +587,7 @@ class BaseAir(AbsWoolProject):
             imgName = f'_{imgName}'
 
         if append_date_time:
-            imgName = f"{TimeUtil.getTimeStr(f='%m%d_%H%M%S')}{imgName}"
+            imgName = f"{TimeUtil.getTimeStr(fmt='%m%d_%H%M%S')}{imgName}"
         imgName = imgName.replace('(', replaceFlag).replace(')', replaceFlag) \
             .replace('|', replaceFlag).replace('.*', replaceFlag).replace('[', replaceFlag).replace(']', replaceFlag)
 

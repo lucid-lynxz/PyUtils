@@ -327,7 +327,7 @@ class AkShareUtil:
         :param end_time: 收盘时间, 默认为 16:00:00
         """
         start_index = 0
-        now = TimeUtil.getTimeStr(f="%H:%M:%S", n=0)
+        now = TimeUtil.getTimeStr(fmt="%H:%M:%S", n=0)
         diff = TimeUtil.calc_sec_diff(now, end_time, '%H:%M:%S')
         if diff > 0:  # 当前时间已超过收盘时间, 则休眠到下一个交易日的开盘时间
             CommonUtil.printLog(f'当前已超过收盘时间: {end_time}, 不管是否是交易日, 都需要等待到次日')

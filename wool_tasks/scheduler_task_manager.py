@@ -1,10 +1,10 @@
-import threading
-import sys
 import select
-import schedule
-from datetime import datetime
+import sys
+import threading
 from queue import Queue
 from typing import Callable, Dict, Optional
+
+import schedule
 
 from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
@@ -24,7 +24,7 @@ class SchedulerTaskManager:
             run_immediately=True
         )
         .stop_when_time_reaches("16:30:00") # 设置停止时间
-        .start()  启动调度器
+        .start('09:11:00')  启动调度器,并指定在什么时候才开始运行task
         .wait_exit_event()  # 等待用户输入q或到达停止时间
     """
 
@@ -34,14 +34,19 @@ class SchedulerTaskManager:
         self._stop_event = threading.Event()  # 停止标志
         self._scheduler_thread = None  # 调度器线程
         self._lock = threading.Lock()  # 线程锁
-        self._stop_time: str = ''  # 停止时间，格式为time对象
+        self._start_time: str = ''  # 开始运行task的时间,格式为:'HH:MM:SS'
+        self._stop_time: str = ''  # 停止时间,格式为:'HH:MM:SS'
 
-    def start(self):
-        """启动调度器（在独立线程中运行）"""
+    def start(self, time_str: Optional[str] = None):
+        """
+        启动调度器（在独立线程中运行）
+        :param time_str: 非空时有效,表示在指定时间后才开始运行, 时间格式: 'HH:MM:SS'
+        """
         if self._scheduler_thread and self._scheduler_thread.is_alive():
             CommonUtil.printLog("调度器已在运行中")
             return self
 
+        self._start_time = time_str
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop,
             daemon=True,
@@ -87,10 +92,10 @@ class SchedulerTaskManager:
         self.stop()
         return self
 
-    def stop(self) -> None:
+    def stop(self, join: bool = False) -> None:
         """停止调度器"""
         self._stop_event.set()
-        if self._scheduler_thread:
+        if self._scheduler_thread and join:
             self._scheduler_thread.join(timeout=2.0)
         CommonUtil.printLog("调度器已停止")
 
@@ -179,6 +184,16 @@ class SchedulerTaskManager:
 
     def _scheduler_loop(self) -> None:
         """调度器主循环（在独立线程中运行）"""
+
+        # 检查是否已可以开始启动
+        if not CommonUtil.isNoneOrBlank(self._start_time):
+            time_format = '%H:%M:%S'
+            diff_sec = TimeUtil.calc_sec_diff(self._start_time, TimeUtil.getTimeStr(time_format), fmt=time_format)
+            if diff_sec > 0:
+                CommonUtil.printLog(f'_scheduler_loop 等待 {diff_sec} 秒,直到{self._start_time}再开始执行task...')
+                TimeUtil.sleep(diff_sec)
+                CommonUtil.printLog(f'_scheduler_loop 结束等待,开始执行task...')
+
         while not self._stop_event.is_set():
             # 检查是否到达停止时间
             if not CommonUtil.isNoneOrBlank(self._stop_time) and TimeUtil.is_time_greater_than(self._stop_time):

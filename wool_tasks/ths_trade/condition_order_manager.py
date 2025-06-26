@@ -92,10 +92,10 @@ if __name__ == '__main__':
         scheduler = SchedulerTaskManager()
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='minutes',
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
                    at_time=':05')
          .stop_when_time_reaches('16:10:00')
-         .start()  # 启动调度器
+         .start('9:29:00')  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )
 
