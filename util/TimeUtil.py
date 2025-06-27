@@ -170,10 +170,11 @@ class TimeUtil(object):
         return int(diff_sec / 24 / 60 / 60)
 
     @staticmethod
-    def is_time_greater_than(target_str: str) -> bool:
+    def is_time_greater_than(target_str: str, include_equal: bool = False) -> bool:
         """
         比较当前时间是否大于等于目标时间字符串
-        支持格式: "YYYY-MM-DD", "HH:MM:SS", "YYYY-MM-DD HH:MM:SS"
+        :param target_str: 目标时间字符串, 支持格式: "YYYY-MM-DD", "HH:MM:SS", "YYYY-MM-DD HH:MM:SS"
+        :param include_equal: 是否包含等于的情况, 默认为False, 即当前时间大于目标时间时才返回True
         """
         target_str = target_str.strip().replace("  ", " ")
         try:
@@ -192,8 +193,7 @@ class TimeUtil(object):
             cur_time = TimeUtil.getTimeStr(time_format)
             diff_sec = TimeUtil.calc_sec_diff(cur_time, target_str, time_format)
             # print(f'  cur_time={cur_time}, target={target_str},diff_sec={diff_sec},time_format={time_format}')
-            return diff_sec > 0
-
+            return diff_sec >= 0 if include_equal else diff_sec > 0
         except ValueError as e:
             print(f"时间解析错误: {e}")
             return False

@@ -98,10 +98,14 @@ class ConditionOrder(Runnable):
             return
 
         # 若时间不满足,则不做检测
-        if (not TimeUtil.is_time_greater_than(self.start_time)
-                or TimeUtil.is_time_greater_than(self.end_time)):
+        if not TimeUtil.is_time_greater_than(self.start_time, include_equal=True):
             CommonUtil.printLog(
-                f'conditionOrder 不在检测时段内(<={self.end_time}),跳过:{self.summary_info_1line}')
+                f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line}')
+            return
+
+        if TimeUtil.is_time_greater_than(self.end_time):
+            CommonUtil.printLog(
+                f'conditionOrder 超过检测时段内(<={self.end_time}),今日跳过:{self.summary_info_1line}')
             self.active = False
             return
 
