@@ -1,5 +1,8 @@
-import requests
 from typing import Optional, Dict, Any
+
+import requests
+
+from util.CommonUtil import CommonUtil
 
 
 class DingTalkBot:
@@ -9,14 +12,17 @@ class DingTalkBot:
     文档:https://open.dingtalk.com/document/orgapp/custom-robots-send-group-messages
     """
 
-    def __init__(self, token: str):
+    def __init__(self, token: str, secret: str = None):
         """
         初始化钉钉机器人
         :param token: 钉钉机器人的 Webhook URL 中的token信息
+        :param secret: 启用机器人加签模式,传入 secret参数
         """
         _hook_host_url = 'https://oapi.dingtalk.com/robot/send'
-        self.webhook_url = f'{_hook_host_url}?access_token={token}'
+        self.access_token: str = token
+        self.secret: str = secret
         self.headers = {"Content-Type": "application/json"}
+        self.webhook_url = f'{_hook_host_url}?access_token={token}'
 
     def send_text(self, content: str, is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
         """
@@ -84,6 +90,26 @@ class DingTalkBot:
         }
         return self._send(data)
 
+    def _generate_url(self):
+        """
+        生成钉钉机器人通知的url, 主要是处理加签模式下的url
+        """
+        if CommonUtil.isNoneOrBlank(self.secret):
+            return self.webhook_url
+        else:
+            import time
+            import hmac
+            import hashlib
+            import base64
+            import urllib.parse
+            import requests
+            timestamp = str(round(time.time() * 1000))
+            string_to_sign = f'{timestamp}\n{self.secret}'
+            hmac_code = hmac.new(self.secret.encode('utf-8'), string_to_sign.encode('utf-8'),
+                                 digestmod=hashlib.sha256).digest()
+            sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+            return f'{self.webhook_url}&timestamp={timestamp}&sign={sign}'
+
     def _send(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         发送请求到钉钉机器人
@@ -92,7 +118,8 @@ class DingTalkBot:
         :return: 响应结果
         """
         try:
-            response = requests.post(self.webhook_url, json=data, headers=self.headers)
+            url = self._generate_url()
+            response = requests.post(url, json=data, headers=self.headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -102,9 +129,10 @@ class DingTalkBot:
 if __name__ == '__main__':
     host_url = "https://www.baidu.com"
     pic_url = 'https://q6.itc.cn/images01/20240821/9617e87d12d744948b311e19ac502bce.png'
-    token = 'replace_you_bot_token'
+    _token = 'replace_you_bot_token'
+    _secret = 'you_bot_secret'
 
-    bot = DingTalkBot(token=token)
+    bot = DingTalkBot(token=_token, secret=_secret)
     # bot.send_text("测试发送普通文本, world!2_189",is_at_all=True)
     bot.send_link("测试卡片效果333", host_url, "来自百度的链接\n正文多行带图片", pic_url=pic_url)
 

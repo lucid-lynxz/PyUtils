@@ -51,13 +51,14 @@ class NetUtil(object):
         atAll = configDict.get('atAll', 'False') == 'True'
 
         ddAccessToken = configDict.get('accessToken', '')
+        ddSecret = configDict.get('secret', '')
         atPhone = configDict.get('atPhone', '')
         fsToken = configDict.get('feishuToken', '')
         if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
             return False
         # print(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
         if not CommonUtil.isNoneOrBlank(ddAccessToken):
-            NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','))
+            NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret)
         if not CommonUtil.isNoneOrBlank(fsToken):
             NetUtil.push_feishu_robot(content, fsToken, atAll)
         return True
@@ -66,7 +67,8 @@ class NetUtil(object):
     def push_ding_talk_robot(content: str,
                              access_token: str,
                              is_at_all: bool = False,
-                             at_mobiles: list = '') -> str:
+                             at_mobiles: list = '',
+                             secret: str = None) -> str:
         """
         发送文本消息到钉钉机器人
         文档:  https://developers.dingtalk.com/document/robots/custom-robot-access
@@ -74,8 +76,9 @@ class NetUtil(object):
         :param access_token: 机器人token,必填
         :param is_at_all: 是否@所有人
         :param at_mobiles: @指定人员,填入对应人员的手机号列表, 如: ['123', '456']
+        :param secret: 钉钉机器人开启加签模式时需要使用,非空有效
         """
-        result = DingTalkBot(token=access_token).send_text(content, is_at_all, at_mobiles)
+        result = DingTalkBot(token=access_token, secret=secret).send_text(content, is_at_all, at_mobiles)
         ddResult = json.dumps(result, default=str)
         print(f'push_ding_talk_robot result={ddResult}')
         return ddResult
