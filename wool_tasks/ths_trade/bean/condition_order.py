@@ -135,6 +135,10 @@ class ConditionOrder(Runnable):
             elif not self.break_upward and latest_price <= self.base:
                 self.hit = True
 
+            if self.hit:
+                msg = f'{self.summary_info}\n首次突破基准价:{self.base},最新:{latest_price}'
+                NetUtil.push_to_robot(msg, printLog=True)
+
         if not self.hit:
             return
 
@@ -164,7 +168,7 @@ class ConditionOrder(Runnable):
             else:  # 卖出
                 self.position.balance = str(self.position.balance + self.deal_count)
                 self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            msg = f'{self.summary_info}\n极值:{self.extreme_value}, 最新:{latest_price}'
+            msg = f'{self.summary_info}\n极值:{self.extreme_value},最新:{latest_price}\n进行deal操作'
             NetUtil.push_to_robot(msg, printLog=True)
 
 #
