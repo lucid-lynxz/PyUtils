@@ -69,6 +69,15 @@ class DingTalkBot:
             data["link"]["picUrl"] = pic_url
         return self._send(data)
 
+    def send_image(self, pic_url: str, title: str = 'image', is_at_all: bool = False) -> Dict[str, Any]:
+        """
+        发送图片
+        :param pic_url: 图片网址
+        :param title: 图片标题, 请勿传空
+        :param is_at_all: 是否@所有人
+        """
+        return self.send_markdown(title=title, markdown_text=f"![{title}]({pic_url})", is_at_all=is_at_all)
+
     def send_markdown(self, title: str, markdown_text: str, is_at_all: bool = False) -> Dict[str, Any]:
         """
         发送 Markdown 格式消息（支持图片和超链接）
@@ -110,39 +119,48 @@ class DingTalkBot:
             sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
             return f'{self.webhook_url}&timestamp={timestamp}&sign={sign}'
 
-    def _send(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _send(self, data: Dict[str, Any], print_log: bool = True) -> Dict[str, Any]:
         """
         发送请求到钉钉机器人
 
         :param data: 构建好的消息数据
         :return: 响应结果
         """
+
         try:
             url = self._generate_url()
             response = requests.post(url, json=data, headers=self.headers)
             response.raise_for_status()
-            return response.json()
+            result = response.json()
         except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
+            result = {"error": str(e)}
+
+        if print_log:
+            CommonUtil.printLog(f"_send result={result}, reqData={data}")
+        return result
 
 
 if __name__ == '__main__':
-    host_url = "https://www.baidu.com"
-    pic_url = 'https://q6.itc.cn/images01/20240821/9617e87d12d744948b311e19ac502bce.png'
+    _host_url = "https://www.baidu.com"
+    _pic_url = 'https://q6.itc.cn/images01/20240821/9617e87d12d744948b311e19ac502bce.png'
     _token = 'replace_you_bot_token'
     _secret = 'you_bot_secret'
 
     bot = DingTalkBot(token=_token, secret=_secret)
-    # bot.send_text("测试发送普通文本, world!2_189",is_at_all=True)
-    bot.send_link("测试卡片效果333", host_url, "来自百度的链接\n正文多行带图片", pic_url=pic_url)
+    bot.send_text("测试发送普通文本, world!2_189", is_at_all=True)
+    bot.send_link("测试卡片效果333", _host_url, "来自百度的链接\n正文多行带图片", pic_url=_pic_url)
 
-    # bot.send_markdown('测试markdown效果+超链接+图片', f"""
-    # # H1大标题 仅@zxz 33
-    #   这是正文
-    #
-    # ## H2小标题
-    # * 小点1
-    # * 小点2
-    #
-    # [超链接-baidu]({host_url})
-    # ![图片链接]({pic_url})""", False)
+    # 发送markdown文本,包含文字/图片/超链接
+    bot.send_markdown('测试markdown效果+超链接+图片', f"""
+    # H1大标题 仅@lynxz 33
+      这是正文
+
+    ## H2小标题
+    * 小点1
+    * 小点2
+
+    [超链接-baidu]({_host_url})
+    ![图片链接]({_pic_url})""", False)
+
+    # 仅发送一张图片
+    bot.send_image(_pic_url, is_at_all=True)
