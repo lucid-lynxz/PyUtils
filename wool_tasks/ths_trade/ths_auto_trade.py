@@ -342,9 +342,12 @@ class THSTrader(BaseAir4Windows):
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
         self.saveImage(self.snapshot(), img_name)
 
+        pos, ocrResStr, ocrResList = self.findTextByOCR('失败', img=self.snapshot_img, prefixText='提示',
+                                                        subfixText='确定')
+        success = CommonUtil.isNoneOrBlank(pos)
         text("{ESC}")  # 按下esc键,部分弹框可被取消
         text("{ENTER}")  # 按下回车键, 避免弹框干扰
-        return True
+        return success
 
     def cancel_order(self, code: str):
         """
@@ -374,3 +377,7 @@ if __name__ == '__main__':
     ths_trader.deal('09868', 70.05, 200)
     time.sleep(3)
     ths_trader.deal('000903', 3.55, 200)
+
+    _process = BaseAir4Windows.start_app('D:/ProgramFiles/同花顺软件/同花顺/xiadan.exe')
+    sleep(5)
+    _process.terminate()

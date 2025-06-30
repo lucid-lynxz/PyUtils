@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import ctypes
+import subprocess
 from ctypes import wintypes
 from airtest.core.api import *
 
@@ -39,6 +40,16 @@ class BaseAir4Windows(BaseAir):
             self.appName = title
             handle_id = str(hid)
         super().__init__('windows', uuid=handle_id, app_name=self.appName, cacheDir=cacheDir)
+
+    @staticmethod
+    def start_app(exe_path: str):
+        """
+        启动指定路径下的exe程序
+        :param exe_path: exe程序的路径
+        :return process对象, 可用于关闭, 比如:
+                process.terminate()  或  process.kill()
+        """
+        return subprocess.Popen(exe_path)
 
     @staticmethod
     @log_time_consume()

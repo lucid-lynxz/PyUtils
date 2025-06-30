@@ -158,17 +158,18 @@ class ConditionOrder(Runnable):
         # 反弹幅度超过预设值,触发交易
         if delta >= expected_delta:
             self.active = False
-            ConditionOrder.ths_trader.deal(self.position.code, latest_price, self.deal_count)
+            success = ConditionOrder.ths_trader.deal(self.position.code, latest_price, self.deal_count)
 
             # 交易成功后,更新持仓信息
-            if self.deal_count >= 0:  # 买入
-                self.position.balance = str(self.position.balance + self.deal_count)
-                if self.is_hk:  # 港股通是T+0 买入当天可进行卖出
+            if success:
+                if self.deal_count >= 0:  # 买入
+                    self.position.balance = str(self.position.balance + self.deal_count)
+                    if self.is_hk:  # 港股通是T+0 买入当天可进行卖出
+                        self.position.available_balance = str(self.position.available_balance + self.deal_count)
+                else:  # 卖出
+                    self.position.balance = str(self.position.balance + self.deal_count)
                     self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            else:  # 卖出
-                self.position.balance = str(self.position.balance + self.deal_count)
-                self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            msg = f'{self.summary_info}\n极值:{self.extreme_value},最新:{latest_price}\n进行deal操作'
+            msg = f'{self.summary_info}\n极值:{self.extreme_value},最新:{latest_price}\n进行deal操作:{success}'
             NetUtil.push_to_robot(msg, printLog=True)
 
 #
