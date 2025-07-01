@@ -312,11 +312,9 @@ class AkShareUtil:
                 print(f'invoke tool_trade_date_hist_sina from net')
                 calendar_df = ak.tool_trade_date_hist_sina()
                 AkShareUtil.save_cache(calendar_df, _cache_name)
-
-            # 检查日期是否在交易日列表中
-            return date_str in calendar_df['trade_date'].values
+            return date_str in calendar_df['trade_date'].values  # 检查日期是否在交易日列表中
         except Exception as e:
-            print(f"获取交易日历失败: {e}")
+            print(f"获取A股交易日历失败: {e}")
             return False
 
     @staticmethod
@@ -346,7 +344,67 @@ class AkShareUtil:
         NetUtil.push_to_robot(msg, printLog=True)
         TimeUtil.sleep(diff)
 
-# if __name__ == '__main__':
+    @staticmethod
+    def query_stock_daily_history(code: str, hk: bool = False, n_day_ago: int = 0,
+                                  period: str = 'daily') -> pd.DataFrame:
+        """
+        获取A股/港股股票历史数据
+        文档: https://akshare.akfamily.xyz/data_tips.html
+        A股使用接口: ak.stock_zh_a_hist()
+        港股使用接口: ak.stock_hk_hist()
+
+        获取后通过读取今日开盘/收盘等价格操作:
+        字段:  "日期","开盘","收盘","最高","最低","成交量","成交额","振幅","涨跌幅","涨跌额","换手率","股票代码"
+
+        _df_hist = AkShareUtil.query_stock_daily_history_hk('01810', 3)  # 小米集团
+        _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 3)  # 九号公司
+        print(_df_hist)
+        if not _df_hist.empty:
+            _latest_data = _df_hist.iloc[-1:] # 最近一个交易日数据, 不一定是今日
+
+            _target_date = TimeUtil.getTimeObj("%Y%m%d", 2)  # 获取指定天之前的交易数据, 非交易日无效
+            _target_data = _df_hist[_df_hist['日期'] == _target_date.date()]
+            print(f'\n{_target_date} 的信息:{_target_data}')
+            if not _target_data.empty:
+                print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
+                print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
+
+        :param code: 股票代码
+        :param hk: 是否是港股
+        :param n_day_ago: 获取往前推多少天的数据, 0表示当天  1表示前一天  -1 表示后一天
+        :param period: 可取值: 'daily', 'weekly', 'monthly'
+        """
+        start_date = TimeUtil.getTimeStr('%Y%m%d', n_day_ago)
+        today = TimeUtil.getTimeStr('%Y%m%d', 0)
+        if hk:
+            return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+        else:
+            return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+
+
+if __name__ == '__main__':
+    # df = AkShareUtil.get_market_data('002651')
+    # df = AkShareUtil.query_stock_daily_history('002651')
+    # print(df)
+    # _df_hist = AkShareUtil.query_stock_daily_history('002651', 3)
+    # _df_hist = AkShareUtil.query_stock_daily_history('01810', True, 3)  # 小米集团
+    from TimeUtil import TimeUtil
+
+    _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 3)  # 九号公司
+    print(_df_hist)
+    if not _df_hist.empty:
+        _latest_data = _df_hist.iloc[-1:]
+        print(f'\n最近一个交易日信息:{_latest_data}')
+        print(f'开盘:{_latest_data["开盘"].iloc[0]}')
+        print(f'收盘:{_latest_data["收盘"].iloc[0]}')
+
+        _target_date = TimeUtil.getTimeObj("%Y%m%d", 2)  # 字符串转为date对象
+        _target_data = _df_hist[_df_hist['日期'] == _target_date.date()]
+        print(f'\n{_target_date} 的信息:{_latest_data}')
+        if not _target_data.empty:
+            print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
+            print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
+
 #     AkShareUtil.cache_dir = FileUtil.create_cache_dir(None, __file__)
 #     print(f'is_trading_day:{AkShareUtil.is_trading_day()}')
 #     print(f'is_trading_day_1:{AkShareUtil.is_trading_day(1)}')

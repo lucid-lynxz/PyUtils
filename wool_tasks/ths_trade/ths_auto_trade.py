@@ -224,6 +224,13 @@ class THSTrader(BaseAir4Windows):
                 CommonUtil.printLog(f'{code}({position.name})非持仓股,直接请求最新报价')
                 latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock)  # 获取最新价格
                 position.market_price = latest_price
+            if position.open_price == 0:  # 今日开盘价是0, 表明尚未获取过今日开盘价,进行获取
+                CommonUtil.printLog(f'{code}({position.name})今日开盘价是0,直接请求最新报价')
+                _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock)  # 获取最新价格
+                if not _df_hist.empty:
+                    latest_data = _df_hist.iloc[-1:]
+                    CommonUtil.printLog(f'\n开盘信息:{latest_data}')
+                    position.open_price = latest_data["开盘"].iloc[0]  # float 开盘价
         # self.position_dict = {objDict.code: objDict for objDict in result}
 
         # 提取最新价信息并推送机器人

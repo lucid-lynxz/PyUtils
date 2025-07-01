@@ -65,7 +65,7 @@ def log_time_consume(exclude_params=None, separate: bool = True):
 
 class TimeUtil(object):
     @classmethod
-    def getTimeStr(cls, fmt="%Y-%m-%d %H:%M:%S", n: int = 0):
+    def getTimeStr(cls, fmt="%Y-%m-%d %H:%M:%S", n: int = 0) -> str:
         """
         获取N天前的时间,并按给定的格式返回字符串结果
         :param fmt: 日期格式,  %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
@@ -75,6 +75,15 @@ class TimeUtil(object):
         n_days_ago = current_date - timedelta(days=n)  # 计算 N 天前的日期
         return n_days_ago.strftime(fmt)  # 将日期转换为指定格式的字符串
         # return time.strftime(format, time.localtime(time.time()))
+
+    @classmethod
+    def getTimeObj(cls, fmt="%Y-%m-%d %H:%M:%S", n: int = 0) -> datetime:
+        """
+        获取N天前的时间,并按给定的格式返回 datetime 对象
+        :param fmt: 日期格式,  %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
+        :param n: 天数, 0表示当天, 正数表示N天前, 负数表示N天后
+        """
+        return datetime.strptime(TimeUtil.getTimeStr(fmt, n), fmt)
 
     @classmethod
     def convertFormat(cls, dateStr: str, oldFormat: str, newFormat: str = '%Y-%m-%d') -> str:

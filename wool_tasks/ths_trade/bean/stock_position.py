@@ -18,6 +18,7 @@ class StockPosition:
     available_balance: int = 0  # 可用余额 int 表示多少股
 
     # 价格信息
+    open_price: float = 0.0  # 今日开盘价
     cost_price: float = 0.0  # 成本价 float
     market_price: float = 0.0  # 市价 float
     market: str = ''  # 交易市场
