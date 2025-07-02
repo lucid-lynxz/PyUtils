@@ -52,6 +52,7 @@ class THSTrader(BaseAir4Windows):
 
         # 买入/卖出 输入框坐标
         self.bs_code_pos: tuple = None  # 买入/卖出 界面中的 '股票代码' 中心点坐标偏移得到的输入框坐标
+        self.bs_spinner_pos: tuple = None  # 数量股票代码后弹出的下拉列表框首个元素位置
         self.bs_price_pos: tuple = None  # 买入/卖出 界面中的 '价格' 中心点坐标偏移得到的输入框坐标
         self.bs_amount_pos: tuple = None  # 买入/卖出 界面中的 '数量' 中心点坐标偏移得到的输入框坐标
         self.bs_rest_btn: tuple = None  # 买入/卖出 界面中的 '重填' 按钮中心点坐标
@@ -104,6 +105,11 @@ class THSTrader(BaseAir4Windows):
                                                                 subfixText='重填')
         self.bs_code_pos = self.calcCenterPos(pos, input_delta)  # 证券代码输入框位置
         CommonUtil.printLog(f'证券代码输入框位置: {self.bs_code_pos}')
+
+        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '证券名称', prefixText='卖出股票',
+                                                                subfixText='重填')
+        self.bs_spinner_pos = self.calcCenterPos(pos, input_delta)  # 证券代码输入框位置
+        CommonUtil.printLog(f'证券名称右侧提示位置: {self.bs_spinner_pos}')
 
         pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出价格', prefixText='卖出股票',
                                                                 subfixText='重填')
@@ -288,7 +294,7 @@ class THSTrader(BaseAir4Windows):
         """
         买卖股票
         :param code: 股票代码
-        :param price: 价格
+        :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖出擦欧总时, 会使用买一价, 买入操作时,使用卖一价
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
         """
         CommonUtil.printLog(f'deal({code},{price},{amount})')
@@ -305,7 +311,7 @@ class THSTrader(BaseAir4Windows):
 
         if buy:
             self.key_press('F1')  # '买入[F1]'
-            if self.available_balance_cash >= 0:  # 获取到有效的可用金额
+            if self.available_balance_cash >= 0 and price > 0:  # 获取到有效的可用金额
                 amount = min(amount, int(self.available_balance_cash / price))
                 amount = CommonUtil.round_down_to_hundred(amount)
                 # 买入时, 不能超过当前可买数量
@@ -328,13 +334,15 @@ class THSTrader(BaseAir4Windows):
         touch(self.bs_rest_btn)  # 重填按钮
         touch(self.bs_code_pos)  # 证券代码输入框
         text(code)  # 输入股票代码
-        text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
+        touch(self.bs_spinner_pos)  # 下拉提示框第一个元素位置, 主要是港股会显示下拉提示框, 需要点击进行取消,也可以按esc取消
+        # text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
 
         # todo 价格不能超过涨跌停价, 建议找其他接口直接获取而不是截图进行ocr势必诶
-        touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
-        # keyevent("A", modifiers=["CTRL"])  # 全选无效
-        self.key_press('BACKSPACE', 6)  # 通过回退键来清除
-        text(str(price))  # 输入卖出价格
+        if price > 0:
+            touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
+            # keyevent("A", modifiers=["CTRL"])  # 全选无效
+            self.key_press('BACKSPACE', 6)  # 通过回退键来清除
+            text(str(price))  # 输入卖出价格
 
         touch(self.bs_amount_pos)  # 买入/卖出数量输入框
         self.key_press('BACKSPACE', 6)  # 通过回退键来清除
@@ -381,10 +389,12 @@ class THSTrader(BaseAir4Windows):
 if __name__ == '__main__':
     THSTrader.create_cache_dir()
     ths_trader = THSTrader()
-    ths_trader.deal('09868', 70.05, 200)
+    ths_trader.deal('600980', 22.05, -200)
     time.sleep(3)
-    ths_trader.deal('000903', 3.55, 200)
 
-    _process = BaseAir4Windows.start_app('D:/ProgramFiles/同花顺软件/同花顺/xiadan.exe')
-    sleep(5)
-    _process.terminate()
+    ths_trader.deal('002731', 0, -200)
+    time.sleep(3)
+    # ths_trader.deal('000903', 3.55, 200)
+
+    ths_trader.deal('600980', 22.05, 200)
+    time.sleep(3)

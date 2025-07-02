@@ -158,7 +158,7 @@ class ConditionOrder(Runnable):
         # 反弹幅度超过预设值,触发交易
         if delta >= expected_delta:
             self.active = False
-            success = ConditionOrder.ths_trader.deal(self.position.code, latest_price, self.deal_count)
+            success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
 
             # 交易成功后,更新持仓信息
             if success:
