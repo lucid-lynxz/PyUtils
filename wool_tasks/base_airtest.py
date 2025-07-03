@@ -566,7 +566,7 @@ class BaseAir(AbsWoolProject):
         实测耗时大概0.8s左右
 
         :param imgName: 文件名, 会自动拼接 {时间_}{self.appName}.png'
-        :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍未空,则保存失败
+        :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍为空,则保存失败
         :param append_date_time: 最终的图片名称上是否追加时间信息, 默认为True
         :param replaceFlag: 若 imageName 中存在无效字符时,替代为该字符串
         :return str: 最终保存的路径名, 若为空,则表示保存失败
@@ -579,6 +579,7 @@ class BaseAir(AbsWoolProject):
 
         if CommonUtil.isNoneOrBlank(dirPath):
             return ''
+        dirPath = FileUtil.recookPath(dirPath)
 
         if CommonUtil.isNoneOrBlank(imgName):
             append_date_time = True

@@ -84,6 +84,16 @@ if __name__ == '__main__':
                                           printLog=True)
 
 
+    def get_sh_index():
+        """获取上证指数"""
+        _df = AkShareUtil.get_stock_zh_index()
+        CommonUtil.printLog(f'get_sh_index\n{_df}')
+        if not _df.empty:
+            _data = _df[_df['名称'] == '上证指数']
+            if not _data.empty:
+                NetUtil.push_to_robot(f'{_data.iloc[0]}', printLog=True)
+
+
     # 等待到下一个交易日
     # AkShareUtil.wait_next_deal_time()
 
@@ -94,6 +104,7 @@ if __name__ == '__main__':
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
          .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
                    at_time=':05')
+         .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')
          .stop_when_time_reaches('16:10:00')
          .start('09:29:00')  # 启动调度器
          .wait_exit_event()  # 等待按下q推出

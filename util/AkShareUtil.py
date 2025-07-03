@@ -381,6 +381,36 @@ class AkShareUtil:
         else:
             return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=today)
 
+    @staticmethod
+    def get_stock_zh_index(symbol: str = '上证系列指数') -> pd.DataFrame:
+        """
+        获取指数行情
+        文档: https://akshare.akfamily.xyz/data/index/index.html#id1
+        描述: 东方财富网-行情中心-沪深京指数
+        限量: 单次返回所有指数的实时行情数据
+        返回数据示例:
+              序号  代码     名称    最新价   涨跌幅   涨跌额  ... 振幅  最高  最低 今开 昨收  量比
+        0      1  000116  信用100   183.69  0.01  0.02  ...  0.0 NaN NaN NaN   183.67 NaN
+        1      2  000101   5年信用   233.04  0.01  0.02  ...  0.0 NaN NaN NaN   233.02 NaN
+        2      3  000022   沪公司债   234.63  0.01  0.02  ...  0.0 NaN NaN NaN   234.61 NaN
+        3      4  000061  沪企债30   169.79  0.01  0.01  ...  0.0 NaN NaN NaN   169.78 NaN
+        4      5  000012   国债指数   206.03  0.00  0.01  ...  0.0 NaN NaN NaN   206.02 NaN
+        ..   ...     ...    ...      ...   ...   ...  ...  ...  ..  ..  ..      ...  ..
+        174  175  000005   商业指数  2351.11  0.00  0.00  ...  0.0 NaN NaN NaN  2351.11 NaN
+        175  176  000004   工业指数  2703.99  0.00  0.00  ...  0.0 NaN NaN NaN  2703.99 NaN
+        176  177  000003   Ｂ股指数   234.19  0.00  0.00  ...  0.0 NaN NaN NaN   234.19 NaN
+        177  178  000002   Ａ股指数  3111.03  0.00  0.00  ...  0.0 NaN NaN NaN  3111.03 NaN
+        178  179  000001   上证指数  2967.25  0.00  0.00  ...  0.0 NaN NaN NaN  2967.25 NaN
+        [179 rows x 14 columns]
+
+        只提取其中某个指数:
+        _df = AkShareUtil.get_stock_zh_index()
+        _data = _df[_df['名称'] == '上证指数'].iloc[0]
+
+        :param symbol: "上证系列指数"；choice of {"沪深重要指数", "上证系列指数", "深证系列指数", "指数成份", "中证系列指数"}
+        """
+        return ak.stock_zh_index_spot_em(symbol=symbol)
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -388,6 +418,8 @@ if __name__ == '__main__':
     # print(df)
     # _df_hist = AkShareUtil.query_stock_daily_history('002651', 3)
     # _df_hist = AkShareUtil.query_stock_daily_history('01810', True, 3)  # 小米集团
+
+    # 获取开盘收盘等信息
     from TimeUtil import TimeUtil
 
     _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 3)  # 九号公司
@@ -404,22 +436,3 @@ if __name__ == '__main__':
         if not _target_data.empty:
             print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
             print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
-
-#     AkShareUtil.cache_dir = FileUtil.create_cache_dir(None, __file__)
-#     print(f'is_trading_day:{AkShareUtil.is_trading_day()}')
-#     print(f'is_trading_day_1:{AkShareUtil.is_trading_day(1)}')
-#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(2)}')
-#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(-1)}')
-#     print(f'is_trading_day_2:{AkShareUtil.is_trading_day(-2)}')
-#
-#     cache_name = '九号公司'
-#     df = AkShareUtil.read_cache(cache_name)
-#     if df is None:
-#         df = AkShareUtil.get_market_data('689009', n_day_ago=1)
-#         AkShareUtil.save_cache(df, cache_name)
-#
-#     cache_name = '阿里巴巴'
-#     df = AkShareUtil.read_cache(cache_name)
-#     if df is None:
-#         df = AkShareUtil.get_market_data('09988', hk=True, n_day_ago=1)
-#         AkShareUtil.save_cache(df, cache_name)

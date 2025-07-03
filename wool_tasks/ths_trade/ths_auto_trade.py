@@ -281,7 +281,7 @@ class THSTrader(BaseAir4Windows):
         """
         if self.refresh_pos is None:
             pos, ocrResStr, ocrResList = self.findTextByOCR('刷新', prefixText='登录', subfixText='系统', width=500,
-                                                            height=200, saveAllImages=True, imgPrefixName='refresh')
+                                                            height=200, saveAllImages=False, imgPrefixName='refresh')
             # CommonUtil.printLog(f'刷新pos:{pos}')
             # CommonUtil.printLog(f'刷新ocrResList:{ocrResList}')
             self.refresh_pos = self.calcCenterPos(pos)
@@ -355,7 +355,7 @@ class THSTrader(BaseAir4Windows):
 
         CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
-        self.saveImage(self.snapshot(), img_name)
+        self.saveImage(self.snapshot(), img_name,dirPath=f'{self.cacheDir}/deal/')
 
         pos, ocrResStr, ocrResList = self.findTextByOCR('失败', img=self.snapshot_img, prefixText='提示',
                                                         subfixText='确定')
