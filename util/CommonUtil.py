@@ -331,6 +331,32 @@ class CommonUtil(object):
         """将浮点数向下取整到最近的100整数倍"""
         return int(num // 100) * 100
 
+    @staticmethod
+    def extract_keys(lines: list, target_keys: list, flag: str = '=') -> dict:
+        """
+        从字符串列表中提取指定 key 的值，返回字典, 行格式默认: key=value
+        @param lines: 包含字符串的列表, 每个元素都是str类型, 格式: key=value, 允许有空格
+        @param  target_keys: 需要提取的 key 列表
+        @param flag: 分隔符
+        @return: 包含 key-value 的字典
+        """
+        result = {}
+        if CommonUtil.isNoneOrBlank(lines) or CommonUtil.isNoneOrBlank(target_keys):
+            return result
+
+        for line in lines:
+            line = line.strip()
+            if not line or flag not in line:
+                continue
+
+            key_part, value_part = line.split(flag, 1)
+            key = key_part.strip()
+            value = value_part.strip()
+
+            if key in target_keys:
+                result[key] = value
+        return result
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

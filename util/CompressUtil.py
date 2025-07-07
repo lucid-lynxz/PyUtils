@@ -2,6 +2,7 @@
 
 import os
 import time
+import zipfile
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
@@ -112,6 +113,39 @@ class CompressUtil(object):
         print('result=%s' % result)
         success = "Can't open as archive" not in result and 'Archives with Errors: ' not in result
         return success, dest
+
+    @staticmethod
+    def read_zip_file_content(zip_path: str, target_file_path: str, charset: str = 'utf-8') -> list:
+        """
+        读取ZIP压缩包中指定文件的内容
+
+        @param zip_path: ZIP文件的路径
+        @param target_file_path: 要读取的文件在ZIP中的路径，比如: 'assets/myRes/abc.txt'
+        @param charset: 读取文件时使用的字符集
+
+        返回:
+            文件内容的字符串，如果文件不存在或发生错误则返回None
+        """
+        result = []
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # 检查文件是否存在于ZIP中
+                if target_file_path in zip_ref.namelist():
+                    with zip_ref.open(target_file_path) as file:
+                        content = file.read().decode(charset)  # 尝试以指定编码读取文件内容
+                        # 按行分割生成一个列表
+                        result = [line.rstrip('\n') for line in content.splitlines()]
+                else:
+                    print(f'ZIP包中未找到该文件:{target_file_path}')
+        except FileNotFoundError:
+            print(f'ZIP不存在:{zip_path}')
+        except zipfile.BadZipFile:
+            print(f'不是有效的ZIP文件:{zip_path}')
+        except UnicodeDecodeError:
+            print(f'文件不是{charset}编码:{target_file_path}')
+        except Exception as e:
+            print(f'发生了未知问题:{e}')
+        return result
 
 
 if __name__ == '__main__':

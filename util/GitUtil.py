@@ -29,6 +29,9 @@ class CommitInfo(object):
         # merge信息
         self.merge: str = ''
 
+    def __str__(self):
+        return f"CommitInfo:Date:{self.date}  ID:{self.id}  Message:{self.msg}  Author:{self.author}"
+
 
 class BranchInfo(object):
     """
@@ -87,6 +90,7 @@ class GitUtil(object):
         self.branch = branch
         self.branch = cur_local_branch if CommonUtil.isNoneOrBlank(self.branch) else self.branch
         self.branch = 'master' if CommonUtil.isNoneOrBlank(self.branch) else self.branch
+        CommonUtil.printLog(f'cur_local_branch={cur_local_branch},final branch={self.branch}')
 
         # 远程仓库名,默认为 origin
         gitCmd = 'git remote show'
@@ -108,6 +112,9 @@ class GitUtil(object):
 
         # 本地不在指定分支时, 才clone仓库,并checkout到指定分支
         if cur_local_branch != self.branch:
+            # 若当前分支有未提交的内容,则先reset再checkout
+            if not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
+                self.reset()
             self.checkoutBranch(self.branch, False, cloneOptions)
 
     @property
@@ -309,12 +316,13 @@ class GitUtil(object):
                 break
         return ''
 
-    def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False, cloneOptions: str = None):
+    def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False, cloneOptions: str = None, fetchOption: str = ''):
         """
         按需进行仓库clone, 分支切换, 仅本地分支不存在,首次创建时才会拉取最新代码
         :param targetBranch 要切换的分支名,默认为 self.branch
         :param forceClone 是否要强制clone, true-若本地目录存在,删除后重新clone
         :param cloneOptions clone时使用的其他信息
+        :param fetchOption fetch时使用的其他信息
         :return: self
         """
         # 强制重新clone
@@ -326,25 +334,38 @@ class GitUtil(object):
             CommonUtil.printLog('checkoutBranch targetBranch is None, use self.branch=%s' % self.branch)
 
         _cloneOptions = '' if CommonUtil.isNoneOrBlank(cloneOptions) else cloneOptions
-        CommonUtil.printLog('checkoutBranch targetBranch=%s' % targetBranch)
+        CommonUtil.printLog('checkoutBranch targetBranch=%s,_cloneOptions=%s' % (targetBranch, _cloneOptions))
+        # self.getStatus()  # checkout之前尝试先获取下状态,方便排查问题
         # 若对应git仓库目录已存在,则直接进行分支切换,代码pull
         if FileUtil.isDirFile("%s" % self._dotGitPath):
             # 查看本地现有分支,按需切换拉取远程指定分支代码
             branchList = self.getBranchList()
+            CommonUtil.printLog('branchList=%s' % branchList)
 
-            if targetBranch not in branchList:  # 本地分支不包含目标分支,则进行创建, 此处不会切换分支
-                gitCmd = "git fetch %s %s:%s %s" % (self._remoteRepositoryName, targetBranch, targetBranch, _cloneOptions)
+            if targetBranch not in branchList:  # 本地分支不包含目标分支,则进行创建, 使用fetch不会切换分支 使用checkout -b 会创建并切换分支
+                gitCmd = "git fetch %s %s:%s %s" % (self._remoteRepositoryName, targetBranch, targetBranch, fetchOption)
                 CommonUtil.exeCmd(gitCmd)
 
+                # # 改用checkout方式进行分支创建, 先获取远程分支信息
+                # # self.fetch(options='--unshallow')
+                # CommonUtil.exeCmd(f'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" ')
+                # CommonUtil.exeCmd(f'git remote update')
+                #
+                # # 通过checkout创建并切换分支
+                # gitCmd = f'git checkout -b {targetBranch} {self._remoteRepositoryName}/{targetBranch}'
+                # CommonUtil.exeCmd(gitCmd)
+
             if self.getCurBranch() != targetBranch:  # 当前分支不是目标分支,需切换
-                gitCmd = "git checkout %s" % targetBranch
+                gitCmd = f'git checkout {targetBranch}'
                 cmdResult = CommonUtil.exeCmd(gitCmd)
                 CommonUtil.printLog('--> checkout targetBranch=%s,curBranchName=%s,cmdResult=%s' % (targetBranch, self.getCurBranch(), cmdResult))
+            else:
+                CommonUtil.printLog(f'checkout curBranch equals targetBranch:{targetBranch},no need checkout')
 
             if self.getCurBranch() != targetBranch:
                 raise Exception('checkoutBranch fail, cur=%s,target=%s' % (self.getCurBranch(), targetBranch))
 
-            # 查看当前分支对应的远程分支,若不存在,则进行指定\
+            # 查看当前分支对应的远程分支,若不存在,则进行指定
             if CommonUtil.isNoneOrBlank(self.getRemoteBranchName()):
                 CommonUtil.printLog('remote branch is empty, set it now...')
                 gitCmd = 'git fetch %s +refs/heads/%s:refs/remotes/%s/%s' % (self._remoteRepositoryName, targetBranch, self._remoteRepositoryName, targetBranch)
@@ -405,21 +426,30 @@ class GitUtil(object):
             # CommonUtil.exeCmd('git fetch origin' )
             # CommonUtil.printLog('fetch origin结束')
         CommonUtil.printLog('checkoutBranch finish, curBranch=%s, targetBranch=%s,path=%s' % (self.getCurBranch(), targetBranch, self._localRepositoryPath))
+
+        # 切换完分支后, 若有未commit的内容,也reset下, 以便后续若有pull操作, 不会有意外的conflict情况出现
+        if not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
+            self.reset()
+        self.getStatus()
+        CommonUtil.printLog(f'after checkoutBranch {self.getCommitInfo()}')
         return self
 
     def fetch(self, options: str = ''):
         """
         执行 fetch origin [options]
         """
-        CommonUtil.exeCmd('git fetch %s %s' % (self._remoteRepositoryName, options))
+        _fetchOptions = '' if CommonUtil.isNoneOrBlank(options) else options
+        CommonUtil.exeCmd(f'git fetch {_fetchOptions}')
         return self
 
-    def updateBranch(self, branch: str = None, byRebase: bool = False, fetchOptions: str = None):
+    def updateBranch(self, branch: str = None, byRebase: bool = False, fetchOptions: str = None, pullOptions: str = '', ignoreLocalChanges: bool = True):
         """
         更新分支代码, 要求对应的远程分支存在
         :param branch: 分支名, 默认使用当前分支, 要求对应的远程分支存在
         :param byRebase: True-使用 pull --rebase 更新本地分支  False-仅使用pull更新本地分支
         :param fetchOptions: fetch时额外增加的属性, 比如: --shallow-since={date} , --unshallow 等
+        :param pullOptions: pull时额外增加的属性, 比如: --strategy=recursive -X theirs  等, 注意: 较低版本的git可能不支持-X 和 --strategy=recursive 参数
+        :param ignoreLocalChanges: True-忽略本地变更,强制恢复为远程仓库版本  False-不忽略
         :return: self
         """
         if CommonUtil.isNoneOrBlank(branch):  # 目标分支名不存在, 使用当前分支名
@@ -431,14 +461,23 @@ class GitUtil(object):
             CommonUtil.printLog('updateBranch error as target branch name is empty')
             return self
 
-        CommonUtil.printLog('--> updateBranch branch=%s,byRebase=%s' % (branch, byRebase))
+        CommonUtil.printLog('--> updateBranch branch=%s,byRebase=%s,fetchOptions=%s' % (branch, byRebase, fetchOptions))
         # 拉取分支代码
         _fetchOptions = '' if CommonUtil.isNoneOrBlank(fetchOptions) else fetchOptions
         gitCmd = 'git fetch %s %s %s' % (self._remoteRepositoryName, branch, _fetchOptions)
         CommonUtil.exeCmd(gitCmd)
 
-        gitCmd = 'git %s %s %s' % ('pull --rebase' if byRebase else 'pull', self._remoteRepositoryName, branch)
+        _pullOptions = '' if CommonUtil.isNoneOrBlank(pullOptions) else pullOptions
+        gitCmd = 'git %s %s %s %s' % ('pull --rebase' if byRebase else 'pull', self._remoteRepositoryName, branch, _pullOptions)
+        # gitCmd = f'git merge origin/{branch} {_pullOptions}'
         CommonUtil.exeCmd(gitCmd)
+
+        if ignoreLocalChanges:
+            CommonUtil.printLog(f'ignoreLocalChanges is True, reset to remote branch')
+            CommonUtil.exeCmd(f'git reset --hard {self._remoteRepositoryName}/{branch}')
+            self.getStatus()
+
+        CommonUtil.printLog(f'after updateBranch {self.getCommitInfo()}')
         return self
 
     def pushBranch(self, localBranch: str = None, remoteBranch: str = None,
@@ -493,6 +532,10 @@ class GitUtil(object):
         :param commitId: 回退的代码点, 默认为: HEAD
         return: str, reset命令执行结果
         """
+        CommonUtil.printLog(f'show git status/log before reset')
+        self.getStatus()
+        CommonUtil.exeCmd('git log --oneline -3')
+
         modeOpt = '--%s' % mode
         if CommonUtil.isNoneOrBlank(mode):
             modeOpt = ''
@@ -565,21 +608,19 @@ class GitUtil(object):
             CommonUtil.printLog('mergeBranch(%s) finished, headIdBefore=%s,headIdAfter=%s' % (targetBranch, headIdBefore, headIdAfter))
         return self
 
-    def getDiffInfo(self, oldCommitId: str, newCommitId: str = None, options: str = '--name-only') -> str:
+    def getDiffInfo(self, oldCommitId: str = '', newCommitId: str = '', options: str = '--name-only') -> str:
         """
         比较两次commit之间的文件变更信息, 默认仅获取变更文件名
-        :param oldCommitId: 旧commitId
-        :param newCommitId: 新commitId,若为None,则使用当前分支的最新commitId
+        :param oldCommitId: 旧commitId, 默认为空
+        :param newCommitId: 新commitId, 默认为空, 新旧commitId默认都为空,表示测试本地最新代码与HEAD之前的区别
         :param options: git diff 额外参数, 默认为: --name-only
         :return: 文件变更列表字符串,若无变更,则返回 '', 可通过 result.splitlines() 转换为列表
         """
-        if CommonUtil.isNoneOrBlank(newCommitId):
-            newCommitId = self.getCommitId()
+        # if CommonUtil.isNoneOrBlank(newCommitId):
+        #     newCommitId = self.getCommitId()
 
-        CommonUtil.printLog(
-            '--> getDiffInfo oldCommitId=%s,newCommitId=%s,options=%s' % (oldCommitId, newCommitId, options))
-        gitCmd = "git diff %s %s %s" % (
-            oldCommitId, newCommitId, options)
+        CommonUtil.printLog('--> getDiffInfo oldCommitId=%s,newCommitId=%s,options=%s' % (oldCommitId, newCommitId, options))
+        gitCmd = "git diff %s %s %s" % (oldCommitId, newCommitId, options)
         cmdResult = CommonUtil.exeCmd(gitCmd)
         return cmdResult
 
