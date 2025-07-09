@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import sys
+import ctypes
 from typing import Optional
 
 from airtest.core.api import *
@@ -82,17 +83,25 @@ class THSTrader(BaseAir4Windows):
                 if isinstance(attr_value, tuple):
                     file.write(f"{attr_name}:{','.join(map(str, attr_value))}\n")
 
-    @catch_exceptions(max_retries=1, retry_interval=5)
-    def toggle_window_mode(self, mode: int = 3):
+    @catch_exceptions(max_retries=1, retry_interval=1)
+    def set_foreground(self):
+        """
+        将窗口切换到前台
+        """
+        user32 = ctypes.windll.user32
+        user32.SetForegroundWindow(int(self.uuid))  # 将其切换到前台
+        return user32
+
+    @catch_exceptions(max_retries=1, retry_interval=3)
+    def toggle_window_mode(self, mode: int = 3, sleep_sec: float = 0.5):
         """
         修改窗口模式
         :param mode: 窗口模式, 3代表最大化 2最小化
+        :param sleep_sec: 切换窗口模式后, 等待时间
         """
-        import ctypes
-        user32 = ctypes.windll.user32
-        user32.SetForegroundWindow(int(self.uuid))  # 将其切换到前台
+        user32 = self.set_foreground()  # 切换到前台
         user32.ShowWindow(int(self.uuid), mode)  # 最大/最小化窗口
-        sleep(0.5)
+        sleep(sleep_sec)
 
     def _find_bs_pos(self, ocr_result: list):
         """
@@ -156,10 +165,10 @@ class THSTrader(BaseAir4Windows):
         # 因此此处通过 '证券代码' 和 '仓位参比'  两个字符串的位置, 来确定持仓信息(含标题含)的左/上/右边界, 然后根据坐标, 按行提取股票持仓信息
         # 另外比如港股股票代码签名可能有其他表示信息, 因此左边界适当往左便宜一点
         CommonUtil.printLog(f'get_all_stock_position')
-        text("{ESC}")
+        self.toggle_window_mode(3)  # 最大化窗口
+        self.text("{ESC}")
         self.key_press('F2')  # '卖出[F2]'
         self.key_press('F6')  # '持仓[F6]'
-        self.toggle_window_mode(3)  # 最大化窗口
 
         if self.position_rect is None:
             self.saveImage(self.snapshot(), "持仓信息总览")
@@ -193,10 +202,12 @@ class THSTrader(BaseAir4Windows):
         # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
+        # 购买国债后, 名称会显示为 '新标准券' 也需要, 也需要删除
         del_index_list = list()
         for i in range(len(dictList)):
             objDict = dictList[i]
-            if CommonUtil.isNoneOrBlank(objDict.get('code', '')) or CommonUtil.isNoneOrBlank(objDict.get('name', '')):
+            if (CommonUtil.isNoneOrBlank(objDict.get('code', '')) or CommonUtil.isNoneOrBlank(
+                    objDict.get('name', '')) or objDict.get('name', '') == '新标准券'):
                 del_index_list.append(i)
                 continue
 
@@ -285,7 +296,7 @@ class THSTrader(BaseAir4Windows):
             # CommonUtil.printLog(f'刷新pos:{pos}')
             # CommonUtil.printLog(f'刷新ocrResList:{ocrResList}')
             self.refresh_pos = self.calcCenterPos(pos)
-        # touch(self.refresh_pos)
+        # self.touch(self.refresh_pos)
         self.key_press('F5')  # 刷新快捷键F5
         sleep(0.5)
 
@@ -298,6 +309,7 @@ class THSTrader(BaseAir4Windows):
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
         """
         CommonUtil.printLog(f'deal({code},{price},{amount})')
+        # self.set_foreground()  # 切换到前台
         buy = amount > 0  # true-买入 false-卖出
         amount = abs(amount)
         if CommonUtil.isNoneOrBlank(self.position_dict):
@@ -331,37 +343,37 @@ class THSTrader(BaseAir4Windows):
                 CommonUtil.printLog(f'交易:{stock_name}({code}) 可卖数量为0,卖出失败')
                 return False
 
-        touch(self.bs_rest_btn)  # 重填按钮
-        touch(self.bs_code_pos)  # 证券代码输入框
-        text(code)  # 输入股票代码
-        touch(self.bs_spinner_pos)  # 下拉提示框第一个元素位置, 主要是港股会显示下拉提示框, 需要点击进行取消,也可以按esc取消
-        # text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
+        self.touch(self.bs_rest_btn, "重填")  # 重填按钮
+        self.touch(self.bs_code_pos, "证券代码输入框")  # 证券代码输入框
+        self.text(code, '股票代码')  # 输入股票代码
+        self.touch(self.bs_spinner_pos, '股票代码下拉候选框')  # 下拉提示框第一个元素位置, 主要是港股会显示下拉提示框, 需要点击进行取消,也可以按esc取消
+        # self.text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
 
         # todo 价格不能超过涨跌停价, 建议找其他接口直接获取而不是截图进行ocr势必诶
         if price > 0:
             touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
             # keyevent("A", modifiers=["CTRL"])  # 全选无效
             self.key_press('BACKSPACE', 6)  # 通过回退键来清除
-            text(str(price))  # 输入卖出价格
+            text(str(price), '卖出价格')  # 输入卖出价格
 
-        touch(self.bs_amount_pos)  # 买入/卖出数量输入框
-        self.key_press('BACKSPACE', 6)  # 通过回退键来清除
-        text(str(amount))  # 输入数量
+        self.touch(self.bs_amount_pos, '买卖数量输入框')  # 买入/卖出数量输入框
+        # self.key_press('BACKSPACE', 6)  # 通过回退键来清除
+        self.text(str(amount), '交易数量')  # 输入数量
 
         # 点击 买入/卖出 按钮后, 默认会有个确认弹框, 建议在设置中禁止二次确认
-        touch(self.bs_confirm_btn)  # 确定 买入/卖出 按钮
+        self.touch(self.bs_confirm_btn, '确认')  # 确定 买入/卖出 按钮
         # win.find_element("窗口标题", "Button", "按钮名称").click()
         # win.find_element(None, "Button", None, "btn_id").click()
 
         CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
-        self.saveImage(self.snapshot(), img_name,dirPath=f'{self.cacheDir}/deal/')
+        self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
 
         pos, ocrResStr, ocrResList = self.findTextByOCR('失败', img=self.snapshot_img, prefixText='提示',
                                                         subfixText='确定')
         success = CommonUtil.isNoneOrBlank(pos)
-        text("{ESC}")  # 按下esc键,部分弹框可被取消
-        text("{ENTER}")  # 按下回车键, 避免弹框干扰
+        self.text("{ESC}")  # 按下esc键,部分弹框可被取消
+        self.text("{ENTER}")  # 按下回车键, 避免弹框干扰
         return success
 
     def cancel_order(self, code: str):

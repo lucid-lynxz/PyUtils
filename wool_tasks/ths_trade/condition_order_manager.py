@@ -105,8 +105,8 @@ if __name__ == '__main__':
          .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
                    at_time=':05')
          .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')
-         .stop_when_time_reaches('16:10:00')
-         .start('09:29:00')  # 启动调度器
+         .stop_when_time_reaches('16:15:00')
+         .start('09:28:00')  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )
 

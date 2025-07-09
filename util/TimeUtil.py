@@ -8,13 +8,14 @@ import time
 from datetime import datetime, timedelta
 
 
-def log_time_consume(exclude_params=None, separate: bool = True):
+def log_time_consume(exclude_params=None, separate: bool = False, only_log_result: bool = True):
     """
     记录函数执行时间和参数的装饰器
 
     参数:
-        exclude_params: 需要排除的参数名列表（默认包含 'self' 和 'cls'）
-        separate: 是否跳行打印参数, 默认true, 表示会打印第一个语句之前加一个空行, 并在最后一个语句之后加一个空行
+    :param exclude_params: 需要排除的参数名列表（默认包含 'self' 和 'cls'）
+    :param separate: 是否跳行打印参数, 表示会打印第一个语句之前加一个空行, 并在最后一个语句之后加一个空行
+    :param only_log_result: 是否只在调用完成后才打印耗时等信息, 默认True, 若为False,则会在调用前打印参数
     示例:
     @log_time_consume(exclude_params=['password'])
     def login(username, password):
@@ -44,10 +45,11 @@ def log_time_consume(exclude_params=None, separate: bool = True):
 
             # 打印参数
             blank_line = '\n' if separate else ''
-            if params_to_print:
-                print(f'{blank_line}执行 {func.__name__} 调用,参数: {params_to_print}')
-            else:
-                print(f'{blank_line}执行 {func.__name__} 调用,无参数')
+            if not only_log_result:
+                if params_to_print:
+                    print(f'{blank_line}执行 {func.__name__} 调用,参数: {params_to_print}')
+                else:
+                    print(f'{blank_line}执行 {func.__name__} 调用,无参数')
 
             # 计时
             start_time = time.time()
@@ -55,7 +57,15 @@ def log_time_consume(exclude_params=None, separate: bool = True):
             end_time = time.time()
 
             # 打印耗时
-            print(f'{func.__name__} 执行耗时: {end_time - start_time:.2f} 秒{blank_line}')
+            time_tip = f'执行耗时: {end_time - start_time:.2f} 秒'
+            if only_log_result:
+                if params_to_print:
+                    print(f'{blank_line}执行 {func.__name__} 调用,{time_tip},参数: {params_to_print}')
+                else:
+                    print(f'{blank_line}执行 {func.__name__} 调用,{time_tip},无参数')
+            else:
+                print(f'{func.__name__} {time_tip}{blank_line}')
+
             return result
 
         return wrapper

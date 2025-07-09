@@ -122,6 +122,26 @@ class BaseAir4Windows(BaseAir):
             self.airtest_device.key_press(key)
             self.sleep(interval)
 
+    # @log_time_consume()
+    def text(self, content: str, tip: str = '', enter: bool = True, **kwargs):
+        """
+        输入文本
+        :param content: 输入的文本内容
+        :param tip: 提示信息, 仅用于打印日志
+        :param enter: 是否按下回车键, 默认为True
+        """
+        text(content, enter, **kwargs)
+
+    # @log_time_consume()
+    def touch(self, v, tip: str = '', times: int = 1, **kwargs):
+        """
+        点击操作
+        :param v: 点击的坐标
+        :param tip: 提示信息, 仅用于打印日志
+        :param times: 点击次数, 默认1次
+        """
+        touch(v, times, **kwargs)
+
 
 if __name__ == '__main__':
     air = BaseAir4Windows(window_title='网上股票交易系统', cacheDir='D:/log/')

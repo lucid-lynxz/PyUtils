@@ -99,11 +99,14 @@ class AkShareUtil:
         :param period: 分时间隔, 默认为1分钟, 支持 1, 5, 15, 30, 60 分钟的数据频率
         :return: 最新价格, 若指定日期吴交易数据, 则返回0
         """
-        stock_min_df = AkShareUtil.get_market_data(code, hk, n_day_ago, period)
-        if not stock_min_df.empty:
-            latest_data = stock_min_df.iloc[-1:]  # 最新1min的数据, 包含开盘价,收盘价,最高价,最低价,成交量,成交额等信息
-            latest_price: float = latest_data['收盘'].iloc[-1]  # 最新价格
-            return latest_price
+        try:
+            stock_min_df = AkShareUtil.get_market_data(code, hk, n_day_ago, period)
+            if not stock_min_df.empty:
+                latest_data = stock_min_df.iloc[-1:]  # 最新1min的数据, 包含开盘价,收盘价,最高价,最低价,成交量,成交额等信息
+                latest_price: float = latest_data['收盘'].iloc[-1]  # 最新价格
+                return latest_price
+        except Exception as e:
+            NetUtil.push_to_robot(f'get_latest_price error for {code}: {e}', printLog=True)
         return 0.0
 
     # @staticmethod
