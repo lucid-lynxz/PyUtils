@@ -211,6 +211,11 @@ class THSTrader(BaseAir4Windows):
                 del_index_list.append(i)
                 continue
 
+            # 可能今天清仓, 持仓列表仍会有一条记录,但余额为0, 需要剔除
+            if CommonUtil.parse_number(objDict.get('balance', '0'), int, 0) == 0:
+                del_index_list.append(i)
+                continue
+
         for index in reversed(del_index_list):
             del dictList[index]
 

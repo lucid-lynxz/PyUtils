@@ -727,7 +727,7 @@ class BaseAir(AbsWoolProject):
                 subfixText: str = ''
 
                 if i > 0:
-                    for index in range(i):
+                    for index in range(i - 1, 0, -1):
                         prefixText = keys[index]
                         if not CommonUtil.isNoneOrBlank(prefixText):
                             break
@@ -743,8 +743,8 @@ class BaseAir(AbsWoolProject):
                                                                     subfixText=subfixText, maxSwipeRetryCount=1)
                     title_ocr_result = ocrResList
                 else:
-                    pos, _, _ = self.findTextByCnOCRResult(title_ocr_result, key, prefixText=prefixText,
-                                                           subfixText=subfixText)
+                    pos, ocrResStr, _ = self.findTextByCnOCRResult(title_ocr_result, key, prefixText=prefixText,
+                                                                   subfixText=subfixText)
                 if pos is None:
                     print(f'列模式定位失败: {key},pre={prefixText},sub={subfixText},ocrStr={ocrResStr}')
                     continue
