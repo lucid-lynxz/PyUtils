@@ -1,7 +1,9 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
+import re
 import json
 import socket
+import requests
 import traceback
 import urllib.request as urllib2
 
@@ -155,3 +157,38 @@ class NetUtil(object):
         #         s.close()
         print('ip=', ip)
         return ip
+
+    @staticmethod
+    def download(url: str, save_path: str = '', **kwargs) -> str:
+        """
+         通过get形式下载文件
+         :param url: 文件下载地址
+         :param save_path: 本地保存地址,,默认保存在当前目录下
+         :param kwargs: 如: auth=('账号', '密码')
+         :return: 本地文件路径, 空表示下载失败
+         """
+        if CommonUtil.isNoneOrBlank(url):
+            return ''
+
+        regex = re.compile(r'^(https?|ftp)://[^\s/$.?#].[^\s]*$', re.IGNORECASE)
+        if re.match(regex, url):
+            filename = url.split("/")[-1]
+
+            if CommonUtil.isNoneOrBlank(save_path):
+                save_path = f'./{filename}'
+            elif save_path.endswith('/'):
+                save_path = f'{save_path}{filename}'
+
+            CommonUtil.printLog(f'download started:{filename}')
+            try:
+                res = requests.get(url, stream=True, **kwargs)
+                res.raise_for_status()  # 验证请求是否成功
+                with open(save_path, "wb") as f:
+                    for chunk in res.iter_content(chunk_size=1024):
+                        f.write(chunk)
+                CommonUtil.printLog(f'download finish,save_path={save_path}')
+                return save_path
+            except Exception as e:
+                CommonUtil.printLog(f'download fail: {e}')
+                return ''
+        return ''

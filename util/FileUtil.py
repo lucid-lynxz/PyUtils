@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os
+import re
 import csv
 import platform
 import shutil
@@ -166,6 +167,7 @@ class FileUtil(object):
         """
         删除文件
         :param path: 文件路径
+        :param printLog: 是否打印日志
         :return:
         """
         path = FileUtil.recookPath(path)
@@ -476,27 +478,29 @@ class FileUtil(object):
             CommonUtil.printLog("copyImage fail: 不支持的操作系统")
 
     @staticmethod
-    def delete_files_by_extensions(dir_path: str, extensions: list):
+    def delete_files(dir_path: str, patterns: list):
         """
-        批量删除指定目录下包含特定后缀的文件
+        批量删除指定目录下包含特定内容的普通文件
 
         :param dir_path: 指定目录的路径
-        :param extensions: 要删除文件的后缀列表，例如 ['.png', '.jpg']
+        :param patterns: 要匹配的正则表达式模式列表，例如 [r'^file\d+\.txt$', r'image.*\.jpg$']
         """
-        import glob
         if not FileUtil.isDirFile(dir_path):
             return
 
-        all_files = []
-        # 遍历后缀列表，查找对应后缀的文件
-        for ext in extensions:
-            pattern = os.path.join(dir_path, f"*{ext}")
-            files = glob.glob(pattern)
-            all_files.extend(files)
+        # 获取目录下所有文件和文件夹
+        all_entries = os.listdir(dir_path)
 
-        # 遍历并删除符合条件的文件
-        for file_path in all_files:
-            FileUtil.deleteFile(file_path)
+        # 遍历并删除符合正则表达式模式的文件
+        for entry in all_entries:
+            file_path = os.path.join(dir_path, entry)
+            if FileUtil.isDirFile(file_path):
+                continue  # 跳过目录
+
+            for pattern in patterns:
+                if re.match(pattern, entry):
+                    FileUtil.deleteFile(file_path)
+                    break
 
     @staticmethod
     def create_cache_dir(parent_dir: Optional[str], file_like: os.PathLike[AnyStr] = None,

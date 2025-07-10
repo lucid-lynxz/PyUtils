@@ -41,7 +41,7 @@ class THSTrader(BaseAir4Windows):
         :param cacheDir: 缓存目录, 默认为当前目录下的 cache 目录
         """
         cacheDir = THSTrader.create_cache_dir() if CommonUtil.isNoneOrBlank(cacheDir) else cacheDir
-        FileUtil.delete_files_by_extensions(cacheDir, ['.png', '.jpg'])
+        FileUtil.delete_files(cacheDir, [r'.*\.png', r'.*.\.jpg'])
         AkShareUtil.cache_dir = cacheDir  # akShare的缓存目录
         super().__init__(window_title='网上股票交易系统', cacheDir=cacheDir)
 
@@ -393,7 +393,7 @@ class THSTrader(BaseAir4Windows):
         :return: 缓存目录路径
         """
         _cache_path = FileUtil.create_cache_dir(None, __file__, clear=clear)
-        FileUtil.delete_files_by_extensions(_cache_path, ['.png', '.jpg'])
+        FileUtil.delete_files(_cache_path, [r'.*\.png', r'.*.\.jpg'])
         return _cache_path
 
 
