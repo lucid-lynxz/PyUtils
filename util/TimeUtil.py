@@ -47,9 +47,9 @@ def log_time_consume(exclude_params=None, separate: bool = False, only_log_resul
             blank_line = '\n' if separate else ''
             if not only_log_result:
                 if params_to_print:
-                    print(f'{blank_line}执行 {func.__name__} 调用,参数: {params_to_print}')
+                    print(f'{TimeUtil.getTimeStr()} {blank_line}执行 {func.__name__} 调用,参数: {params_to_print}')
                 else:
-                    print(f'{blank_line}执行 {func.__name__} 调用,无参数')
+                    print(f'{TimeUtil.getTimeStr()} {blank_line}执行 {func.__name__} 调用,无参数')
 
             # 计时
             start_time = time.time()
@@ -60,11 +60,12 @@ def log_time_consume(exclude_params=None, separate: bool = False, only_log_resul
             time_tip = f'执行耗时: {end_time - start_time:.2f} 秒'
             if only_log_result:
                 if params_to_print:
-                    print(f'{blank_line}执行 {func.__name__} 调用,{time_tip},参数: {params_to_print}')
+                    print(
+                        f'{TimeUtil.getTimeStr()} {blank_line}执行 {func.__name__} 调用,{time_tip},参数: {params_to_print}')
                 else:
-                    print(f'{blank_line}执行 {func.__name__} 调用,{time_tip},无参数')
+                    print(f'{TimeUtil.getTimeStr()} {blank_line}执行 {func.__name__} 调用,{time_tip},无参数')
             else:
-                print(f'{func.__name__} {time_tip}{blank_line}')
+                print(f'{TimeUtil.getTimeStr()} {func.__name__} {time_tip}{blank_line}')
 
             return result
 

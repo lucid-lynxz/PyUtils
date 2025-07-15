@@ -135,7 +135,7 @@ class AbsAndroidWoolProject(AbsWoolProject):
         """
         :param pkgName: app包名
         :param splashActPath: app启动页面完整路径, 主要用于启动app
-        :param homeActPath: app首页页面完整路径, 若splashActPath为空,则惠使用 homeActPath 替代
+        :param homeActPath: app首页页面完整路径, 若splashActPath为空,则会使用 homeActPath 替代
         :param deviceId: 要运行的设备序列号,目前支持android,若为空,则只有一台可用设备时可自动识别,若有多台,则adbUtil等工具类不会初始化
         :param forceRestart: 是否要强制重启app
         :param appName: app可读名称
@@ -157,7 +157,7 @@ class AbsAndroidWoolProject(AbsWoolProject):
 
         # 设备相关配置
         self.deviceId: str = deviceId  # Android设备序列号
-        self.adbUtil: AdbUtil = None  # AdbUtil(defaultDeviceId=deviceId)  # adb工具类
+        self.adbUtil: AdbUtil = AdbUtil(defaultDeviceId=deviceId)  # adb工具类
         self.model: str = None  # self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)  # 设备型号, 如: 小米6
         self.updateDeviceId(deviceId=deviceId)
         self.dim: int = -1  # 挂机时的屏幕亮度值, 非正数时表示不做调整
@@ -256,7 +256,8 @@ class AbsAndroidWoolProject(AbsWoolProject):
         return self
 
     def killApp(self, allApp: bool = False):
-        self.adbUtil.killApp(None if allApp else self.pkgName)
+        if self.adbUtil is not None:
+            self.adbUtil.killApp(None if allApp else self.pkgName)
         return self
 
     def back2HomePage(self, funcDoAfterPressBack=None):
@@ -424,9 +425,9 @@ class AbsAndroidWoolProject(AbsWoolProject):
 
     def updateDeviceId(self, deviceId: str):
         """更新设备id,返回self,可以继续链式调用"""
-        tAdbUtil: AdbUtil = AdbUtil(defaultDeviceId=deviceId)
+        self.adbUtil = AdbUtil(defaultDeviceId=deviceId)
         if CommonUtil.isNoneOrBlank(deviceId):
-            deviceIds = tAdbUtil.getAllDeviceId(True)[0]
+            deviceIds = self.adbUtil.getAllDeviceId(True)[0]
             if len(deviceIds) == 1:
                 deviceId = deviceIds[0]
             else:

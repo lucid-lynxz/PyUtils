@@ -40,9 +40,10 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
                  appName: str = '',
                  totalSec: int = 180,
                  minInfoStreamSec: int = 180,
-                 forceRestart: bool = False):
+                 forceRestart: bool = False,
+                 cacheDir: str = None):
 
-        BaseAir.__init__(self, 'android', deviceId)
+        BaseAir.__init__(self, 'android', deviceId, cacheDir=cacheDir)
         AbsAndroidWoolProject.__init__(self, pkgName=pkgName,
                                        splashActPath=splashActPath,
                                        homeActPath=homeActPath,
@@ -50,7 +51,7 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
                                        deviceId=deviceId,
                                        totalSec=totalSec,
                                        minInfoStreamSec=minInfoStreamSec,
-                                       forceRestart=forceRestart)
+                                       forceRestart=forceRestart, cacheDir=cacheDir)
 
     def kan_zhibo_in_page(self, count: int = 1,  # 总共需要看几次直播
                           max_sec: int = 60,  # 每个直播最多需要观看的时长
@@ -162,7 +163,7 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
         pos, ocrStr, ocrResList = self.findTextByOCR(targetText=inputKW, subfixText=r'搜索',
                                                      height=800, maxSwipeRetryCount=1)
         if CommonUtil.isNoneOrBlank(pos):
-            img_path = self.saveScreenShot(f'search_by_input_fail_input_fail', autoAppendDateInfo=True)
+            img_path = self.saveScreenShot(f'search_by_input_fail_input_fail')
             self.logWarn(f'search_by_input fail 未输入成功,kw={inputKW},img_path={img_path}')
             return False
 
@@ -210,6 +211,9 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
 
     @log_wrap(print_out_obj=False, print_caller=True)
     def updateDeviceId(self, deviceId: str):
+        if self.adbUtil is None:
+            AbsAndroidWoolProject.updateDeviceId(self, deviceId)
+
         if not CommonUtil.isNoneOrBlank(
                 self.deviceId) and self.deviceId == deviceId and self.airtest_device is not None:
             return self
@@ -283,7 +287,7 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
                 self.sleep(2)
                 continue
 
-            img_path = self.saveScreenShot(f'未找到_{targetText}_{prefixText}_{index}', autoAppendDateInfo=True)
+            img_path = self.saveScreenShot(f'未找到_{targetText}_{prefixText}_{index}')
             self.logWarn(
                 f'check_if_in_page 未找到:{targetText}, index={index},prefixText={prefixText},'
                 f'img_path={img_path}\nocrResStr={ocrResStr}')
@@ -294,7 +298,7 @@ class AbsBaseAir4Android(BaseAir, AbsAndroidWoolProject):
                 ocrResList = None  # 置空,下一轮强制重新ocr
         return False
 
-    def tapByTuple(self, posTuple: tuple, deviceId: str = None, times: int = 1, sleepSec: float = 3,
+    def tapByTuple(self, posTuple: tuple, deviceId: str = None, times: int = 1, sleepSec: float = 1,
                    printCmdInfo: bool = False) -> bool:
         return self.adbUtil.tapByTuple(posTuple, deviceId=deviceId, times=times, sleepSec=sleepSec,
                                        printCmdInfo=printCmdInfo)

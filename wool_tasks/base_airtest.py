@@ -104,15 +104,16 @@ class BaseAir(AbsWoolProject):
     #     self.airtest_device = device()
     #     return self
 
-    def calcCenterPos(self, ltrb: list, deltaXY: tuple = (0, 0)) -> tuple:
+    def calcCenterPos(self, ltrb: list, deltaXY: tuple = (0, 0), default_value: tuple = ()) -> tuple:
         """
         给定矩形框4个顶点的坐标,计算其中心点坐标(x,y)
         :param ltrb: 4个顶点坐标,依次为左上,右上,右下,左下, 每个元素包含是个list, list中包含两个float子元素,依次表示x,y的位置
         :param deltaXY : 偏移量, 依次为x,y的偏移量, 默认为(0,0)
+        :param default_value: ltrb不满足需求时,返回的默认值
         :return tuple: 中心点的坐标(x,y) x,y的类型是float, 若输入为空,则返回空白元组 ()
         """
         if CommonUtil.isNoneOrBlank(ltrb) or len(ltrb) < 3:
-            return ()
+            return default_value
         lt = ltrb[0]
         rt = ltrb[1]
         rb = ltrb[2]
@@ -120,6 +121,24 @@ class BaseAir(AbsWoolProject):
         centerX = lt[0] + (rt[0] - lt[0]) / 2
         centerY = rt[1] + (rb[1] - rt[1]) / 2
         return centerX + deltaXY[0], centerY + deltaXY[1]
+
+    def calcSize(self, ltrb: list, deltaXY: tuple = (0, 0), default_value: tuple = ()) -> tuple:
+        """
+        给定矩形框4个顶点的坐标,计算其宽高尺寸(width,height)
+        :param ltrb: 4个顶点坐标,依次为左上,右上,右下,左下, 每个元素包含是个list, list中包含两个float子元素,依次表示x,y的位置
+        :param deltaXY : 偏移量, 依次为width,height的偏移量, 默认为(0,0)
+        :param default_value: ltrb不满足需求时,返回的默认值
+        :return tuple: (width,height) width,height的类型是float, 若输入为空,则返回空白元组 ()
+        """
+        if CommonUtil.isNoneOrBlank(ltrb) or len(ltrb) < 3:
+            return default_value
+        lt = ltrb[0]
+        rt = ltrb[1]
+        rb = ltrb[2]
+        # lb = ltrb[3]
+        width = rt - lt + deltaXY[0]
+        height = rb - rt + deltaXY[1]
+        return width, height
 
     @logwrap
     # @log_time_consume()
@@ -192,6 +211,14 @@ class BaseAir(AbsWoolProject):
         """
         self.airtest_device.text(text, enter=enter, **kwargs)
         delay_after_operation()
+
+    def clear_text(self):
+        # 将光标移动到文本末尾
+        keyevent("KEYCODE_MOVE_END")
+
+        # 连续删除文本（假设最多8个字符）
+        for _ in range(8):
+            keyevent("KEYCODE_DEL")
 
     @logwrap
     def loop_find(self, query, timeout=ST.FIND_TIMEOUT, threshold=None, interval=0.5, intervalfunc=None):
@@ -421,7 +448,7 @@ class BaseAir(AbsWoolProject):
         :param swipeOverlayHeight:上滑时,少滑动该距离, 负数表示height的1/10
         :param maxSwipeRetryCount: 最多上滑截图的次数, 一次表示不上滑
         :param saveAllImages:是否保存每张截图,若为False,则仅保存匹配失败的截图
-                        文件名格式: {cacheDir}/{deviceId}/{imgPrefixName}_{time}_index_fromX_fromY_toX_toY_{appName}.png
+                        文件名格式: {cacheDir}/{deviceId}/{imgPrefixName}_index_fromX_fromY_toX_toY_{appName}.png
         :param autoSwitchPointerLocation: 仅对android有效, 是否自动关闭指针位置(避免ocr时被干扰), 识别结束后自动恢复初始状态
         :param saveDirPath: 截图保存的目录,若为空,则尝试保存到 {self.cacheDir} 中
         :param imgPrefixName: 截图前缀名称
@@ -467,7 +494,11 @@ class BaseAir(AbsWoolProject):
             if screen is None:
                 self.logError(f'findTextByOCR fail as screenshot return null')
                 return None, '', None
-            img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图, 整体耗时0.15s左右
+
+            if fromX == 0 and fromY == 0 and toX == sWidth and toY == sHeight:
+                img = screen
+            else:
+                img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图, 整体耗时0.15s左右
 
             cnocr_result = self.cnocrImpl.ocr(img)  # cnocr进行解析, 实测耗时大概0.2s
             posList, ocr_str_result, targetDict = self.findTextByCnOCRResult(cnocr_result, targetText=targetText,
@@ -487,8 +518,7 @@ class BaseAir(AbsWoolProject):
             saveImg: bool = not CommonUtil.isNoneOrBlank(saveDirPath) and (saveAllImages or not hit)
             if saveImg:  # 保存图片还是耗时的0.8s左右, 占据方法的大头,因此默认只对失败的部分做截图
                 loopStartTs = time.time()
-                imgName = '%s_%s_%s_%s_%s_%s_%s.png' % (
-                    imgPrefixName, i, fromX, fromY, toX, toY, TimeUtil.getTimeStr(fmt='%m%d_%H%M%S'))
+                imgName = '%s_%s_%s_%s_%s_%s' % (imgPrefixName, i, fromX, fromY, toX, toY)
                 img_path = self.saveImage(img, imgName=imgName)
                 self.logWarn(
                     f'findTextByOCR loopCheck {i} saveImg duration={time.time() - loopStartTs},hit={hit},'
@@ -538,8 +568,7 @@ class BaseAir(AbsWoolProject):
             targetTextPattern = re.compile(targetText, re.IGNORECASE) if ignoreCase else re.compile(targetText)
         return targetTextPattern
 
-    def saveScreenShot(self, imgName: str, fromX: int = 0, fromY: int = 0, toX: int = -1, toY: int = -1,
-                       autoAppendDateInfo: bool = False) -> str:
+    def saveScreenShot(self, imgName: str, fromX: int = 0, fromY: int = 0, toX: int = -1, toY: int = -1) -> str:
         """
         屏幕截图后, 截取区域图像并保存到文件中, 若 toX/toY 小于等于0, 则表示到屏幕右下角位置
         截图保存在 self.cacheDir 目录下, 若未指定目录,则保存失败
@@ -553,14 +582,13 @@ class BaseAir(AbsWoolProject):
         screen = self.snapshot()  # 截屏
         img = aircv.crop_image(screen, (fromX, fromY, toX, toY))  # 局部截图
         imgNameOpt = '' if CommonUtil.isNoneOrBlank(imgName) else ('%s_' % imgName)
-        if CommonUtil.isNoneOrBlank(imgName) or autoAppendDateInfo:
-            timeStr = TimeUtil.getTimeStr(fmt='%m%d_%H%M%S')
-            imgName = '%s%s_%s_%s_%s_%s' % (imgNameOpt, timeStr, fromX, fromY, toX, toY)
+        if CommonUtil.isNoneOrBlank(imgName):
+            imgName = '%s_%s_%s_%s_%s' % (imgNameOpt, fromX, fromY, toX, toY)
         return self.saveImage(img, imgName)
 
     # @log_time_consume(exclude_params=['img', 'dirPath', 'autoAppendDateInfo', 'replaceFlag'])
     def saveImage(self, img, imgName: str = None, dirPath: str = None,
-                  append_date_time: bool = True, replaceFlag: str = '_') -> str:
+                  append_date_time: bool = True, replaceFlag: str = '_', auto_create_sub_dir: bool = True) -> str:
         """
         保存图片到 {cacheDir} 中
         实测耗时大概0.8s左右
@@ -569,6 +597,7 @@ class BaseAir(AbsWoolProject):
         :param dirPath: 图片要保存的目录,未未指定,则使用 self.cacheDir,若仍为空,则保存失败
         :param append_date_time: 最终的图片名称上是否追加时间信息, 默认为True
         :param replaceFlag: 若 imageName 中存在无效字符时,替代为该字符串
+        :param auto_create_sub_dir: android时有效,表示是否创建子目录存储图片,路径: {dirPath}/{model}_{deviceId}/{imgName}
         :return str: 最终保存的路径名, 若为空,则表示保存失败
         """
         if img is None:
@@ -581,6 +610,7 @@ class BaseAir(AbsWoolProject):
             return ''
         dirPath = FileUtil.recookPath(dirPath)
 
+        model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId) if self.isAndroid() else ''
         if CommonUtil.isNoneOrBlank(imgName):
             append_date_time = True
             imgName = ''
@@ -597,8 +627,10 @@ class BaseAir(AbsWoolProject):
             FileUtil.createFile('%s/' % dirPath)
 
             if self.isAndroid():
-                model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
-                img_path = '%s/%s_%s/%s_%s.png' % (dirPath, model, self.deviceId, imgName, self.appName)
+                if auto_create_sub_dir:
+                    img_path = f'{dirPath}/{model}_{self.deviceId}/{imgName}_{self.appName}.png'
+                else:
+                    img_path = f'{dirPath}/{imgName}_{self.appName}_{model}_{self.deviceId}.png'
             else:
                 img_path = '%s/%s.png' % (dirPath, imgName)
             img_path = img_path.replace('_.png', ".png").replace(".png.png", ".png")

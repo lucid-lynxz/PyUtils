@@ -8,7 +8,7 @@ from typing import Union
 
 from base.TaskManager import taskWrapper, TaskLifeCycle
 from util.CommonUtil import CommonUtil
-from wool_tasks.base_airtest import AbsBaseAir4Android
+from wool_tasks.base_airtest_4_android_impl import AbsBaseAir4Android
 
 """
 赚钱页面任务分解

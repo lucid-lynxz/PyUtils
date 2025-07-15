@@ -564,6 +564,7 @@ class AdbUtil(object):
     def tapByTuple(self, posTuple: tuple, deviceId: str = None,
                    times: int = 1, sleepSec: float = 2, printCmdInfo: bool = False) -> bool:
         if posTuple is None or len(posTuple) < 2:
+            print(f'tapByTuple fail as posTuple is None or len(posTuple) < 2, posTuple: {posTuple}')
             return False
         return self.tap(posTuple[0], posTuple[1], deviceId, times=times, sleepSec=sleepSec, printCmdInfo=printCmdInfo)
 

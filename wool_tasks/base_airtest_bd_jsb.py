@@ -14,7 +14,7 @@ if proj_dir not in sys.path:
 import random
 from airtest.core.api import *
 
-from wool_tasks.base_airtest import AbsBaseAir4Android
+from wool_tasks.base_airtest_4_android_impl import AbsBaseAir4Android
 from util.CommonUtil import CommonUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
@@ -50,7 +50,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
         cash: float = 0  # 现金数,单位: 元
         earnName, earnPageKeyword = self.get_earn_monkey_tab_name()
         if not self.check_if_in_earn_page(ocrResList=ocrResList) and not self.goto_home_earn_tab():  # 跳转去赚钱页面
-            img_path = self.saveScreenShot('get_earning_info_fail', autoAppendDateInfo=True)
+            img_path = self.saveScreenShot('get_earning_info_fail')
             self.logWarn(f'get_earning_info fail as goto_home_sub_tab fail,img_path={img_path}')
             return coin, cash
 
@@ -61,7 +61,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
             self.swipeUp(minDeltaY=600)  # 上滑一次
             self.check_dialog()
             # self.closeDialog()
-            self.saveScreenShot('查看收益全图', autoAppendDateInfo=True)
+            self.saveScreenShot('查看收益全图')
             _, ocrResult, _ = self.findTextByOCR('', height=ocrHeight, maxSwipeRetryCount=1, imgPrefixName='查看收益_')
             if CommonUtil.isNoneOrBlank(ocrResult):
                 self.logWarn('get_earning_info fail as ocrResult is empty')
@@ -91,7 +91,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
                 self.check_dialog(breakIfHitText=earnPageKeyword)  # 每次都尝试检测一次弹框,可能会有升级等弹框
                 self.sleep(5)
             else:  # 当前有可能跳转到其他子集页面了,导致无法识别到收益情况,进行重启重试
-                img_path = self.saveScreenShot('get_earning_info_fail', autoAppendDateInfo=True)
+                img_path = self.saveScreenShot('get_earning_info_fail')
                 # 重启app
                 self.startApp(forceRestart=True,
                               msg=f'get_earning_info 失败,当前可能位于其他页面,见截图 img_path={img_path}')
@@ -136,7 +136,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
             self.swipeUp()
             super().onRun(**kwargs)  # 刷视频
         else:
-            img_path = self.saveScreenShot('', autoAppendDateInfo=True)
+            img_path = self.saveScreenShot('')
             msg = '%s 挂机失败\napp:%s\ndeviceId=%s\n未能正确回到首页信息流页面\nimg:%s' % (
                 model, self.pkgName if CommonUtil.isNoneOrBlank(self.appName) else self.appName, self.deviceId,
                 img_path)
@@ -548,8 +548,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
                         self.sleep(5)  # 等待启动完成
                         continue
 
-                    img_path = self.saveScreenShot('goto_home_sub_tab_start_%s_%s_%s' % (name, index, valid),
-                                                   autoAppendDateInfo=True)
+                    img_path = self.saveScreenShot('goto_home_sub_tab_start_%s_%s_%s' % (name, index, valid))
                     self.logWarn(f'goto_home_sub_start {valid} name={name},prefixText={prefixText},'
                                  f'img_path={img_path},ocrResult={ocrResStr}')
                     # 优先检测是否已在目标页面了, 若是则不用再做跳转
@@ -606,7 +605,7 @@ class BDJsbBaseAir(AbsBaseAir4Android):
         except Exception as e:
             traceback.print_exc()
             tracebackMsg = traceback.format_exc()
-            img_path = self.saveScreenShot('exception_goto_sub_tab_%s' % name, autoAppendDateInfo=True)
+            img_path = self.saveScreenShot('exception_goto_sub_tab_%s' % name)
             model = self.adbUtil.getDeviceInfo(self.deviceId).get('model', self.deviceId)
             msg = '%s %s %s\ngoto_home_sub_tab exception name=%s,prefixText=%s,targetPageKeyword=%s\nimg_path=%s\ntracebackMsg=%s' % (
                 model, self.appName, self.deviceId, name, prefixText, targetPageKeyword, img_path, tracebackMsg)

@@ -132,15 +132,19 @@ class BaseAir4Windows(BaseAir):
         """
         text(content, enter, **kwargs)
 
-    # @log_time_consume()
-    def touch(self, v, tip: str = '', times: int = 1, **kwargs):
+    def touch(self, v, tip: str = '', times: int = 1, **kwargs) -> bool:
         """
         点击操作
         :param v: 点击的坐标
         :param tip: 提示信息, 仅用于打印日志
         :param times: 点击次数, 默认1次
         """
-        touch(v, times, **kwargs)
+        if isinstance(v, (list, tuple)) and len(v) < 2:
+            print(f'touch fail as pos iv {v}')
+            return False
+        click_pos = touch(v, times, **kwargs)
+        # print(f'touch({v})={click_pos}')
+        return click_pos is not None and len(click_pos) >= 2
 
 
 if __name__ == '__main__':

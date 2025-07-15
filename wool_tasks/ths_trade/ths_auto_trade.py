@@ -65,10 +65,15 @@ class THSTrader(BaseAir4Windows):
         # 尝试从缓存文件中读取数据
         self.pos_cache_file = f'{cacheDir}/pos_cache.txt'  # 缓存各按钮位置信息, 对于同一台设备, 不需要每次都重新获取
         line_list = FileUtil.readFile(self.pos_cache_file)
+        self.need_find_pos: bool = len(line_list) <= 3  # 是否需要重新获取各坐标信息
         for line in line_list:
+            if '__slots__:' in line:
+                continue
+
             # 分离属性名和属性值
             key, pos_str = line.split(':')
             if CommonUtil.isNoneOrBlank(pos_str):
+                self.need_find_pos = True
                 continue
             # 将属性值按逗号分割并转换为元组
             pos_tuple = tuple(map(int, map(float, pos_str.split(','))))
@@ -140,6 +145,15 @@ class THSTrader(BaseAir4Windows):
         self.bs_confirm_btn = self.calcCenterPos(pos)  # 确定 买入/卖出 按钮
         CommonUtil.printLog(f'买入/卖出 按钮: {self.bs_confirm_btn}')
 
+        self.need_find_pos = (CommonUtil.isNoneOrBlank(self.bs_code_pos)
+                              or CommonUtil.isNoneOrBlank(self.bs_spinner_pos)
+                              or CommonUtil.isNoneOrBlank(self.bs_price_pos)
+                              or CommonUtil.isNoneOrBlank(self.bs_amount_pos)
+                              or CommonUtil.isNoneOrBlank(self.bs_rest_btn)
+                              or CommonUtil.isNoneOrBlank(self.bs_confirm_btn))
+        CommonUtil.printLog(f'_find_bs_pos end need_find_pos={self.need_find_pos}')
+        self.save_pos_info()  # 将位置信息缓存到文件中
+
     last_msg: str = ''
 
     @log_time_consume()
@@ -170,7 +184,7 @@ class THSTrader(BaseAir4Windows):
         self.key_press('F2')  # '卖出[F2]'
         self.key_press('F6')  # '持仓[F6]'
 
-        if self.position_rect is None:
+        if self.need_find_pos or self.position_rect is None:
             self.saveImage(self.snapshot(), "持仓信息总览")
 
             pos, ocrResStr, ocrResList = self.findTextByOCR('证券代码', img=self.snapshot_img, prefixText='持仓',
@@ -189,9 +203,6 @@ class THSTrader(BaseAir4Windows):
 
             # 查找 买入/卖出 输入框的位置
             self._find_bs_pos(ocrResList)
-
-            # 将位置信息缓存到文件中
-            self.save_pos_info()
         else:
             self.refresh()  # 刷新数据
             self.snapshot()  # 重新截图
@@ -301,9 +312,8 @@ class THSTrader(BaseAir4Windows):
             # CommonUtil.printLog(f'刷新pos:{pos}')
             # CommonUtil.printLog(f'刷新ocrResList:{ocrResList}')
             self.refresh_pos = self.calcCenterPos(pos)
-        # self.touch(self.refresh_pos)
-        self.key_press('F5')  # 刷新快捷键F5
-        sleep(0.5)
+        # self.touch(self.refresh_pos) # 耗时1s左右,且光标附近可能会弹出按钮tip信息提示,遮盖其他内容,导致后续ocr识别异常
+        self.key_press('F5')  # 刷新快捷键F5 速度大概0.1s,
 
     @log_time_consume(separate=True)
     def deal(self, code: str, price: float, amount: float) -> bool:
