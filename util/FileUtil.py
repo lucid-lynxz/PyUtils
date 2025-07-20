@@ -15,10 +15,10 @@ T = TypeVar('T')  # 泛型类型
 
 class FileUtil(object):
     @staticmethod
-    def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = '') -> str:
+    def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = None) -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠
-        :param path: 路径字符串
+        :param path: 路径字符串, 支持绝对路径和部分相对路径等特殊格式, 比如: './a.txt'  '../b.txt'  '~/c.txt'
         :param forceEnableLongPath: win下是否强制启用长目录路径格式
         :param replaceBlank: 回车空格字符要替换为指定的值, None表示不处理
         :return: 处理后的路径,为避免空指针,返回值均为非None
@@ -29,6 +29,9 @@ class FileUtil(object):
         if path.startswith("~"):
             path = '%s%s' % (os.path.expanduser("~"), path[1:])
             return FileUtil.recookPath(path)
+
+        if path.startswith('.'):
+            path = os.path.abspath(path)
 
         path = path.replace("\\", "/").replace("//", "/")
         if replaceBlank is not None:

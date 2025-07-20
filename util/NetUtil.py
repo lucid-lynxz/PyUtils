@@ -16,7 +16,7 @@ class NetUtil(object):
     robot_dict: dict = dict()  # 默认的机器人配置信息, 用于发送通知,具体字段见 push_to_robot 方法
 
     @staticmethod
-    def push_to_robot(content: str, configDict: dict = None, printLog: bool = False,
+    def push_to_robot(content: str, configDict: dict = None, printLog: bool = True,
                       with_time: bool = True) -> bool:
         """
         自动按需发送普通文本给钉钉/飞书自定义机器人

@@ -31,7 +31,7 @@ class XLUtil(IExcelUtil):
         self.workBookDataOnly = None
         # XLUtil.justOpenByExcel(self.filePath)
         self.reload()
-        print("xlutil init finished %s" % self.filePath)
+        CommonUtil.printLog("xlutil init finished %s" % self.filePath)
 
     def reload(self):
         self.save()
@@ -55,9 +55,10 @@ class XLUtil(IExcelUtil):
         """
         activeName = self.workBook.active.title  # 当前sheet名
         activeIndex = self.getAllSheetNames().index(activeName)
-        # print("activeName=%s,index=%s,title=%s" % (activeName, activeIndex, title))
+        # CommonUtil.printLog("activeName=%s,index=%s,title=%s" % (activeName, activeIndex, title))
         newSheet = self.workBook.create_sheet(title, activeIndex + 1 if afterActive else max(0, activeIndex))
-        print("addSheet title=%s, afterActive=%s,activeName=%s" % (newSheet.title, afterActive, activeName))
+        CommonUtil.printLog(
+            "addSheet title=%s, afterActive=%s,activeName=%s" % (newSheet.title, afterActive, activeName))
         if autoSave:
             self.save()
         return newSheet
@@ -165,7 +166,7 @@ class XLUtil(IExcelUtil):
                             mergeCellsInSrcRange.add("%s%s:%s%s" % (
                                 XLUtil.colNum2Str(mCellRange.min_col), mCellRange.min_row,
                                 XLUtil.colNum2Str(mCellRange.max_col), mCellRange.max_row))
-        # print(mergeCellsInSrcRange)
+        # CommonUtil.printLog(mergeCellsInSrcRange)
         return mergeCellsInSrcRange
 
     @staticmethod
@@ -285,8 +286,11 @@ class XLUtil(IExcelUtil):
         :param filePath:保存路径,若传入None,则表示保存,否则是另存
         :return:
         """
-        if self.workBook is not None:
-            self.workBook.save(self.filePath if filePath is None else filePath)
+        try:
+            if self.workBook is not None:
+                self.workBook.save(self.filePath if filePath is None else filePath)
+        except Exception as e:
+            CommonUtil.printLog(f"XLUtil.save error: {e}")
 
     def close(self, save: bool = True, filePath: str = None):
         """
@@ -348,7 +352,7 @@ class XLUtil(IExcelUtil):
         return maxRow
 
     @staticmethod
-    def takeShot(xlPath: str, sheetName: str, area: str, imgPath: str = None, continueMode: bool = False) -> tuple:
+    def take_shot(xlPath: str, sheetName: str, area: str, imgPath: str = None, continueMode: bool = False) -> tuple:
         """
         python excel截图， 参考： https://blog.csdn.net/weixin_30378623/article/details/96566903
         需要安装win库：
@@ -361,103 +365,55 @@ class XLUtil(IExcelUtil):
         :param continueMode: 若为True,则表示若图片已经存在,则不重新截图
         :return: (bool,str) 依次表示是否截图成功，以及图片的位置
         """
-        if FileUtil.isFileExist(imgPath) and continueMode:
-            CommonUtil.printLog(f"图片已经存在，不重新截图: {imgPath}")
-            return True, imgPath
-
         # 仅系统是win时才可用
         import platform
         if "Windows" != platform.system():
             return False, imgPath
 
-        from win32com.client import DispatchEx
-        # import pythoncom
-        from PIL import ImageGrab
-        # import uuid
-
-        excel = None
-        wb = None
+        from util.ExcelScreenShotUtil import ExcelTakeShotUtil
         tXlPath = os.path.abspath(xlPath)
         imgPath = FileUtil.recookPath(imgPath)
 
-        maxRetryCnt = 3  # 重试次数限制
-        for retryCnt in range(maxRetryCnt):
-            try:
-                # pythoncom.CoInitialize()  # excel多线程相关
-                excel = DispatchEx("Excel.Application")  # 启动excel
-                excel.Visible = False  # 可视化
-                excel.DisplayAlerts = False  # 是否显示警告
-                wb = excel.Workbooks.Open(tXlPath)  # 打开excel
-                ws = wb.Worksheets(sheetName)  # 选择sheet
-                print(f"imgPath={imgPath}")
-                print(' 正在截图区域:%s, 表格名:%s, 图片名:%s' % (
-                    area, sheetName, 'unknown' if imgPath is None else os.path.basename(imgPath)))
-
-                ws.Select()  # 选中激活某个工作表, 避免由于可能多个工作表被同时被选中，导致无法复制/粘贴单元格区域
-                ws.Range(area).CopyPicture(Format=2)  # 复制图片区域
-                # time.sleep(1)
-                # # ws.Paste()  # 粘贴
-                # ws.Paste(ws.Range('B1'))  # 将图片移动到具体位置
-                # name = str(uuid.uuid4())  # 重命名唯一值
-                # new_shape_name = name  # name[:6]
-                # excel.Selection.ShapeRange.Name = new_shape_name  # 将刚刚选择的Shape重命名，避免与已有图片混淆
-                # ws.Shapes(new_shape_name).Copy()  # 选择图片
-                # # img = ws.pictures[len(ws.pictures) - 1]
-                # # img.Copy()
-                # time.sleep(1)  # 延迟下， 不然img为空
-                img = ImageGrab.grabclipboard()  # 获取剪贴板的图片数据
-
-                if img is None:
-                    print("剪贴板img为None,原始 pic=%s" % img)
-                    return False, imgPath
-                else:
-                    img.save(imgPath, quality=95)  # 保存图片
-                    return True, imgPath
-            except BaseException as e:
-                print("截图发生异常,重试 %s/%s %s" % ((retryCnt + 1), maxRetryCnt, e))
-                # return False, imgPath
-            finally:
-                if wb is not None:
-                    wb.Close(SaveChanges=0)  # 关闭工作薄，不保存
-
-                if excel is not None:
-                    excel.Quit()  # 退出excel
-                # pythoncom.CoUninitialize()
-        return False, imgPath
+        _shot_util = ExcelTakeShotUtil(tXlPath, sheetName)
+        result = _shot_util.take_shot(area, imgPath, continueMode)
+        _shot_util.close()
+        return result
 
 
 if __name__ == "__main__":
     xlPath = "/Users/lynxz/Desktop/Book1.xlsx"
     xl_util = XLUtil(xlPath)
     sheetTitle = "测试"
-    print(xl_util.workBook[sheetTitle]["F5"].value)
-    print(xl_util.workBookDataOnly[sheetTitle]["F5"].value)
+    CommonUtil.printLog(xl_util.workBook[sheetTitle]["F5"].value)
+    CommonUtil.printLog(xl_util.workBookDataOnly[sheetTitle]["F5"].value)
 
-    print(xl_util.getAllSheetNames())
+    CommonUtil.printLog(xl_util.getAllSheetNames())
     sheet = xl_util.workBook.active  # 当前活动工作表
-    print("activeSheet=%s,rows=%s, columns=%s,maxRowOfColumnA=%s" % (sheet.title, sheet.rows,
-                                                                     sheet.columns,
-                                                                     xl_util.getMaxRowNumOfColumn('A')))  # 行列数据生成器
-    print("maxRow=%s,maxColumns=%s" % (sheet.max_row, sheet.max_column))  # 表行数/列数 (数据区域)
-    print("sheet merge cells %s" % sheet.merged_cells.ranges)
+    CommonUtil.printLog("activeSheet=%s,rows=%s, columns=%s,maxRowOfColumnA=%s" % (sheet.title, sheet.rows,
+                                                                                   sheet.columns,
+                                                                                   xl_util.getMaxRowNumOfColumn(
+                                                                                       'A')))  # 行列数据生成器
+    CommonUtil.printLog("maxRow=%s,maxColumns=%s" % (sheet.max_row, sheet.max_column))  # 表行数/列数 (数据区域)
+    CommonUtil.printLog("sheet merge cells %s" % sheet.merged_cells.ranges)
 
     # 迭代获取行数据
     for row in sheet.rows:
         line = [cell.value for cell in row]
-        print(line)
+        CommonUtil.printLog(line)
         break
 
-    print("A1.value=%s" % sheet["A1"].value)
+    CommonUtil.printLog("A1.value=%s" % sheet["A1"].value)
 
     # column字母转数字
-    print("colStr2Num A=%s, a=%s, A1=%s, a1=%s, AA=%s, aa=%s" % (xl_util.getColNum("A"), xl_util.getColNum("a"),
-                                                                 xl_util.getColNum("A1"), xl_util.getColNum("a1"),
-                                                                 xl_util.getColNum("AA"), xl_util.getColNum("aa")))
+    CommonUtil.printLog(
+        "colStr2Num A=%s, a=%s, A1=%s, a1=%s, AA=%s, aa=%s" % (xl_util.getColNum("A"), xl_util.getColNum("a"),
+                                                               xl_util.getColNum("A1"), xl_util.getColNum("a1"),
+                                                               xl_util.getColNum("AA"), xl_util.getColNum("aa")))
     # column数字转字母
-    print("colNum2Str 1=%s, 27=%s" % (xl_util.colNum2Str(1), xl_util.colNum2Str(27)))
+    CommonUtil.printLog("colNum2Str 1=%s, 27=%s" % (xl_util.colNum2Str(1), xl_util.colNum2Str(27)))
 
     # 提取行号
-    print("getRowNum A1=%s, AA138=%s" % (xl_util.getRowNum("A1"), xl_util.getRowNum("AA138")))
+    CommonUtil.printLog("getRowNum A1=%s, AA138=%s" % (xl_util.getRowNum("A1"), xl_util.getRowNum("AA138")))
 
     # 合并单元格判断
     sheetTitle = "综治、禁毒、卫生协管、安全协管、党建协管（不含陈舜乐）"
@@ -469,17 +425,17 @@ if __name__ == "__main__":
     # xl_util.workBook[dstSheetTitle].merge_cells(range_string="B1:B10")
     # xl_util.save()
 
-    # print("getColRowIndex(A1)=%d,%d" % XLUtil.getColRowIndex("A1"))
-    # print("getColRowIndex(A1:z3)=%d,%d" % XLUtil.getColRowIndex("A1:Z3"))
-    # print("getColRowIndex(A1,A2)=%d,%d" % XLUtil.getColRowIndex("A1,A2"))
-    # print("getColRowIndex(A1:Z3,A2:B5)=%d,%d" % XLUtil.getColRowIndex("A1:Z3,A2:B5"))
-    # print("shiftColRowIndex(A1)=%s" % XLUtil.shiftColRowIndex("A1", 1, 1))
-    # print("shiftColRowIndex(A1:Z1)=%s" % XLUtil.shiftColRowIndex("A1:Z1", 1, 1))
+    # CommonUtil.printLog("getColRowIndex(A1)=%d,%d" % XLUtil.getColRowIndex("A1"))
+    # CommonUtil.printLog("getColRowIndex(A1:z3)=%d,%d" % XLUtil.getColRowIndex("A1:Z3"))
+    # CommonUtil.printLog("getColRowIndex(A1,A2)=%d,%d" % XLUtil.getColRowIndex("A1,A2"))
+    # CommonUtil.printLog("getColRowIndex(A1:Z3,A2:B5)=%d,%d" % XLUtil.getColRowIndex("A1:Z3,A2:B5"))
+    # CommonUtil.printLog("shiftColRowIndex(A1)=%s" % XLUtil.shiftColRowIndex("A1", 1, 1))
+    # CommonUtil.printLog("shiftColRowIndex(A1:Z1)=%s" % XLUtil.shiftColRowIndex("A1:Z1", 1, 1))
     #
     # xl_util.addSheet(afterActive=True) # 在当前表格后新增一个表格
     # xl_util.addSheet(afterActive=False) # 在当前表格前插入一个表格
-    # print(xl_util.getAllSheetNames()) # 获取所有表格名
+    # CommonUtil.printLog(xl_util.getAllSheetNames()) # 获取所有表格名
 
-    print("A3=%s" % xl_util.getCellValue(sheetTitle, "A3"))
-    print("A5=%s" % xl_util.getCellValue(sheetTitle, "A5"))
-    print("Y5=%s" % xl_util.getCellValue(sheetTitle, "Y5"))
+    CommonUtil.printLog("A3=%s" % xl_util.getCellValue(sheetTitle, "A3"))
+    CommonUtil.printLog("A5=%s" % xl_util.getCellValue(sheetTitle, "A5"))
+    CommonUtil.printLog("Y5=%s" % xl_util.getCellValue(sheetTitle, "Y5"))
