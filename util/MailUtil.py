@@ -4,43 +4,64 @@
 import email.encoders
 import os.path
 import smtplib
+import imaplib
+from base64 import b64decode
+import re
 from email.header import Header
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
+from email import message_from_bytes
 from util.CommonUtil import CommonUtil
+
+
+class MailBean(object):
+    mail_id: str = ''  # 邮件id
+    subject: str = ''  # 邮件主题
+    sender: str = ''  # 发件人
+    receiver: str = ''  # 收件人
+    date: str = ''  # 日期
+    content: str = ''  # 邮件内容
 
 
 class MailUtil(object):
     """
     smtp发送邮件工具类
     参考: https://www.liaoxuefeng.com/wiki/1016959663602400/1017790702398272
+    https://wx.mail.qq.com/list/readtemplate?name=app_intro.html#/agreement/authorizationCode
     1. 通过 __init__ 方法传入发件人信息,包括发件邮件地址,密码,smtp服务器信息等
     2. 通过 composeTextMsg 方法构造简单的文本内容
     3. 发送邮件: sendTo
     4. 关闭服务器链接: quit
+    5. 监听新邮件并读取内容: listen_and_read_new_mails
     """
 
     def __init__(self, address: str, pwd: str,
-                 smtpServer: str = "smtp.qq.com",
+                 smtpServer: str = "smtp.qq.com",  # 发送邮件使用
                  smtpPort: int = 587,
+                 imapServer: str = "imap.qq.com",  # 收取邮件使用
+                 imapPort: int = 993,
                  debugLevel: int = 0):
         """
         :param address:  发件人邮件地址
         :param pwd: 密码, qq邮箱使用的授权码,文档: https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=1001256
         :param smtpServer: smtp服务器地址, qq邮箱是: smtp.qq.com,  文档:https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=167
         :param smtpPort: smtp服务器端口,qq邮箱的默认端口是 587
+        :param imapServer: imap服务器地址, qq邮箱是: imap.qq.com
+        :param imapPort: imap服务器端口, qq邮箱的默认端口是 993
         :param debugLevel: 打印调试信息 1-显示所有smtp交互日志
         """
         self.fromMail = address
         # 使用 smtp() 接口可能会报错: Connection unexpectedly closed, 改为: smtp_ssl()
         # self.server = smtplib.SMTP(smtpServer, smtpPort)  # SMTP协议默认端口是25
-        self.server = smtplib.SMTP_SSL(smtpServer)
-        self.server.set_debuglevel(debugLevel)
-        self.server.login(address, pwd)
+        self.smtpServer = smtplib.SMTP_SSL(smtpServer)
+        self.smtpServer.set_debuglevel(debugLevel)
+        self.smtpServer.login(address, pwd)
         self.mineMsg: MIMEMultipart = MIMEMultipart()  # 邮件对象
         self.attachCnt: int = 0  # 附件个数
+        self.imapServer = imaplib.IMAP4_SSL(imapServer, imapPort)
+        self.imapServer.login(address, pwd)
 
     @staticmethod
     def _format_addr(s: str):
@@ -144,32 +165,228 @@ class MailUtil(object):
         self.mineMsg['To'] = ','.join(strToList)  # 生成收件人信息, 转换为 str, 逗号分隔
 
         try:
-            self.server.sendmail(self.fromMail, toMails, self.mineMsg.as_string())
+            self.smtpServer.sendmail(self.fromMail, toMails, self.mineMsg.as_string())
             return True
         except Exception as e:
-            print(' 发送邮件给 %s 失败, 错误信息: %s' % (toMails, e))
+            CommonUtil.printLog(' 发送邮件给 %s 失败, 错误信息: %s' % (toMails, e))
             return False
 
     def quit(self):
-        self.server.quit()
+        self.quit_imap()
+        self.quit_smtp()
+
+    def quit_imap(self):
+        self.imapServer.logout()
+
+    def quit_smtp(self):
+        self.smtpServer.quit()
+
+    def list_folders(self, print_log: bool = False) -> list:
+        """
+        列出所有可用的文件夹
+        @return 文件夹名列表
+        """
+        _result = []
+        status, folders = self.imapServer.list()
+        if status == 'OK':
+            if print_log:
+                CommonUtil.printLog("可用文件夹:")
+            for folder in folders:
+                decode_name = MailUtil.modified_utf7_decode(folder)
+                if print_log:
+                    CommonUtil.printLog(f"{folder} ---> {decode_name}")
+                _result.append(decode_name)
+            return _result
+        return _result
+
+    def fetch_mails(self, folder_name: str = 'INBOX') -> list:
+        """
+        获取欧指定文件夹中的邮件
+        :param folder_name: 文件夹名称，默认为INBOX, 即收件箱
+                            以QQ邮箱为例, 假设有个自定义文件夹为:'测试', 实际名称应该是:'其他文件夹/测试',具体可通过 list_folders() 方法查看
+        :return 邮件对象列表, 列表元素类型是: MailBean
+        """
+        _result = []
+        try:
+            # 处理中文文件夹名称 - 使用 modified UTF-7 编码
+            if folder_name != 'INBOX':
+                # 将 Unicode 字符串转换为 Modified UTF-7 编码
+                folder_bytes = folder_name.encode('utf-7').replace(b'+', b'&')
+                folder_spec = f'"{folder_bytes.decode("ascii")}"'
+                status, _ = self.imapServer.select(folder_spec)
+            else:
+                status, _ = self.imapServer.select('INBOX')
+
+            if status != 'OK':
+                CommonUtil.printLog(f"无法选择文件夹: {folder_name}")
+                return _result
+
+            # 搜索邮件
+            status, messages = self.imapServer.search(None, 'ALL')
+            if status == 'OK':
+                message_ids = messages[0].split()
+                if not message_ids:
+                    CommonUtil.printLog(f"文件夹 '{folder_name}' 中没有邮件")
+                    return _result
+
+                CommonUtil.printLog(f"读取文件夹 '{folder_name}' 中的 {len(message_ids)} 封邮件")
+                for message_id in message_ids:
+                    status, msg_data = self.imapServer.fetch(message_id, '(RFC822)')
+                    if status == 'OK':
+                        raw_email = msg_data[0][1]
+                        msg = message_from_bytes(raw_email)
+
+                        # 解码主题和发件人
+                        subject = self._decode_mime_header(msg['Subject'])
+                        from_addr = self._decode_mime_header(msg['From'])
+                        date = msg['Date']
+
+                        # CommonUtil.printLog(f"\n邮件 {message_id.decode('utf-8')}:")
+                        # CommonUtil.printLog(f"主题: {subject}")
+                        # CommonUtil.printLog(f"发件人: {from_addr}")
+                        # CommonUtil.printLog(f"日期: {date}")
+
+                        # 解析邮件内容
+                        content = self._parse_email_content(msg)
+                        # CommonUtil.printLog(f"内容: {content[:300]}...")  # 只显示前300个字符
+
+                        bean = MailBean()
+                        bean.mail_id = message_id.decode('utf-8')
+                        bean.subject = subject
+                        bean.sender = from_addr
+                        bean.receiver = msg['To']
+                        bean.date = date
+                        bean.content = content
+
+                        _result.append(bean)
+            else:
+                CommonUtil.printLog("搜索邮件失败")
+        except Exception as e:
+            CommonUtil.printLog(f"读取邮件时出错: {e}")
+        return _result
+
+    @staticmethod
+    def _parse_email_content(msg):
+        """解析邮件内容，处理多部分邮件"""
+        content = ""
+        content_type = ""  # 邮件内容类型, 比如 比如 html 或者 plainText
+        charset = None  # 邮件内容编码
+
+        # 检查邮件是否为多部分
+        if msg.is_multipart():
+            # 遍历所有部分
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get('Content-Disposition'))
+
+                try:
+                    charset = part.get_content_charset() or 'utf-8'
+                except:
+                    charset = 'utf-8'
+
+                # 跳过附件
+                if 'attachment' in content_disposition:
+                    continue
+
+                # 处理文本部分
+                if content_type in ['text/plain', 'text/html']:
+                    try:
+                        part_content = part.get_payload(decode=True).decode(charset, errors='ignore')
+                        if content_type == 'text/plain':
+                            content += part_content
+                        # 如需同时处理HTML，可添加相应逻辑
+                    except Exception as e:
+                        CommonUtil.printLog(f"解码邮件部分失败: {e}")
+        else:
+            # 单部分邮件
+            content_type = msg.get_content_type()
+            try:
+                charset = msg.get_content_charset() or 'utf-8'
+                content = msg.get_payload(decode=True).decode(charset, errors='ignore')
+            except Exception as e:
+                CommonUtil.printLog(f"解码单部分邮件失败: {e}")
+        return content.strip()
+
+    @staticmethod
+    def _decode_mime_header(header):
+        """解码MIME编码的邮件头部"""
+        if not header:
+            return ""
+
+        from email.header import decode_header
+        decoded_parts = []
+        for part, charset in decode_header(header):
+            if isinstance(part, bytes):
+                if charset:
+                    try:
+                        decoded_parts.append(part.decode(charset))
+                    except UnicodeDecodeError:
+                        # 尝试其他常见编码
+                        try:
+                            decoded_parts.append(part.decode('utf-8'))
+                        except UnicodeDecodeError:
+                            decoded_parts.append(part.decode('gb18030', errors='replace'))
+                else:
+                    # 没有指定编码时，尝试使用utf-8
+                    try:
+                        decoded_parts.append(part.decode('utf-8'))
+                    except UnicodeDecodeError:
+                        decoded_parts.append(part.decode('gb18030', errors='replace'))
+            else:
+                decoded_parts.append(part)
+
+        return "".join(decoded_parts)
+
+    @staticmethod
+    def modified_utf7_decode(s):
+        """
+        将修改后的 UTF-7 编码字符串转换为普通的 Unicode 字符串。这种编码格式常见于 IMAP 协议中，特别是在处理包含非 ASCII 字符的文件夹名称时
+        """
+
+        if isinstance(s, bytes):
+            s = s.decode('ascii', errors='ignore')
+
+        def decode_part(match):
+            encoded = match.group(1)
+            padding = (4 - len(encoded) % 4) % 4
+            encoded += '=' * padding
+            decoded = b64decode(encoded)
+            return decoded.decode('utf-16be')
+
+        return re.sub(r'&([^&-]*?)-', decode_part, s)
 
 
 if __name__ == "__main__":
-    mailUtil = MailUtil("4456xxxx@qq.com", "dflgfbxxxxxxxxx", "smtp.qq.com", 587, debugLevel=0)  # qq要求使用邮件授权码
+    mailUtil = MailUtil("4456xxxx@qq.com", "dflgfbxxxxxxxxx", "smtp.qq.com", 587, "imap.qq.com", 993, debugLevel=0)
 
     # 普通文本正文
     # msg = mailUtil.setMailMsg("你好,hello from python", "我是4456 <%s>" % mailUtil.fromMail, "测试python2")
 
     # 正文中插入图片, 测试后,该文件不会再显示再附件中(qq邮箱)
     # 1. 添加图片附件
-    cid = mailUtil.addAttachFile("/Users/Lynxz/Desktop/hello.png", "image")
-    # 2. 插入image标签
-    mailUtil.setMailMsg('<html><body><h1>你好,hello from python</h1>' +
-                        '<p><img src="cid:%s"></p>' % cid +
-                        '</body></html>', "我是4456 <%s>" % mailUtil.fromMail, "测试python 2")
+    # cid = mailUtil.addAttachFile("/Users/Lynxz/Desktop/hello.png", "image")
+    # # 2. 插入image标签
+    # mailUtil.setMailMsg('<html><body><h1>你好,hello from python</h1>' +
+    #                     '<p><img src="cid:%s"></p>' % cid +
+    #                     '</body></html>', "我是4456 <%s>" % mailUtil.fromMail, "测试python 2")
+    #
+    # # 添加普通文件附件
+    # # mailUtil.addAttachFile("/Users/***/Desktop/test.py", "file")
+    # # 发送到指定邮箱
+    # senderrs = mailUtil.sendTo(["360***@qq.com"])
 
-    # 添加普通文件附件
-    # mailUtil.addAttachFile("/Users/***/Desktop/test.py", "file")
-    # 发送到指定邮箱
-    senderrs = mailUtil.sendTo([" 3605xxxxx @q q.com "])
+    # 列出所有文件夹
+    CommonUtil.printLog(f'{mailUtil.list_folders()}')
+
+    # 读取指定文件夹中的邮件
+    # mail_list = mailUtil.fetch_mails("其他文件夹/尊嘉")
+    mail_list = mailUtil.fetch_mails('INBOX')
+    for mail in mail_list:
+        CommonUtil.printLog(f'邮件ID: {mail.mail_id}')
+        CommonUtil.printLog(f'主题: {mail.subject}')
+        CommonUtil.printLog(f'发件人: {mail.sender}')
+        CommonUtil.printLog(f'日期: {mail.date}')
+        CommonUtil.printLog(f'内容: {mail.content}')
+        CommonUtil.printLog('-----------------')
+
     mailUtil.quit()

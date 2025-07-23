@@ -65,6 +65,8 @@ class ClearLogImpl(BaseConfig):
         for regularPath in regularPathList:
             fullName, _, _ = FileUtil.getFileName(regularPath)
             parentDirPath = FileUtil.getParentPath(regularPath)
+            if fullName == '*' or fullName == '':
+                fullName = '.*'
 
             # 获取所有子文件名, 并进行正则匹配
             stdout, stderr = adbUtil.exeShellCmds(['ls %s' % parentDirPath],
