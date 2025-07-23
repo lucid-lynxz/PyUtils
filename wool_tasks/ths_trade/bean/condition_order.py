@@ -19,14 +19,17 @@ class ConditionOrder(Runnable):
     def from_csv_row(cls, row: List[str]):
         """
         从csv文件中读取一行数据, 并创建ConditionOrder对象
-        :param row: csv文件中的一行数据, 格式: 股票代码,股票名称,是否港股,基准价,向上突破(true/false),反弹幅度,交易股数,开始监测的时间,结束监测的日期
+        :param row: csv文件中的行数据,
+                    格式: 股票代码,股票名称,交易市场,基准价,向上突破(true/false),反弹幅度,交易股数,每日开始监测时间,每日结束监测时间,结束监测的日期
+                    其中  '交易市场' 支持: 'A股'/'港股通'/'港股'/'美股', 其中港股/美股 会使用尊嘉等交易软件, A股/港股通则使用同花顺
+                    '每日开始监测时间' 和 '每日结束监测时间' : 若放空,则表示不做判断, 否则超出检测时间范围的,今日失效,明日重新检测
         :return: ConditionOrder对象
         """
         return ConditionOrder(
             StockPosition(
                 code=row[0],
                 name=row[1],
-                market='港股通' if row[2].lower() == 'true' else ''),
+                market=row[2]),
             base=float(row[3]),
             break_up=row[4].lower() == 'true',
             bounce_info=row[5],
@@ -50,8 +53,8 @@ class ConditionOrder(Runnable):
         :param bounce_info: 表示反弹幅度, 支持两种写法, 如:0.5% 和 0.5, 前者表示反弹0.5%, 后者表示反弹0.5元
         :param deal_count: 执行交易的股数, 正数表示买入, 负数表示卖出, 如: -100 表示卖出100股
         :param break_up: true-向上突破 false-向下突破
-        :start_time: 每日开始监测的时间, 默认为9:30:00开盘, 若为了减少开盘前几分钟的大波动, 可以适当后延
-        :end_time: 每日结束监测的时间, 默认为16:30:00
+        :start_time: 每日开始监测的时间, 默认为9:30:00开盘, 若为了减少开盘前几分钟的大波动, 可以适当后延, 若为空, 则不做判断
+        :end_time: 每日结束监测的时间, 默认为16:30:00, 若为空, 则不做判断
         :end_date: 条件单截止日期(含)
         """
         self.active: bool = True  # 是否有效, 超期/已触发 就会变为无效
@@ -79,7 +82,7 @@ class ConditionOrder(Runnable):
         self.end_time = end_time
         self.end_date: str = end_date  # 条件单截止日期(含)
 
-        self.summary_info = f"""{self.position.code} {self.position.name}\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'},数量:{self.deal_count}"""
+        self.summary_info = f"""{self.position.code} {self.position.name}({self.position.market})\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'},数量:{self.deal_count}"""
         self.summary_info_1line = self.summary_info.replace('\n', ' ').strip()
 
     def run(self):
@@ -98,12 +101,13 @@ class ConditionOrder(Runnable):
             return
 
         # 若时间不满足,则不做检测
-        if not TimeUtil.is_time_greater_than(self.start_time, include_equal=True):
+        if (not CommonUtil.isNoneOrBlank(self.start_time) and
+                not TimeUtil.is_time_greater_than(self.start_time, include_equal=True)):
             CommonUtil.printLog(
                 f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line}')
             return
 
-        if TimeUtil.is_time_greater_than(self.end_time):
+        if not CommonUtil.isNoneOrBlank(self.end_time) and TimeUtil.is_time_greater_than(self.end_time):
             CommonUtil.printLog(
                 f'conditionOrder 超过检测时段内(<={self.end_time}),今日跳过:{self.summary_info_1line}')
             self.active = False
