@@ -17,7 +17,7 @@ from util.CommonUtil import CommonUtil
 
 
 class MailBean(object):
-    mail_id: str = ''  # 邮件id
+    msg_id: str = ''  # 邮件id
     subject: str = ''  # 邮件主题
     sender: str = ''  # 发件人
     receiver: str = ''  # 收件人
@@ -199,37 +199,57 @@ class MailUtil(object):
             return _result
         return _result
 
-    def fetch_mails(self, folder_name: str = 'INBOX') -> list:
+    def select_folder(self, folder_name: str = 'INBOX') -> bool:
         """
-        获取欧指定文件夹中的邮件
+        选择指定的邮件文件夹, 用于对该文件夹进行后续操作,比如读取邮件, 标记邮件等
+        """
+        # 处理中文文件夹名称 - 使用 modified UTF-7 编码
+        if folder_name != 'INBOX':
+            # 将 Unicode 字符串转换为 Modified UTF-7 编码
+            folder_bytes = folder_name.encode('utf-7').replace(b'+', b'&')
+            folder_spec = f'"{folder_bytes.decode("ascii")}"'
+            status, _ = self.imapServer.select(folder_spec)
+        else:
+            status, _ = self.imapServer.select('INBOX')
+
+        if status != 'OK':
+            CommonUtil.printLog(f"无法选择文件夹: {folder_name}")
+            return False
+        else:
+            return True
+
+    def fetch_mails(self, folder_name: str = 'INBOX', criteria: str = 'ALL', limit: int = 0) -> list:
+        """
+        获取指定文件夹中的邮件
         :param folder_name: 文件夹名称，默认为INBOX, 即收件箱
                             以QQ邮箱为例, 假设有个自定义文件夹为:'测试', 实际名称应该是:'其他文件夹/测试',具体可通过 list_folders() 方法查看
+        :param criteria: 搜索条件, 默认为 'ALL', 即所有邮件,注意: 此处的'所有' 指邮箱允许获取的邮件,默认应该是30封
+                        'UNSEEN': 未读邮件
+                        'SEEN': 已读邮件
+        :param limit: 获取邮件的最大数量，0 表示不限制
         :return 邮件对象列表, 列表元素类型是: MailBean
         """
         _result = []
         try:
-            # 处理中文文件夹名称 - 使用 modified UTF-7 编码
-            if folder_name != 'INBOX':
-                # 将 Unicode 字符串转换为 Modified UTF-7 编码
-                folder_bytes = folder_name.encode('utf-7').replace(b'+', b'&')
-                folder_spec = f'"{folder_bytes.decode("ascii")}"'
-                status, _ = self.imapServer.select(folder_spec)
-            else:
-                status, _ = self.imapServer.select('INBOX')
-
-            if status != 'OK':
-                CommonUtil.printLog(f"无法选择文件夹: {folder_name}")
+            if not self.select_folder(folder_name):
                 return _result
 
+            # 构建搜索条件
+            search_criteria = criteria
+
             # 搜索邮件
-            status, messages = self.imapServer.search(None, 'ALL')
+            status, messages = self.imapServer.search(None, search_criteria)
             if status == 'OK':
                 message_ids = messages[0].split()
+                # 反转邮件 ID 列表以获取最近的邮件
+                message_ids = message_ids[::-1]
+                if limit > 0:
+                    message_ids = message_ids[:limit]
                 if not message_ids:
-                    CommonUtil.printLog(f"文件夹 '{folder_name}' 中没有邮件")
+                    CommonUtil.printLog(f"文件夹 '{folder_name}' 中没有{criteria}邮件")
                     return _result
 
-                CommonUtil.printLog(f"读取文件夹 '{folder_name}' 中的 {len(message_ids)} 封邮件")
+                CommonUtil.printLog(f"读取文件夹 '{folder_name}' 中的 {len(message_ids)} 封{criteria}邮件")
                 for message_id in message_ids:
                     status, msg_data = self.imapServer.fetch(message_id, '(RFC822)')
                     if status == 'OK':
@@ -241,17 +261,11 @@ class MailUtil(object):
                         from_addr = self._decode_mime_header(msg['From'])
                         date = msg['Date']
 
-                        # CommonUtil.printLog(f"\n邮件 {message_id.decode('utf-8')}:")
-                        # CommonUtil.printLog(f"主题: {subject}")
-                        # CommonUtil.printLog(f"发件人: {from_addr}")
-                        # CommonUtil.printLog(f"日期: {date}")
-
                         # 解析邮件内容
                         content = self._parse_email_content(msg)
-                        # CommonUtil.printLog(f"内容: {content[:300]}...")  # 只显示前300个字符
 
                         bean = MailBean()
-                        bean.mail_id = message_id.decode('utf-8')
+                        bean.msg_id = message_id.decode('utf-8')
                         bean.subject = subject
                         bean.sender = from_addr
                         bean.receiver = msg['To']
@@ -265,6 +279,53 @@ class MailUtil(object):
             CommonUtil.printLog(f"读取邮件时出错: {e}")
         return _result
 
+    def set_mail_flags(self, message_ids: list, flag: str, folder_name: str = 'INBOX') -> bool:
+        """
+        修改指定邮件的标记
+        :param message_ids: 邮件 ID 列表
+        :param flag: 标记类型, 可选值: SEEN, UNSEEN, JUNK, ANSWERED, FLAGGED, DELETED, DRAFT
+        :param folder_name: 文件夹名称，默认为INBOX, 即收件箱
+                            以QQ邮箱为例, 假设有个自定义文件夹为:'测试', 实际名称应该是:'其他文件夹/测试',具体可通过 list_folders() 方法查看
+        :return: 是否成功设置标记
+        """
+        try:
+            if not self.select_folder(folder_name):
+                CommonUtil.printLog(f"set_mail_flags fail 无法选择文件夹: {folder_name}")
+                return False
+
+            # 根据 flag 参数设置对应的 IMAP 标记
+            if flag == 'SEEN':
+                imap_flag = '\\Seen'  # 表示邮件已读。当把邮件标记为 SEEN 时，邮件客户端通常会将其显示为已读状态
+            elif flag == 'UNSEEN':
+                imap_flag = '\\Unseen'  # 表示邮件未读。标记为 UNSEEN 的邮件在客户端会显示为未读状态
+            elif flag == 'JUNK':
+                imap_flag = '\\Junk'  # 表示邮件是广告或垃圾邮件。部分邮件客户端会把标记为 JUNK 的邮件自动移动到垃圾邮件文件夹
+            elif flag == 'ANSWERED':
+                imap_flag = '\\Answered'  # 邮件已回复
+            elif flag == 'FLAGGED':
+                imap_flag = '\\Flagged'  # 表示邮件被标记为重要，不同客户端可能用星标等方式显示
+            elif flag == 'DELETED':
+                imap_flag = '\\Deleted'  # 表示邮件已被删除，客户端通常会在下次同步时真正删除这些邮件
+            elif flag == 'DRAFT':
+                imap_flag = '\\Draft'  # 表示邮件是草稿
+            else:
+                CommonUtil.printLog(f"set_mail_flags 不支持的标记类型: {flag}")
+                return False
+
+            # 将邮件 ID 列表转换为逗号分隔的字符串
+            message_id_str = ','.join(message_ids)
+
+            # 设置邮件标记
+            status, _ = self.imapServer.store(message_id_str, '+FLAGS', imap_flag)
+            __success = status == 'OK'
+            __tip = "成功" if __success else f"失败 status={status}"
+            CommonUtil.printLog(f'set_mail_flags({mail.msg_id}, {flag}, {folder_name}) {__tip}')
+            return __success
+        except Exception as e:
+            CommonUtil.printLog(f"set_mail_flags 设置邮件标记时出错: {e}")
+            return False
+
+    # ... 已有代码 ...
     @staticmethod
     def _parse_email_content(msg):
         """解析邮件内容，处理多部分邮件"""
@@ -378,15 +439,18 @@ if __name__ == "__main__":
     # 列出所有文件夹
     CommonUtil.printLog(f'{mailUtil.list_folders()}')
 
-    # 读取指定文件夹中的邮件
-    # mail_list = mailUtil.fetch_mails("其他文件夹/尊嘉")
-    mail_list = mailUtil.fetch_mails('INBOX')
+    # # 读取指定文件夹中的邮件
+    # # mail_list = mailUtil.fetch_mails("其他文件夹/尊嘉",'UNSEEN')
+    mail_list = mailUtil.fetch_mails('INBOX', 'UNSEEN', limit=0)
     for mail in mail_list:
-        CommonUtil.printLog(f'邮件ID: {mail.mail_id}')
+        CommonUtil.printLog('')
+        CommonUtil.printLog(f'邮件ID: {mail.msg_id}')
         CommonUtil.printLog(f'主题: {mail.subject}')
         CommonUtil.printLog(f'发件人: {mail.sender}')
         CommonUtil.printLog(f'日期: {mail.date}')
-        CommonUtil.printLog(f'内容: {mail.content}')
+        # CommonUtil.printLog(f'内容: {mail.content}')
         CommonUtil.printLog('-----------------')
+        _success = mailUtil.set_mail_flags([mail.msg_id], 'SEEN', 'INBOX')
+        CommonUtil.printLog(f'设置邮件ID: {mail.msg_id} 为已读={_success}')
 
     mailUtil.quit()
