@@ -37,7 +37,7 @@ class CommonUtil(object):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
-    def printLog(msg: str, condition: bool = True, prefix: str = "", includeTime: bool = True):
+    def printLog(msg, condition: bool = True, prefix: str = "", includeTime: bool = True):
         if condition:
             # 此处保持使用原始的 print() 语句
             try:

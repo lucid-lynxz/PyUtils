@@ -320,7 +320,7 @@ class THSTrader(BaseAir4Windows):
         """
         买卖股票
         :param code: 股票代码
-        :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖出擦欧总时, 会使用买一价, 买入操作时,使用卖一价
+        :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖操作时, 会使用买一价, 买入操作时,使用卖一价
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
         """
         CommonUtil.printLog(f'deal({code},{price},{amount})')

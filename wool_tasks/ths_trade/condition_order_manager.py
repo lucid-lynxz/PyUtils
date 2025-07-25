@@ -101,8 +101,8 @@ if __name__ == '__main__':
     with SystemSleepPreventer():  # 防止系统休眠
         scheduler = SchedulerTaskManager()
         (scheduler
-         .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':00')
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=10, unit='minutes',
+         .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
+         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=20, unit='minutes',
                    at_time=':05')
          .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')
          .stop_when_time_reaches('16:15:00')
