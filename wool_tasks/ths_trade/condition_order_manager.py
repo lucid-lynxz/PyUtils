@@ -98,16 +98,23 @@ if __name__ == '__main__':
     # AkShareUtil.wait_next_deal_time()
 
     # 每分钟触发一次条件单检测
-    with SystemSleepPreventer():  # 防止系统休眠
+    with (SystemSleepPreventer()):  # 防止系统休眠
+        settings: dict = configParser.getSectionItems('setting')
+        start_time = settings.get('start_time', '09:30:00')
+        end_time = settings.get('end_time', '16:10:00')
+
+        CommonUtil.printLog(f'start_time:{start_time}, end_time:{end_time}')
         scheduler = SchedulerTaskManager()
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
          .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=20, unit='minutes',
                    at_time=':05')
          .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')
-         .stop_when_time_reaches('16:10:00', lambda: CommonUtil.set_windows_brightness(60))
-         .start('09:29:00', lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
+         .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
+         .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
          .wait_exit_event()  # 等待按下q推出
          )
 
         NetUtil.push_to_robot(f'condition_order_manager 已退出', printLog=True)
+        if configParser.getSecionValue('setting', 'auto_sleep', True):
+            CommonUtil.windows_sleep()  # 休眠

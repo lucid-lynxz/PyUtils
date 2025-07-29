@@ -385,6 +385,25 @@ class CommonUtil(object):
         except Exception as e:
             CommonUtil.printLog(f"设置亮度时出错: {e}")
 
+    @staticmethod
+    def windows_sleep():
+        """让 Windows 系统进入休眠状态"""
+        if not CommonUtil.isWindows():
+            return
+        import subprocess
+        try:
+            # 调用 Windows 系统命令实现休眠
+            subprocess.run(
+                ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
+                check=True,
+                shell=True
+            )
+            CommonUtil.printLog("系统已进入休眠状态")
+        except subprocess.CalledProcessError as e:
+            CommonUtil.printLog(f"休眠命令执行失败: {e}")
+        except Exception as e:
+            CommonUtil.printLog(f"发生错误: {e}")
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

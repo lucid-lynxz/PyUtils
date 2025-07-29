@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
-import sys
+import sys, traceback
 import ctypes
 from typing import Optional
 
@@ -162,7 +162,10 @@ class THSTrader(BaseAir4Windows):
         try:
             result = self._get_all_stock_position()
         except Exception as e:
-            NetUtil.push_to_robot(f'get_all_stock_position error:{e}', printLog=True)
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            stack_trace = ''.join(traceback.format_tb(exc_traceback))  # 提取堆栈部分
+            err_msg = f'异常类型: {exc_type}, 值:{exc_value},堆栈:\n{stack_trace}'
+            NetUtil.push_to_robot(f'get_all_stock_position error:{err_msg}', printLog=True)
         return result
 
     @log_time_consume()
@@ -321,8 +324,11 @@ class THSTrader(BaseAir4Windows):
         买卖股票
         :param code: 股票代码
         :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖操作时, 会使用买一价, 买入操作时,使用卖一价
-        :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
+        :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出 0表示只做监控, 发出通知,不触发交易
         """
+        if amount == 0:
+            return False
+
         CommonUtil.printLog(f'deal({code},{price},{amount})')
         # self.set_foreground()  # 切换到前台
         buy = amount > 0  # true-买入 false-卖出

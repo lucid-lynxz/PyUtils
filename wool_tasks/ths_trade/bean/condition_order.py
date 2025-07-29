@@ -15,28 +15,42 @@ class ConditionOrder(Runnable):
     """
     ths_trader: THSTrader  # 同花顺工具类,用于实现买入/卖出等操作
 
+    @staticmethod
+    def get_or_default(data: List[str], index: int, def_value: str):
+        """
+        从列表获取指定序号的元素, 若不存在(None或者""),则返回默认值
+        """
+        _size = len(data)
+        if index >= _size:
+            return def_value
+        if CommonUtil.isNoneOrBlank(data[index]):
+            return def_value
+        return data[index]
+
     @classmethod
     def from_csv_row(cls, row: List[str]):
         """
         从csv文件中读取一行数据, 并创建ConditionOrder对象
         :param row: csv文件中的行数据,
-                    格式: 股票代码,股票名称,交易市场,基准价,向上突破(true/false),反弹幅度,交易股数,每日开始监测时间,每日结束监测时间,结束监测的日期
+                    格式: 股票代码,股票名称,交易市场,基准价,向上突破(true/false/up/down),反弹幅度,交易股数,每日开始监测时间,每日结束监测时间,结束监测的日期
                     其中  '交易市场' 支持: 'A股'/'港股通'/'港股'/'美股', 其中港股/美股 会使用尊嘉等交易软件, A股/港股通则使用同花顺
                     '每日开始监测时间' 和 '每日结束监测时间' : 若放空,则表示不做判断, 否则超出检测时间范围的,今日失效,明日重新检测
+                    '向上突破': 表示是否时线上突破基准价, 支持的格式: true/false/up/down ,忽略大小写, true/up 表示线上突破基准价   false/down 表示向下突破基准价
+                    '交易股数' 非0时才会发起交易, 若时0,则只做监控, 触发条件时发出通知
         :return: ConditionOrder对象
         """
         return ConditionOrder(
             StockPosition(
-                code=row[0],
-                name=row[1],
-                market=row[2]),
-            base=float(row[3]),
-            break_up=row[4].lower() == 'true',
-            bounce_info=row[5],
-            deal_count=int(row[6]),
-            start_time=row[7],
-            end_time=row[8],
-            end_date=row[9]
+                code=row[0],  # 股票代码
+                name=row[1],  # 名称
+                market=row[2]),  # 交易市场
+            base=float(row[3]),  # 基准价
+            break_up=row[4].lower() in ['true', 'up'],  # 是否是向上突破基准价, 支持的格式: true/up/false/down ,忽略大小写
+            bounce_info=ConditionOrder.get_or_default(row, 5, "0.4%"),  # 反弹幅度
+            deal_count=int(ConditionOrder.get_or_default(row, 6, "0")),  # 交易数量
+            start_time=ConditionOrder.get_or_default(row, 7, "09:30:00"),  # 每日开始监测时间
+            end_time=ConditionOrder.get_or_default(row, 8, "16:30:00"),  # 每日结束监测时间
+            end_date=ConditionOrder.get_or_default(row, 9, "2099-12-1"),  # 结束监测日期
         )
 
     def __init__(self, position: StockPosition,
@@ -76,8 +90,7 @@ class ConditionOrder(Runnable):
         # break_upward=false, 向下突破成功时, 记录突破后的最低价
         self.extreme_value: float = -999999 if self.break_upward else 999999
 
-        self.deal_count = deal_count  # 执行交易时买卖的股数, 负数表示卖出
-
+        self.deal_count = deal_count  # 执行交易时买卖的股数, 负数表示卖出 0只做监控, 发出通知,不触发交易
         self.start_time: str = start_time
         self.end_time = end_time
         self.end_date: str = end_date  # 条件单截止日期(含)
