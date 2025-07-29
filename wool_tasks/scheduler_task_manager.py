@@ -35,9 +35,11 @@ class SchedulerTaskManager:
         self._scheduler_thread = None  # 调度器线程
         self._lock = threading.Lock()  # 线程锁
         self._start_time: str = ''  # 开始运行task的时间,格式为:'HH:MM:SS'
+        self._start_func = None  # 开始运行时调用的函数
         self._stop_time: str = ''  # 停止时间,格式为:'HH:MM:SS'
+        self._stop_func = None  # 停止运行时调用的函数
 
-    def start(self, time_str: Optional[str] = None):
+    def start(self, time_str: Optional[str] = None, func=None):
         """
         启动调度器（在独立线程中运行）
         :param time_str: 非空时有效,表示在指定时间后才开始运行, 时间格式: 'HH:MM:SS'
@@ -47,6 +49,7 @@ class SchedulerTaskManager:
             return self
 
         self._start_time = time_str
+        self._start_func = func
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop,
             daemon=True,
@@ -97,6 +100,9 @@ class SchedulerTaskManager:
         self._stop_event.set()
         if self._scheduler_thread and join:
             self._scheduler_thread.join(timeout=2.0)
+
+        if self._stop_func is not None:
+            self._stop_func()
         CommonUtil.printLog("调度器已停止")
 
     def add_task(
@@ -171,7 +177,7 @@ class SchedulerTaskManager:
                 }
             return None
 
-    def stop_when_time_reaches(self, time_str: str):
+    def stop_when_time_reaches(self, time_str: str, func=None):
         """
         设置当系统时间达到或超过指定时间时停止调度器
 
@@ -179,6 +185,7 @@ class SchedulerTaskManager:
             stop_time_str: 指定停止时间，格式为 'HH:MM:SS'
         """
         self._stop_time = time_str
+        self._stop_func = func
         CommonUtil.printLog(f"已设置调度器将在时间 >= {time_str} 时停止")
         return self
 
@@ -193,6 +200,9 @@ class SchedulerTaskManager:
                 CommonUtil.printLog(f'_scheduler_loop 等待 {diff_sec} 秒,直到{self._start_time}再开始执行task...')
                 TimeUtil.sleep(diff_sec)
                 CommonUtil.printLog(f'_scheduler_loop 结束等待,开始执行task...')
+
+        if self._start_func is not None:
+            self._start_func()
 
         while not self._stop_event.is_set():
             # 检查是否到达停止时间

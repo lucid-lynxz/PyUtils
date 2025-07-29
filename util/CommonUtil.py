@@ -357,6 +357,34 @@ class CommonUtil(object):
                 result[key] = value
         return result
 
+    @staticmethod
+    def set_windows_brightness(brightness: int) -> bool:
+        """
+        设置Windows系统屏幕亮度（0-100）
+        需要安装wmi库: pip install wmi
+        :param brightness: 亮度百分比（0-100）
+        :return 是否设置成功
+        """
+        if CommonUtil.isWindows() and not CommonUtil.is_library_installed('wmi'):
+            CommonUtil.printLog(f'请安装wmi库: pip install wmi')
+            return False
+
+            # 检查亮度值是否在有效范围内
+        if not (0 <= brightness <= 100):
+            raise ValueError("亮度值必须在0-100之间")
+
+        try:
+            # 连接到WMI服务
+            import wmi
+            c = wmi.WMI(namespace='wmi')
+            # 获取显示器亮度类实例
+            monitor = c.WmiMonitorBrightnessMethods()[0]
+            # 设置亮度
+            monitor.WmiSetBrightness(brightness, 1)  # 第二个参数是超时时间（秒）
+            return True
+        except Exception as e:
+            CommonUtil.printLog(f"设置亮度时出错: {e}")
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
