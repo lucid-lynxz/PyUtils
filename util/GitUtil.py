@@ -73,13 +73,15 @@ class GitUtil(object):
     获取当前分支diff信息: getDiffInfo(...)
     """
 
-    def __init__(self, remotePath: str, localPath: str, branch: str = None, depth: int = 0, cloneOptions: str = None):
+    def __init__(self, remotePath: str, localPath: str, branch: str = None, depth: int = 0, cloneOptions: str = None,
+                 auto_reset: bool = False):
         """
         :param remotePath: 远程仓库地址,若为空,则尝试从 localPath 目录中提取 (git remote -v)
         :param localPath: 本地仓库目录地址, 要求非空
         :param branch: 目标分支名(本地分支与远程分支名保持一致,默认使用当前分支,若不存在再使用 'master')
         :param depth: git clone/fetch 深度,默认为0 表示不限制
         :param cloneOptions: 额外的clone参数, 如: --shallow-since="2021.4.1"
+        :param auto_reset: 本地有未提交的代码时, 是否自动 reset --hard 进行忽略, 以便后续进行分支切换/更新等操作时不冲突, 默认False
         """
         self._localRepositoryPath = localPath
         self._dotGitPath = None  # 代码仓库下 .git/ 目录路径
@@ -118,7 +120,7 @@ class GitUtil(object):
         # 本地不在指定分支时, 才clone仓库,并checkout到指定分支
         if cur_local_branch != self.branch:
             # 若当前分支有未提交的内容,则先reset再checkout
-            if not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
+            if auto_reset and not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
                 self.reset()
             self.checkoutBranch(self.branch, False, cloneOptions)
 
@@ -322,13 +324,14 @@ class GitUtil(object):
         return ''
 
     def checkoutBranch(self, targetBranch: str = None, forceClone: bool = False, cloneOptions: str = None,
-                       fetchOption: str = ''):
+                       fetchOption: str = '', auto_reset: bool = False):
         """
         按需进行仓库clone, 分支切换, 仅本地分支不存在,首次创建时才会拉取最新代码
         :param targetBranch 要切换的分支名,默认为 self.branch
         :param forceClone 是否要强制clone, true-若本地目录存在,删除后重新clone
         :param cloneOptions clone时使用的其他信息
         :param fetchOption fetch时使用的其他信息
+        :param auto_reset 本地有未提交的代码时, 是否自动 reset --hard 进行忽略, 以便后续进行分支切换/更新等操作时不冲突, 默认False
         :return: self
         """
         # 强制重新clone
@@ -438,7 +441,7 @@ class GitUtil(object):
             self.getCurBranch(), targetBranch, self._localRepositoryPath))
 
         # 切换完分支后, 若有未commit的内容,也reset下, 以便后续若有pull操作, 不会有意外的conflict情况出现
-        if not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
+        if auto_reset and not CommonUtil.isNoneOrBlank(self.getDiffInfo()):
             self.reset()
         self.getStatus()
         CommonUtil.printLog(f'after checkoutBranch {self.getCommitInfo()}')
@@ -453,14 +456,14 @@ class GitUtil(object):
         return self
 
     def updateBranch(self, branch: str = None, byRebase: bool = False, fetchOptions: str = None, pullOptions: str = '',
-                     ignoreLocalChanges: bool = True):
+                     ignoreLocalChanges: bool = False):
         """
         更新分支代码, 要求对应的远程分支存在
         :param branch: 分支名, 默认使用当前分支, 要求对应的远程分支存在
         :param byRebase: True-使用 pull --rebase 更新本地分支  False-仅使用pull更新本地分支
         :param fetchOptions: fetch时额外增加的属性, 比如: --shallow-since={date} , --unshallow 等
         :param pullOptions: pull时额外增加的属性, 比如: --strategy=recursive -X theirs  等, 注意: 较低版本的git可能不支持-X 和 --strategy=recursive 参数
-        :param ignoreLocalChanges: True-忽略本地变更,强制恢复为远程仓库版本  False-不忽略
+        :param ignoreLocalChanges: True-忽略本地变更,强制恢复为远程仓库版本  False-不忽略, 保留本地代码变更
         :return: self
         """
         if CommonUtil.isNoneOrBlank(branch):  # 目标分支名不存在, 使用当前分支名
@@ -484,11 +487,10 @@ class GitUtil(object):
         # gitCmd = f'git merge origin/{branch} {_pullOptions}'
         CommonUtil.exeCmd(gitCmd)
 
-        if ignoreLocalChanges:
+        if ignoreLocalChanges:  # 忽略本地所有变更, 强制恢复为远程仓库版本
             CommonUtil.printLog(f'ignoreLocalChanges is True, reset to remote branch')
-            CommonUtil.exeCmd(f'git reset --hard {self._remoteRepositoryName}/{branch}')
+            self.reset(commitId=f'{self._remoteRepositoryName}/{branch}')
             self.getStatus()
-
         CommonUtil.printLog(f'after updateBranch {self.getCommitInfo()}')
         return self
 
@@ -541,7 +543,7 @@ class GitUtil(object):
         """
         还原代码到指定commitId, 默认为 --hard 模式
         :param mode: 模式,默认为: hard
-        :param commitId: 回退的代码点, 默认为: HEAD
+        :param commitId: 回退的代码点, 默认为: HEAD, 也可以传入比如: origin/master 表示强制恢复成远程仓库对应分支的代码, 忽略本地所有变更
         return: str, reset命令执行结果
         """
         CommonUtil.printLog(f'show git status/log before reset')
@@ -551,7 +553,7 @@ class GitUtil(object):
         modeOpt = '--%s' % mode
         if CommonUtil.isNoneOrBlank(mode):
             modeOpt = ''
-        return CommonUtil.exeCmd('git reset %s %s' % (modeOpt, commitId))
+        return CommonUtil.exeCmd(f'git reset {modeOpt} {commitId}')
 
     def mergeBranch(self, fromBranch: str, targetBranch: str = None, byRebase: bool = False, strategyOption: str = ''):
         """
