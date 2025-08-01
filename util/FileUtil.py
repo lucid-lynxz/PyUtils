@@ -55,7 +55,7 @@ class FileUtil(object):
          :param path: 原路径
          :param level: 返回第几级父目录路径,如1表示返回上一级目录
         """
-        pPath = path
+        pPath = FileUtil.recookPath(path).rstrip('/')
         for index in range(level):
             try:
                 pPath = os.path.dirname(pPath)
