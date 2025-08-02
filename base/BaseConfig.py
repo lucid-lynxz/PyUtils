@@ -38,7 +38,8 @@ class BaseConfig(Runnable, TagGenerator):
                  optFirst: bool = False,
                  configItemLongOpt: str = 'param',
                  configItemShortOpt: str = 'p',
-                 splitFlag: str = '.'
+                 splitFlag: str = '.',
+                 delimiters=('=', ':')
                  ):
         """
         支持通过命令参数 --config 传入自定义的配置文件路径,也可以直接通过参数 configPath 传入
@@ -82,7 +83,7 @@ class BaseConfig(Runnable, TagGenerator):
 
         print('\nconfigPath=%s' % configPath)
         print(''.join(FileUtil.readFile(self.configPath)))
-        self.configParser = NewConfigParser(allow_no_value=True).initPath(self.configPath)
+        self.configParser = NewConfigParser(allow_no_value=True, delimiters=delimiters).initPath(self.configPath)
 
         # 更新 config.ini 属性值
         if len(sectionItemValues) > 0:
@@ -107,6 +108,18 @@ class BaseConfig(Runnable, TagGenerator):
 
         # 按需打印 config.ini 中的信息(注释以及key, value则是实际生效的值(即通过--param注入后的最新值))
         self._printConfigDetail()
+
+    def update_delimiters(self, delimiters=('=')):
+        # 修改config.ini使用的分隔符,改为使用 '=' 作为分隔符
+        self.configParser = NewConfigParser(
+            allow_no_value=True,
+            delimiters=delimiters  # 关键：仅将 '=' 视为键值分隔符，忽略 ':'
+        ).initPath(self.configPath)
+
+        # 重建配置缓存（若 NewConfigParser 依赖 _cache 属性）
+        self.configParser._cache = {}
+        for sectionName in self.configParser.sections():
+            self.configParser._cache[sectionName] = self.configParser.getSectionItems(sectionName)
 
     def run(self):
         print('\n')
