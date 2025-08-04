@@ -6,7 +6,7 @@ import re
 import csv
 import platform
 import shutil
-from typing import AnyStr, Optional, List, Type, Generic, TypeVar
+from typing import AnyStr, Optional, List, Type, Generic, TypeVar, Union
 
 from util.CommonUtil import CommonUtil
 
@@ -506,7 +506,7 @@ class FileUtil(object):
                     break
 
     @staticmethod
-    def create_cache_dir(parent_dir: Optional[str], file_like: os.PathLike[AnyStr] = None,
+    def create_cache_dir(parent_dir: Optional[str], file_like: Union[str, os.PathLike] = None,
                          clear: bool = False, name: str = 'cache') -> str:
         """
         在指定目录下创建一个缓存子目录, 子目录名默认为:'cache', 会自动在里面添加 .gitignore 文件, 忽略所有文件

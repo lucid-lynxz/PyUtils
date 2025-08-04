@@ -3,9 +3,9 @@
 import re
 import json
 import socket
-import requests
 import traceback
 import urllib.request as urllib2
+from urllib.error import URLError, HTTPError
 
 from util.CommonUtil import CommonUtil
 from util.DingTaskBot import DingTalkBot
@@ -164,7 +164,7 @@ class NetUtil(object):
          通过get形式下载文件
          :param url: 文件下载地址
          :param save_path: 本地保存地址,,默认保存在当前目录下
-         :param kwargs: 如: auth=('账号', '密码')
+         :param kwargs: 如: auth=('账号', '密码'), timeout=10
          :return: 本地文件路径, 空表示下载失败
          """
         if CommonUtil.isNoneOrBlank(url):
@@ -181,14 +181,35 @@ class NetUtil(object):
 
             CommonUtil.printLog(f'download started:{filename}')
             try:
-                res = requests.get(url, stream=True, **kwargs)
-                res.raise_for_status()  # 验证请求是否成功
+                # 创建请求对象并处理认证
+                headers = {}
+                auth = kwargs.get('auth')
+                if auth:
+                    import base64
+                    username, password = auth
+                    credentials = f'{username}:{password}'.encode('utf-8')
+                    b64_credentials = base64.b64encode(credentials).decode('utf-8')
+                    headers['Authorization'] = f'Basic {b64_credentials}'
+
+                req = urllib2.Request(url, headers=headers)
+                timeout = kwargs.get('timeout', 10)
+                response = urllib2.urlopen(req, timeout=timeout)
+
                 with open(save_path, "wb") as f:
-                    for chunk in res.iter_content(chunk_size=1024):
+                    while True:
+                        chunk = response.read(1024)  # 分块读取
+                        if not chunk:
+                            break
                         f.write(chunk)
                 CommonUtil.printLog(f'download finish,save_path={save_path}')
                 return save_path
+            except HTTPError as e:
+                CommonUtil.printLog(f'download HTTP error: {e.code} {e.reason}')
+                return ''
+            except URLError as e:
+                CommonUtil.printLog(f'download URL error: {e.reason}')
+                return ''
             except Exception as e:
-                CommonUtil.printLog(f'download fail: {e}')
+                CommonUtil.printLog(f'download fail: {str(e)}')
                 return ''
         return ''

@@ -4,9 +4,11 @@
 import os
 import traceback
 import fnmatch  # 用于路径通配符匹配
+from typing import List, Tuple
 
 import requests
 from bs4 import BeautifulSoup  # 需要安装: pip install beautifulsoup4
+from util.CommonUtil import CommonUtil
 
 
 class HTTPUtil(object):
@@ -25,7 +27,7 @@ class HTTPUtil(object):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
 
-    def _parse_directory_index(self, url: str) -> tuple[list[str], list[str]]:
+    def _parse_directory_index(self, url: str) -> Tuple[List[str], List[str]]:
         """解析目录索引页面，返回(文件列表, 子目录列表)"""
         try:
             response = self.session.get(url, timeout=self.timeout)
@@ -39,7 +41,7 @@ class HTTPUtil(object):
 
             for link in links:
                 href = link.get('href', '').strip()
-                if not href or href.startswith(('?', '#', '/')):  # 过滤无效链接和绝对路径
+                if not href or href.startswith(('?', '#', '/', '.')):  # 过滤无效链接和绝对路径
                     continue
 
                 # Nginx通常会在目录链接后加/，文件链接则不会
@@ -87,7 +89,7 @@ class HTTPUtil(object):
         下载远程目录到本地
         :param remote_dir: 远程目录路径(相对于base_url)
         :param local_dir: 本地保存目录
-        :param path_pattern: 文件路径匹配模式(如'*/demolog/*.txt')，使用Unix风格通配符，为None时下载所有文件
+        :param path_pattern: 文件路径匹配模式(如'*demolog/*.txt')，使用Unix风格通配符，为None时下载所有文件
         """
         try:
             current_url = f"{self.base_url}{remote_dir.lstrip('/')}"
@@ -137,10 +139,10 @@ class HTTPUtil(object):
 
 if __name__ == "__main__":
     # HTTP下载示例
-    HTTP_BASE_URL = "http://example.com/nginx-mapped-directory/"  # 替换为实际的目录URL
-    LOCAL_SAVE_DIR = "D:/http_downloads"  # 本地保存路径
+    url = CommonUtil.get_input_info("请输入下载网址", "")
+    local_dir = CommonUtil.get_input_info("请输入本地保存(默认 ./download)", "./download")
 
-    with HTTPUtil(base_url=HTTP_BASE_URL) as http:
+    with HTTPUtil(base_url=url) as http:
         # 下载任意层级下demolog目录中的所有txt文件
-        # */demolog/*.txt 表示: 任意目录/ demolog目录/ 任意名称.txt
-        http.download_directory(local_dir=LOCAL_SAVE_DIR, path_pattern="*/demolog/*.txt")
+        # *demolog/*.txt 表示: 任意目录 demolog目录/任意名称.txt
+        http.download_directory(local_dir=local_dir, path_pattern="*demolog/*.txt")
