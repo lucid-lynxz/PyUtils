@@ -41,6 +41,13 @@ class LBTrader(object):
         self.app_key = lb_settings.get('app_key')
         self.app_secret = lb_settings.get('app_secret')
         self.access_token = lb_settings.get('access_token')
+        self.active = (not CommonUtil.isNoneOrBlank(self.app_key)
+                       and not CommonUtil.isNoneOrBlank(self.app_secret)
+                       and not CommonUtil.isNoneOrBlank(self.access_token))
+
+        if not self.active:
+            CommonUtil.printLog('长桥证券初始化失败, 请检查配置文件')
+            return
 
         # 从系统环境变量中获取app_key等参数
         # config = Config.from_env()
@@ -52,12 +59,16 @@ class LBTrader(object):
                         trade_ws_url='wss://openapi-trade.longportapp.cn')
 
         # 获取资产总览: https://open.longportapp.com/zh-CN/docs/getting-started#%E5%9C%BA%E6%99%AF%E7%A4%BA%E8%8C%83
-        self.tradeCtx = TradeContext(config)
-        resp = self.tradeCtx.account_balance()
-        CommonUtil.printLog(resp)
+        try:
+            self.tradeCtx = TradeContext(config)
+            resp = self.tradeCtx.account_balance()
+            CommonUtil.printLog(resp)
 
-        # 订阅行情
-        self.quoteCtx = QuoteContext(config)
+            # 订阅行情
+            self.quoteCtx = QuoteContext(config)
+        except Exception as e:
+            CommonUtil.printLog(f'长桥证券初始化失败, 请检查配置文件, 错误信息: {e}')
+            self.active = False
 
     def set_on_subscribe(self, listener):
         """
@@ -79,12 +90,20 @@ class LBTrader(object):
 
     def quote(self, symbols: List[str]) -> List[SecurityQuote]:
         """
-        查询指定标的的行情
+        查询指定标的实时行情, 只希望获取最新价格的话, 使用 get_latest_price 函数
         https://open.longportapp.com/zh-CN/docs/quote/pull/quote
         :param symbols: 标的代码列表,比如: ["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]
         :return:
         """
         return self.quoteCtx.quote(symbols)
+
+    def get_latest_price(self, symbols: list[str]) -> list[float]:
+        """
+        获取最新价格
+        :param symbols: 股票代码列表, 比如: ['700.HK', 'AAPL.US', 'TSLA.US', 'NFLX.US']
+        :return: 最新价格列表, 比如: [56.25, 180.0, 720.0, 500.0]
+        """
+        return [float(item.last_done) for item in self.quote(symbols)]
 
     def static_info(self, symbols: List[str]) -> List[SecurityStaticInfo]:
         """
@@ -122,18 +141,21 @@ if __name__ == '__main__':
     # def on_quote(symbol: str, quote: PushQuote):
     #     print(symbol, quote)
     # symbols = ["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]
-    symbols = ["1810.HK"]
+    symbols = ["1810.HK"]  # 1810 小米集团
     # trader.set_on_subscribe(on_quote)
 
     # trader.set_on_subscibe(lambda symbol, quote: print(symbol, quote))
     # trader.subscribe(symbols=symbols, sub_types=[SubType.Quote], is_first_push=True)
 
-    resp = trader.quoteCtx.quote(symbols)
-    CommonUtil.printLog(resp)
+    resp = trader.get_latest_price(symbols)
+    CommonUtil.printLog(f'最新价格: {resp}')
+
+    resp = trader.quote(symbols)
+    CommonUtil.printLog(f'行情: {resp}')
     # TimeUtil.sleep(30)
 
-    resp = trader.quoteCtx.static_info(symbols)
+    resp = trader.static_info(symbols)
     CommonUtil.printLog(resp)
 
-    resp = trader.deal('1810.HK', 56.25, 200)
-    CommonUtil.printLog(resp)
+    # resp = trader.deal('1810.HK', 56.25, 200)
+    # CommonUtil.printLog(resp)

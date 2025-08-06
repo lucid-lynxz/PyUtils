@@ -112,7 +112,8 @@ class SchedulerTaskManager:
             interval: int = 60,
             unit: str = "seconds",
             at_time: str = None,
-            run_immediately: bool = False
+            run_immediately: bool = False,
+            condition: bool = True
     ):
         """
         添加定时任务
@@ -127,7 +128,12 @@ class SchedulerTaskManager:
                     - For hourly jobs -> `MM:SS` or `:MM`
                     - For minute jobs -> `:SS`
             run_immediately: 是否立即执行一次
+            condition: true才添加, false不添加
         """
+        if not condition:
+            CommonUtil.printLog(f'add_task 条件不满足, 任务 {task_id} 不添加')
+            return self
+
         with self._lock:
             if task_id in self._task_registry:
                 CommonUtil.printLog(f"任务 {task_id} 已存在")

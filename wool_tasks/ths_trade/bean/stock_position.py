@@ -60,7 +60,7 @@ class StockPosition:
     @property
     def is_hk_stock(self) -> bool:
         """是否是港股"""
-        return '港股通' in self.market or '沪HK' in self.market or '深HK' in self.market or '香港' in self.market
+        return '港股' in self.market or '沪HK' in self.market or '深HK' in self.market or '香港' in self.market
 
     # 计算属性
     @property

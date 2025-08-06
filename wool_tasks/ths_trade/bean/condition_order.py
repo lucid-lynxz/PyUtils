@@ -7,6 +7,7 @@ from util.TimeUtil import TimeUtil
 from util.CommonUtil import CommonUtil
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
+from wool_tasks.ths_trade.long_bridge_trade import LBTrader
 
 
 class ConditionOrder(Runnable):
@@ -14,6 +15,7 @@ class ConditionOrder(Runnable):
     条件单
     """
     ths_trader: THSTrader  # 同花顺工具类,用于实现买入/卖出等操作
+    long_trader: LBTrader  # 长桥工具类,用于实现买入/卖出等操作
 
     @staticmethod
     def get_or_default(data: List[str], index: int, def_value: str):
@@ -100,6 +102,7 @@ class ConditionOrder(Runnable):
 
     def run(self):
         """
+        使用akshare库获取最新价格,并检测是否命中条件单
         支持以下参数：
             code (str): 代码
             market_info (pd.DataFrame):其他信息, 与code不能同时为空
@@ -136,10 +139,28 @@ class ConditionOrder(Runnable):
             self.deal_count = int(self.position.available_balance) * -1
 
         # 获取最新价格
-        latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
+        if self.position.is_hk_stock and self.long_trader is not None:
+            resp = self.long_trader.quote([f'{self.position.code}.HK'])[0]
+            latest_price = float(resp.last_done)  # 最新价
+            self.position.open_price = float(resp.open)  # 开盘价
+            # CommonUtil.printLog(f'长桥 {self.position.code} {self.position.name} 最新价格:{latest_price}')
+        else:
+            latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
         if latest_price == 0.0:
             CommonUtil.printLog(f'conditionOrder 最新价格为0,应该是获取失败了,跳过本轮检测,{self.summary_info_1line}')
             return
+
+        self.check_condition(latest_price)
+
+    def check_condition(self, latest_price: float):
+        """
+        根据最新价格,判断条件单是否命中
+        :param latest_price: 最新价格
+        """
+        if not self.active:
+            return
+
+        self.position.cur_price = latest_price  # 当前价格
 
         # 若基准价为0,则优先使用成本价替代, 若无成本价,则使用最新价
         if self.base <= 0:

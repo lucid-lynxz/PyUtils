@@ -2,6 +2,7 @@ import argparse
 import os
 import traceback
 
+from longport.openapi import SecurityStaticInfo
 from pywinauto import Desktop
 
 from util.AkShareUtil import AkShareUtil
@@ -13,6 +14,7 @@ from util.SystemSleepPreventer import SystemSleepPreventer
 from wool_tasks.scheduler_task_manager import SchedulerTaskManager
 from wool_tasks.ths_trade.bean.condition_order import ConditionOrder
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
+from wool_tasks.ths_trade.long_bridge_trade import LBTrader
 
 # python your_script.py --condition_order_path /path/to/orders.csv
 if __name__ == '__main__':
@@ -42,10 +44,18 @@ if __name__ == '__main__':
     NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
 
     NetUtil.push_to_robot(f'condition_order_manager 开始工作', printLog=True)
+
+    # 创建同花顺工具类
     ths_trader = THSTrader(cacheDir=_cache_dir)
     ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
     ConditionOrder.ths_trader = ths_trader
+
+    # 创建长桥工具类,用于港美股行情的获取
+    lb_trader = LBTrader(config_path=config_path, cacheDir=_cache_dir)
+    enable_long_bridge = lb_trader.active  # 初始化成功才启用
+    if enable_long_bridge:
+        ConditionOrder.long_trader = lb_trader
 
     # 读取CSV文件并转换为条件单对象列表
     conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
@@ -56,6 +66,18 @@ if __name__ == '__main__':
             ths_trader.position_dict[code] = order.position
             continue
         order.position = ths_trader.get_stock_position(code)  # 将数据更换为实际的持仓数据
+
+    # 修正同花顺ocr识别的持仓数据信息, 主要是港股的名称
+    for code, position in ths_trader.position_dict.items():
+        ori_name = position.name
+        if position.is_hk_stock:
+            if enable_long_bridge:
+                resp: SecurityStaticInfo = lb_trader.static_info([f'{code}.HK'])[0]
+                position.name = resp.name_cn  # 中文简体标的名称
+        else:
+            if '指数' not in position.name:
+                position.name = AkShareUtil.get_stock_name(code)  # A股名称
+        # CommonUtil.printLog(f'修正持仓数据信息, 股票代码:{code}, 原始名称:{ori_name}, 修正后名称:{position.name}')
 
 
     def prevent_lock_screen():
@@ -69,11 +91,20 @@ if __name__ == '__main__':
             # time.sleep(60)  # 每隔60秒执行一次操作
 
 
+    hk_order_list = []
+
+
     def task_condition_orders():
         """执行条件单"""
         # CommonUtil.printLog(f'task_condition_orders')
         for _order in conditionOrderList:
             if _order.active:
+
+                # 若长桥可用, 则港股使用长桥获取最新信息
+                if enable_long_bridge and _order.is_hk:
+                    hk_order_list.append(_order)
+                    continue
+
                 try:
                     _order.run()
                 except Exception as e:
@@ -82,6 +113,22 @@ if __name__ == '__main__':
                     tracebackMsg = traceback.format_exc()
                     NetUtil.push_to_robot(f'task_condition_orders 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
                                           printLog=True)
+
+
+    def task_condition_orders_hk():
+        """执行港股条件单"""
+        # CommonUtil.printLog(f'task_condition_orders')
+        for _order in hk_order_list:
+            if _order.active:
+                try:
+                    _order.run()
+                except Exception as e:
+                    _order.active = False
+                    # traceback.print_exc()
+                    tracebackMsg = traceback.format_exc()
+                    NetUtil.push_to_robot(
+                        f'task_condition_orders_hk 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
+                        printLog=True)
 
 
     def get_sh_index():
@@ -107,6 +154,8 @@ if __name__ == '__main__':
         scheduler = SchedulerTaskManager()
         (scheduler
          .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
+         .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds',
+                   condition=enable_long_bridge)
          .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=20, unit='minutes',
                    at_time=':05')
          .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')

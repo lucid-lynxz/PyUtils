@@ -45,7 +45,8 @@ class THSTrader(BaseAir4Windows):
         AkShareUtil.cache_dir = cacheDir  # akShare的缓存目录
         super().__init__(window_title='网上股票交易系统', cacheDir=cacheDir)
 
-        self.position_dict: dict = dict()  # 持仓信息字典, key值是股票代码, value值是 StockPosition 对象, 通过 get_stock_position() 方法获取
+        # 持仓信息字典, key值是股票代码, value值是 StockPosition 对象, 通过 get_stock_position() 方法获取
+        self.position_dict: dict[str, StockPosition] = dict()
 
         # 刷新按钮坐标/持仓列表矩形框坐标
         self.refresh_pos: tuple = None  # 刷新按钮中心点坐标

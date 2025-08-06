@@ -24,9 +24,10 @@ class AkShareUtil:
     trade_days_df: pd.DataFrame = None  # 交易日历数据, 包含所有交易日信息, 用于判断是否交易日
     cache_dir: str = '.'  # 缓存目录, 默认为当前目录, 会存储请求的都得所有股票名称和代码数据信息
     stock_summary_dict: dict = {}  # 获取过的股票摘要信息, 接口: get_stock_summary()
+    _has_update_name_by_net: bool = False  # 是否已经从网络更新了股票名称
 
     @staticmethod
-    @log_time_consume()
+    # @log_time_consume()
     def get_stock_name(code: str) -> str:
         """
         沪深京 A 股股票代码和股票简称数据
@@ -44,7 +45,7 @@ class AkShareUtil:
         result = pd.Series() if df is None else df.query(f"code == '{code}'")['name']
         stock_name: str = '' if result.empty else result.values[0]
 
-        if CommonUtil.isNoneOrBlank(stock_name):  # 未找到名称,则从网络获取
+        if CommonUtil.isNoneOrBlank(stock_name) and not AkShareUtil._has_update_name_by_net:  # 未找到名称,则从网络获取
             print(f'invoke stock_info_a_code_name from net')
             df = ak.stock_info_a_code_name()
             df['code'].astype(str)
@@ -52,6 +53,7 @@ class AkShareUtil:
 
             result = pd.Series() if df is None else df.query(f"code == '{code}'")['name']
             stock_name: str = '' if result.empty else result.values[0]
+            AkShareUtil._has_update_name_by_net = True
 
         AkShareUtil.stock_zh_a_code_name_df = df
         return stock_name
