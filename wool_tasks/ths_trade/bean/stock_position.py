@@ -101,5 +101,10 @@ class StockPosition:
         """复制源对象的属性值"""
         for field in source.__dataclass_fields__:
             if hasattr(self, field):
+                # name/code/cur_price/market_price 已在外部进行校正和更新, 无需从持仓界面获取, ocr可能不够准确
+                if (field in ['name', 'code', 'market']) and getattr(self, field) != '':
+                    continue
+                # if field in ['market_price', 'cur_price'] and getattr(self, field) != 0.0:
+                #     continue
                 setattr(self, field, getattr(source, field))
         return self
