@@ -69,23 +69,27 @@ class FileUtil(object):
         获取文件大小, 返回tuple(int,str) 依次表示字节数和带单位的字符串描述,如 1024,1K
         """
         fsize = os.path.getsize(filePath)  # 返回的是字节大小
-        return fsize, FileUtil._formatByteSize(fsize)
+        return fsize, FileUtil.format_size(fsize)
 
     @staticmethod
-    def _formatByteSize(fsize: int) -> str:
-        """将所给字节数转换为带单位的字符串, 支持B/K/M/G"""
-        if fsize < 1024:
-            return '%sB' % fsize
+    def format_size(size_bytes) -> str:
+        """将所给字节数转换为带单位的字符串, 支持B/K/M/G/T, 最多保留2位小数"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.2f} TB"
+
+    @staticmethod
+    def format_speed(speed_bps):
+        """将每秒下载的直接数, 转为 B/s, KB/s 或 MB/S , 最多保留2位小数"""
+        if speed_bps < 1024:
+            return f"{speed_bps:.2f} B/s"
+        speed_kbps = speed_bps / 1024
+        if speed_kbps < 1024:
+            return f"{speed_kbps:.2f} KB/s"
         else:
-            KBX = fsize / 1024
-            if KBX < 1024:
-                return '%sK' % round(KBX, 2)
-            else:
-                MBX = KBX / 1024
-                if MBX < 1024:
-                    return '%sM' % round(MBX, 2)
-                else:
-                    return '%sG' % round(MBX / 1024)
+            return f"{speed_kbps / 1024:.2f} MB/s"
 
     @staticmethod
     def getDirSize(dirPath: str, depth: int = 10, includeDirSelf: bool = False) -> tuple:
@@ -102,7 +106,7 @@ class FileUtil(object):
                 continue
             byteSize, _ = FileUtil.getFileSize(subFilePath)
             allByteSize = allByteSize + byteSize
-        return allByteSize, FileUtil._formatByteSize(allByteSize)
+        return allByteSize, FileUtil.format_size(allByteSize)
 
     @staticmethod
     def isFileExist(path: str) -> bool:

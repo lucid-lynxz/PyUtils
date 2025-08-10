@@ -5,10 +5,8 @@ import os
 import stat
 import traceback
 from pathlib import Path
-
-import paramiko
-
 from util.FileUtil import FileUtil
+from util.CommonUtil import CommonUtil
 
 
 class SSHUtil(object):
@@ -78,6 +76,10 @@ class SSHUtil(object):
 
     def _connect(self) -> bool:
         """建立SSH和SFTP连接"""
+        if CommonUtil.is_library_installed('paramiko'):
+            import paramiko
+        else:
+            return False
         self.ssh_client = paramiko.SSHClient()
         self.ssh_client.load_system_host_keys()
         self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

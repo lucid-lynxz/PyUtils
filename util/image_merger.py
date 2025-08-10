@@ -36,7 +36,7 @@ def merge_images(image_dir, rows=1, cols=None, single_column=False):  # 新增 s
     # 创建拼接后的图片
     result_width = cols * max_width
     result_height = rows * max_height
-    result = Image.new('RGB', (result_width, result_height))
+    result = Image.new('RGB', (result_width, result_height), color="white") # 背景为白色
 
     # 拼接图片
     for i in range(len(scaled_images)):

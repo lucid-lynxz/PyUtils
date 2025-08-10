@@ -10,6 +10,7 @@ from urllib.error import URLError, HTTPError
 from util.CommonUtil import CommonUtil
 from util.DingTaskBot import DingTalkBot
 from util.TimeUtil import TimeUtil
+from util.FileUtil import FileUtil
 
 
 class NetUtil(object):
@@ -195,12 +196,28 @@ class NetUtil(object):
                 timeout = kwargs.get('timeout', 10)
                 response = urllib2.urlopen(req, timeout=timeout)
 
+                # 获取文件总大小
+                total_size = int(response.headers.get('Content-Length', 0))
+                downloaded_size = 0
+                start_ms = TimeUtil.currentTimeMillis()
+
                 with open(save_path, "wb") as f:
                     while True:
-                        chunk = response.read(1024)  # 分块读取
+                        chunk = response.read(4096)  # 分块读取
                         if not chunk:
                             break
                         f.write(chunk)
+                        downloaded_size += len(chunk)
+
+                        # 计算并打印进度
+                        if total_size > 0:
+                            progress = int((downloaded_size / total_size) * 100)
+                            print(f"\rDownload progress: {progress}%", end='', flush=True)
+                            if progress >= 100:
+                                duration_sec = (TimeUtil.currentTimeMillis() - start_ms) / 1000
+                                file_size = FileUtil.format_size(total_size)
+                                avg_speed = FileUtil.format_speed(total_size / duration_sec) if duration_sec > 0 else "0 B/s"
+                                CommonUtil.printLog(f'文件大小:{file_size},耗时:{duration_sec:.2f}s,平均下载速度:{avg_speed}', prefix='\n')
                 CommonUtil.printLog(f'download finish,save_path={save_path}')
                 return save_path
             except HTTPError as e:
@@ -213,3 +230,8 @@ class NetUtil(object):
                 CommonUtil.printLog(f'download fail: {str(e)}')
                 return ''
         return ''
+
+
+if __name__ == '__main__':
+    _url = "https://tac.gientech.com/tac/download/mobile/software/SecID.apk"
+    NetUtil.download(_url, './')
