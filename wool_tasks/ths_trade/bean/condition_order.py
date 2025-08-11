@@ -111,7 +111,29 @@ class ConditionOrder(Runnable):
         if not self.active:
             return
 
-        if not AkShareUtil.is_trading_day():
+        # 获取最新价格
+        if self.position.is_hk_stock and self.long_trader is not None:
+            resp = self.long_trader.quote([f'{self.position.code}.HK'])[0]
+            latest_price = float(resp.last_done)  # 最新价
+            self.position.open_price = float(resp.open)  # 开盘价
+            # CommonUtil.printLog(f'长桥 {self.position.code} {self.position.name} 最新价格:{latest_price}')
+        else:
+            latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
+        if latest_price == 0.0:
+            CommonUtil.printLog(f'conditionOrder 最新价格为0,应该是获取失败了,跳过本轮检测,{self.summary_info_1line}')
+            return
+
+        self.check_condition(latest_price)
+
+    def check_condition(self, latest_price: float):
+        """
+        根据最新价格,判断条件单是否命中
+        :param latest_price: 最新价格
+        """
+        if not self.active:
+            return
+
+        if not self.is_hk and not AkShareUtil.is_trading_day():
             CommonUtil.printLog(f'conditionOrder 今天不是交易日,无需检测 {self.summary_info_1line}')
             self.active = False
             return
@@ -137,28 +159,6 @@ class ConditionOrder(Runnable):
         # 卖出股票时, 若可用余额不足,则调整为可用余额
         if self.deal_count < 0 and int(self.position.available_balance) < abs(self.deal_count):
             self.deal_count = int(self.position.available_balance) * -1
-
-        # 获取最新价格
-        if self.position.is_hk_stock and self.long_trader is not None:
-            resp = self.long_trader.quote([f'{self.position.code}.HK'])[0]
-            latest_price = float(resp.last_done)  # 最新价
-            self.position.open_price = float(resp.open)  # 开盘价
-            # CommonUtil.printLog(f'长桥 {self.position.code} {self.position.name} 最新价格:{latest_price}')
-        else:
-            latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
-        if latest_price == 0.0:
-            CommonUtil.printLog(f'conditionOrder 最新价格为0,应该是获取失败了,跳过本轮检测,{self.summary_info_1line}')
-            return
-
-        self.check_condition(latest_price)
-
-    def check_condition(self, latest_price: float):
-        """
-        根据最新价格,判断条件单是否命中
-        :param latest_price: 最新价格
-        """
-        if not self.active:
-            return
 
         self.position.cur_price = latest_price  # 当前价格
 
@@ -209,7 +209,3 @@ class ConditionOrder(Runnable):
                     self.position.available_balance = str(self.position.available_balance + self.deal_count)
             msg = f'{self.summary_info}\n极值:{self.extreme_value},最新:{latest_price}\n进行deal操作:{success}'
             NetUtil.push_to_robot(msg, printLog=True)
-
-#
-# if __name__ == '__main__':
-#     Condition().run(name="测试")

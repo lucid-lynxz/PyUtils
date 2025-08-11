@@ -91,7 +91,7 @@ if __name__ == '__main__':
             # time.sleep(60)  # 每隔60秒执行一次操作
 
 
-    hk_order_list = []
+    hk_order_list = list[ConditionOrder]()
 
 
     def task_condition_orders():
@@ -118,17 +118,33 @@ if __name__ == '__main__':
     def task_condition_orders_hk():
         """执行港股条件单"""
         # CommonUtil.printLog(f'task_condition_orders')
+        if CommonUtil.isNoneOrBlank(hk_order_list):
+            return
+
+        # 批量获取港股的最新价,若逐个获取,会触发长桥的接口调用次数限制
+        symbols = []
         for _order in hk_order_list:
-            if _order.active:
-                try:
-                    _order.run()
-                except Exception as e:
-                    _order.active = False
-                    # traceback.print_exc()
-                    tracebackMsg = traceback.format_exc()
-                    NetUtil.push_to_robot(
-                        f'task_condition_orders_hk 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
-                        printLog=True)
+            symbols.append(f'{_order.position.code}.HK')
+
+        _resp = lb_trader.quote(symbols)
+        for index, _item in enumerate(_resp):
+            _order = hk_order_list[index]
+            _order.position.open_price = float(_item.open)  # 开盘价
+            latest_price = float(_item.last_done)  # 最新价
+            CommonUtil.printLog(f'港股条件单, 股票代码:{_order.position.code}, 最新价:{latest_price}')
+            _order.check_condition(latest_price)
+
+        # for _order in hk_order_list:
+        #     if _order.active:
+        #         try:
+        #             _order.run()
+        #         except Exception as e:
+        #             _order.active = False
+        #             # traceback.print_exc()
+        #             tracebackMsg = traceback.format_exc()
+        #             NetUtil.push_to_robot(
+        #                 f'task_condition_orders_hk 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
+        #                 printLog=True)
 
 
     def get_sh_index():
