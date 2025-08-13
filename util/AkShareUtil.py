@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
-import os
 import datetime
+import os
 from typing import Union
 
 import akshare as ak
@@ -10,7 +10,7 @@ import pandas as pd
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 from util.NetUtil import NetUtil
-from util.TimeUtil import TimeUtil, log_time_consume
+from util.TimeUtil import log_time_consume, TimeUtil
 
 """
 akshare 工具类
@@ -381,10 +381,14 @@ class AkShareUtil:
         """
         start_date = TimeUtil.getTimeStr('%Y%m%d', n_day_ago)
         today = TimeUtil.getTimeStr('%Y%m%d', 0)
-        if hk:
-            return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=today)
-        else:
-            return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+        try:
+            if hk:
+                return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+            else:
+                return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+        except Exception as e:
+            CommonUtil.printLog(f'获取股票{code}历史数据失败: {e}')
+            return pd.DataFrame()
 
     @staticmethod
     def get_stock_zh_index(symbol: str = '上证系列指数') -> pd.DataFrame:

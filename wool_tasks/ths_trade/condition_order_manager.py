@@ -70,14 +70,17 @@ if __name__ == '__main__':
     # 修正同花顺ocr识别的持仓数据信息, 主要是港股的名称
     for code, position in ths_trader.position_dict.items():
         ori_name = position.name
-        if position.is_hk_stock:
-            if enable_long_bridge:
-                resp: SecurityStaticInfo = lb_trader.static_info([f'{code}.HK'])[0]
-                position.name = resp.name_cn  # 中文简体标的名称
-        else:
-            if '指数' not in position.name:
-                position.name = AkShareUtil.get_stock_name(code)  # A股名称
-        # CommonUtil.printLog(f'修正持仓数据信息, 股票代码:{code}, 原始名称:{ori_name}, 修正后名称:{position.name}')
+        try:
+            if position.is_hk_stock:
+                if enable_long_bridge:
+                    resp: SecurityStaticInfo = lb_trader.static_info([f'{code}.HK'])[0]
+                    position.name = resp.name_cn  # 中文简体标的名称
+            else:
+                if '指数' not in position.name:
+                    position.name = AkShareUtil.get_stock_name(code)  # A股名称
+            # CommonUtil.printLog(f'修正持仓数据信息, 股票代码:{code}, 原始名称:{ori_name}, 修正后名称:{position.name}')
+        except Exception as e:
+            CommonUtil.printLog(f'修正持仓数据信息, 股票代码:{code}, 原始名称:{ori_name}, 修正后名称:{position.name}, 出错:{e}')
 
 
     def prevent_lock_screen():

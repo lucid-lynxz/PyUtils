@@ -1,13 +1,12 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
-import sys, traceback
+import re
 import ctypes
+import sys, traceback
 from typing import Optional
 
 from airtest.core.api import *
-
-from util.NetUtil import NetUtil
 
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
@@ -19,8 +18,9 @@ from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
 from util.CommonUtil import CommonUtil, catch_exceptions
 from util.FileUtil import FileUtil
-from util.TimeUtil import log_time_consume
+from util.TimeUtil import log_time_consume, TimeUtil
 from util.AkShareUtil import AkShareUtil
+from util.NetUtil import NetUtil
 
 
 class THSTrader(BaseAir4Windows):
@@ -240,14 +240,60 @@ class THSTrader(BaseAir4Windows):
             item['cost_price'] = CommonUtil.parse_number(item['cost_price'], float, 0)
             item['balance'] = CommonUtil.parse_number(item['balance'], int, 0)
             item['available_balance'] = CommonUtil.parse_number(item['available_balance'], int, 0)
+            market = item['market']
+            code = item['code']
+
+            is_a_stock = 'A股' in market
+            is_hk_stock = '港' in market or 'HK' in market
+
+            #  删除字符串中所有非数字内容
+            code1 = code
+            if is_a_stock or is_hk_stock:
+                code1 = re.sub(r'\D', '', code)
+                CommonUtil.printLog(f'recook code: {code} -> {code1},market={market}')
+                code = code1
+                item['code'] = code
+
+            # A股代码以特定数字开头:
+            # 沪市主板：60开头（6位数字），如中国平安（601318）
+            # 深市主板：000开头（6位数字），如万科A（000002）
+            # 中小板：002开头（6位数字），如苏宁易购（002024）
+            # 创业板：300开头（6位数字），如宁德时代（300750）
+            # 科创板：688开头（6位数字），如中芯国际（688981）
+            #
+            # 北交所的股票代码为6位数字，采用特定号段规则区分不同类型股票：
+            # 代码结构说明
+            # 普通股票：以 83 或 87 开头，如83XXXX、87XXXX
+            # 优先股：以 82 开头，如82XXXX
+            # 公开发行股票：以 88 开头，首三位固定为 889，如889XXX
+            # 指数代码：以 899 开头，如899XXX
+            #
+            # 港股代码的基本格式（数字为主）
+            # 主板：5位数字（通常前加"0"），如腾讯控股（00700）
+            # 创业板：5位数字（前加"8"），如某创业板股票（80001）
+            if is_a_stock:
+                if len(code) > 6:
+                    item['code'] = code[:6]
+                elif len(code) < 6:
+                    item['code'] = code.zfill(6)
+            elif is_hk_stock:
+                if len(code) > 5:
+                    item['code'] = code[:5]
+                elif len(code) < 5:
+                    item['code'] = code.zfill(5)
+
+            code2 = item['code']
+            if code1 != code2:
+                CommonUtil.printLog(f'recook code2:{code1} -> {code2},market={market}')
 
         result = list()
         for i in range(len(dictList)):
             stock_position = StockPosition(**dictList[i])
             result.append(stock_position)
             # 由于解析区域可能包含了空白区域, 因此对于code或name为空的股票, 需要进行删除
-            if stock_position.is_hk_stock:
-                stock_position['code'] = stock_position['code'][1:]
+            code = stock_position['code']
+            if stock_position.is_hk_stock and not code[0].isdigit():
+                stock_position['code'] = code[1:]
 
             code = stock_position.code
             cache_position: StockPosition = self.position_dict.get(code)
@@ -264,7 +310,7 @@ class THSTrader(BaseAir4Windows):
             if position.open_price == 0:  # 今日开盘价是0, 表明尚未获取过今日开盘价,进行获取
                 CommonUtil.printLog(f'{code}({position.name})今日开盘价是0,直接请求最新报价')
                 _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock)  # 获取最新价格
-                if not _df_hist.empty:
+                if _df_hist is not None and not _df_hist.empty:
                     latest_data = _df_hist.iloc[-1:]
                     CommonUtil.printLog(f'\n开盘信息:{latest_data}')
                     position.open_price = latest_data["开盘"].iloc[0]  # float 开盘价
