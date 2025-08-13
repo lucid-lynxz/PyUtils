@@ -582,6 +582,11 @@ class FileUtil(object):
                 if row[0].startswith('#') or row[0].startswith(';'):  # 跳过以 # 或 ; 开头的行
                     continue
 
+                # 去除等号和空格, 将等号转为逗号,避免原内容中包含冒号时, 冒号会被识别为 key-value 的分隔符
+                row_str = delimiter.join(row)
+                row_str = row_str.replace('=', ',').replace(' ', '')
+                row = row_str.split(delimiter)
+
                 try:
                     obj = object_class.from_csv_row(row)
                     objects.append(obj)
