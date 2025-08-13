@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 
-import pyautogui
+import pyautogui  # pip install pyautogui
 
 
 class SystemSleepPreventer:
