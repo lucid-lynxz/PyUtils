@@ -29,8 +29,13 @@ class DefaultCustomLog(object):
         :param use_file_handler:是否保存到文件,默认是False
         :return:
         """
+        print(f'get_log name={name}, log_path={log_path}')
         log = logging.getLogger(name)
         log.setLevel(level)
+        # 若同时添加streamHandler 和 fileHandler, 则默认控制台会输出两次日志
+        # 处理方案: 1. 只添加其中一种handler  2. propagate设置为false,这样fileHandler就不会写入控制台了
+        # log.propagate = False  # 防止日志重复打印
+        
         # log已经存在handler时不再绑定handler，防止日志重复打印
         if not log.handlers:
             if use_stream_handler:

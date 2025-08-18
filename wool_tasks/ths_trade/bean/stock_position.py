@@ -18,16 +18,20 @@ class StockPosition:
     available_balance: int = 0  # 可用余额 int 表示多少股
 
     # 价格信息
-    open_price: float = 0.0  # 今日开盘价
     cost_price: float = 0.0  # 成本价 float
     market_price: float = 0.0  # 市价 float
     market: str = ''  # 交易市场
     # 以上数据是来自于同花顺的持仓数据截图ocr结果
 
     # 以下涨跌停价等信息是从akshare获取的数据
+    prev_close: float = 0.0  # 昨收价,用作第一次条件单触发时的基准价判断
+    open_price: float = 0.0  # 今日开盘价
+    cur_price: float = 0.0  # 当前价格
+    high_price: float = 0.0  # 最高价
+    low_price: float = 0.0  # 最低价
     limit_up_price: float = 0.0  # 涨停价
     limit_down_price: float = 0.0  # 跌停价
-    cur_price: float = 0.0  # 当前价格
+    lot_size: int = 0  # 最小交易单位, 比如 100股, 1手等, 0表示未知, 主要用于港美股
 
     # 相关字段在 同花顺 持仓列表中的名称及对应于本类的字段名, 若value为空,表示本类不包含该信息, 无需存储
     # 默认顺序: 证券代码  证券名称  股票余额  可用余额  冻结数量  成本价  市价  盈亏  盈亏比(%)  当日盈亏  当日盈亏比(%)  市值  仓位占比(%)  当日买入  当日卖出  交易市场 持股天数
@@ -79,6 +83,16 @@ class StockPosition:
     def market_value(self) -> float:
         """计算市值"""
         return self.market_price * self.balance
+
+    @property
+    def symbol(self):
+        if self.is_hk_stock:
+            return f'{self.code}.HK'
+        elif '上海' in self.market:
+            return f'{self.code}.SH'
+        elif '深圳' in self.market:
+            return f'{self.code}.SZ'
+        return self.code
 
     # 显示方法
     def __str__(self) -> str:

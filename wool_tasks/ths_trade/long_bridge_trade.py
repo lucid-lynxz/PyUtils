@@ -1,12 +1,12 @@
 import os
+import traceback
 from decimal import Decimal
 from typing import List, Type
 
-from longport.openapi import TradeContext, QuoteContext, Config, SubType, PushQuote, SecurityQuote, OrderType, \
-    OrderSide, TimeInForceType, SecurityStaticInfo
+from longport.openapi import TradeContext, QuoteContext, Config, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote
 
-from util.ConfigUtil import NewConfigParser
 from util.CommonUtil import CommonUtil
+from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
 
@@ -74,8 +74,10 @@ class LBTrader(object):
         """
         行情订阅回调函数, 比如:
         def on_quote(symbol: str, quote: PushQuote):
+            # 注意: 若subscribe时传入的symbol前缀是0, 回调时, 0会被删除
             print(symbol, quote)
         """
+        CommonUtil.printLog(f'set_on_subscribe({listener})')
         self.quoteCtx.set_on_quote(listener)
 
     def subscribe(self, symbols: List[str], sub_types: List[Type[SubType]], is_first_push: bool = False) -> 'LBTrader':
@@ -85,6 +87,7 @@ class LBTrader(object):
         :param sub_types: 订阅类型列表, 比如:  [SubType.Quote]
         :param is_first_push: 是否立即推送当前数据
         """
+        CommonUtil.printLog(f'subscribe({symbols},{sub_types},{is_first_push})')
         self.quoteCtx.subscribe(symbols, sub_types, is_first_push)
         return self
 
@@ -95,7 +98,12 @@ class LBTrader(object):
         :param symbols: 标的代码列表,比如: ["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]
         :return:
         """
-        return self.quoteCtx.quote(symbols)
+        try:
+            return self.quoteCtx.quote(symbols)
+        except Exception as e:
+            CommonUtil.printLog(f'quote Exception:{e}, symbols: {symbols}')
+            traceback.print_exc()
+            return []
 
     def get_latest_price(self, symbols: list[str]) -> list[float]:
         """
@@ -114,48 +122,58 @@ class LBTrader(object):
         """
         return self.quoteCtx.static_info(symbols)
 
-    def deal(self, code: str, price: float, amount: float):
+    def deal(self, symbol: str, price: float, amount: float):
         """
         买卖股票
         文档: https://open.longportapp.com/zh-CN/docs/trade/order/submit
-        :param code: 股票代码, 比如: '700.HK'
+        :param symbol: 股票代码, 比如: '700.HK'
         :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖出操作时, 会使用买一价, 买入操作时,使用卖一价
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
+        :return SubmitOrderResponse 类型
 
         可能的报错:
         longport.OpenApiException: OpenApiException: (code=602001, trace_id=f7bf2eb409b2605ad23ebe3730253c68) The submitted quantity does not comply with the required multiple of the lot size
         --> 这个表示下单数量不符合该股票的最低下单量, 可通过 self.quoteCtx.static_info([f'{code}'])[0].lot_size 来获取该股票的每手数量
         """
-        order_type = OrderType.MO if price <= 0 else OrderType.LO  # M0: 市价单  L0:限价单 选哟传递价格
-        order_side = OrderSide.Buy if amount > 0 else OrderSide.Sell  # 买入:Buy  卖出:Sell
-        submitted_price = None if price <= 0 else Decimal(price)
-        _resp = self.tradeCtx.submit_order(code, order_type, order_side, Decimal(abs(amount)),
-                                           TimeInForceType.Day, submitted_price, remark='deal from python sdk')
-        return _resp
+        try:
+            order_type = OrderType.MO if price <= 0 else OrderType.LO  # M0: 市价单  L0:限价单 选哟传递价格
+            order_side = OrderSide.Buy if amount > 0 else OrderSide.Sell  # 买入:Buy  卖出:Sell
+            submitted_price = None if price <= 0 else Decimal(price)
+            _resp = self.tradeCtx.submit_order(symbol, order_type, order_side, Decimal(abs(amount)),
+                                               TimeInForceType.Day, submitted_price, remark='deal from python sdk')
+            return _resp
+        except Exception as e:
+            CommonUtil.printLog(f'deal({symbol},{price},{amount}) fail: {e}')
+            traceback.print_exc()
+            return None
 
 
 if __name__ == '__main__':
     trader = LBTrader()
     CommonUtil.printLog(f'>>>>>>>>>>>>>>>>>>>>')
 
-    # def on_quote(symbol: str, quote: PushQuote):
-    #     print(symbol, quote)
     # symbols = ["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]
-    symbols = ["1810.HK"]  # 1810 小米集团
-    # trader.set_on_subscribe(on_quote)
+    symbols = ["1810.HK", "09868.HK"]  # 1810 小米集团 09868 小鹏汽车
+
+
+    def on_quote(symbol_quote: str, quote_item: PushQuote):
+        CommonUtil.printLog(f'--> on_quote {symbol_quote}, {quote_item}')
+
+
+    trader.set_on_subscribe(on_quote)
 
     # trader.set_on_subscibe(lambda symbol, quote: print(symbol, quote))
-    # trader.subscribe(symbols=symbols, sub_types=[SubType.Quote], is_first_push=True)
+    trader.subscribe(symbols=symbols, sub_types=[SubType.Quote], is_first_push=True)
 
-    resp = trader.get_latest_price(symbols)
-    CommonUtil.printLog(f'最新价格: {resp}')
-
-    resp = trader.quote(symbols)
-    CommonUtil.printLog(f'行情: {resp}')
-    # TimeUtil.sleep(30)
-
-    resp = trader.static_info(symbols)
-    CommonUtil.printLog(resp)
+    # resp = trader.get_latest_price(symbols)
+    # CommonUtil.printLog(f'最新价格: {resp}')
+    #
+    # resp = trader.quote(symbols)
+    # CommonUtil.printLog(f'行情: {resp}')
+    # TimeUtil.sleep(10)
+    #
+    # resp = trader.static_info(symbols)
+    # CommonUtil.printLog(resp)
 
     # resp = trader.deal('1810.HK', 56.25, 200)
     # CommonUtil.printLog(resp)

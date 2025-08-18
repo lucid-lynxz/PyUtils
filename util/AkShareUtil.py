@@ -420,6 +420,20 @@ class AkShareUtil:
         """
         return ak.stock_zh_index_spot_em(symbol=symbol)
 
+    @staticmethod
+    def get_prev_close(code: str, hk: bool) -> float:
+        """
+        获取前一个交易日的收盘价
+        :param code: 股票代码
+        :param hk: 是否是港股
+        :return: 前一个交易日的收盘价, 0.0表示获取失败
+        """
+        _df = AkShareUtil.query_stock_daily_history(code, hk, 20)
+        if not _df.empty:
+            _prev_data = _df.iloc[-2:-1]
+            return float(_prev_data['收盘'].iloc[0])
+        return 0.0
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -431,13 +445,20 @@ if __name__ == '__main__':
     # 获取开盘收盘等信息
     from TimeUtil import TimeUtil
 
-    _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 3)  # 九号公司
+    # _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 20)  # 九号公司
+    _df_hist = AkShareUtil.query_stock_daily_history('09868', True, 20)  # 小鹏汽车-W
     print(_df_hist)
     if not _df_hist.empty:
         _latest_data = _df_hist.iloc[-1:]
+        _yesterday_data = _df_hist.iloc[-2:-1]
+
         print(f'\n最近一个交易日信息:{_latest_data}')
         print(f'开盘:{_latest_data["开盘"].iloc[0]}')
         print(f'收盘:{_latest_data["收盘"].iloc[0]}')
+
+        print(f'\n前一个交易日信息:{_yesterday_data}')
+        print(f'开盘:{_yesterday_data["开盘"].iloc[0]}')
+        print(f'收盘:{_yesterday_data["收盘"].iloc[0]}')
 
         _target_date = TimeUtil.getTimeObj("%Y%m%d", 2)  # 字符串转为date对象
         _target_data = _df_hist[_df_hist['日期'] == _target_date.date()]
@@ -445,3 +466,5 @@ if __name__ == '__main__':
         if not _target_data.empty:
             print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
             print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
+
+    print(f'小鹏汽车昨收价:{AkShareUtil.get_prev_close("09868", True)}')

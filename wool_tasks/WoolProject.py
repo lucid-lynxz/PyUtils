@@ -37,7 +37,7 @@ class AbsWoolProject(ABC, Runnable):
         self.updateCacheDir(cacheDir)
 
         # 自定义日志,参考: https://zhuanlan.zhihu.com/p/445411809
-        self.logger = DefaultCustomLog.get_log('wool', use_file_handler=True)
+        self.logger = DefaultCustomLog.get_log('wool', use_stream_handler=False, use_file_handler=True)
         # self.logger = logging.getLogger("wool")
         # self.logger.handlers = []  # 将当前文件的handlers 清空后再添加,否则可能会多次打印日志
         # self.logger.setLevel(logging.INFO)

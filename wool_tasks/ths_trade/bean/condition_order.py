@@ -76,6 +76,7 @@ class ConditionOrder(Runnable):
         self.active: bool = True  # 是否有效, 超期/已触发 就会变为无效
         self.hit: bool = False  # 是否已突破基准价
 
+        self.pre_close_checked: bool = False  # 是否已使用昨收价判断是否已触发基准价
         self.position = position  # 持仓信息
         self.is_hk = self.position.is_hk_stock  # 是否为港股
 
@@ -100,6 +101,18 @@ class ConditionOrder(Runnable):
         self.summary_info = f"""{self.position.code} {self.position.name}({self.position.market})\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'},数量:{self.deal_count}"""
         self.summary_info_1line = self.summary_info.replace('\n', ' ').strip()
 
+    def use_long_bridge(self) -> bool:
+        """
+        是否使用长桥进行交易
+        """
+        return '长桥' in self.position.market
+
+    def use_zhunjia(self) -> bool:
+        """
+        是否使用尊嘉app(android端)进行交易
+        """
+        return '尊嘉' in self.position.market
+
     def run(self):
         """
         使用akshare库获取最新价格,并检测是否命中条件单
@@ -111,27 +124,59 @@ class ConditionOrder(Runnable):
         if not self.active:
             return
 
+        # 先使用昨收价判断下是否已触发基准价
+        if not self.pre_close_checked or self.position.prev_close <= 0.0:
+            prev_close = AkShareUtil.get_prev_close(self.position.code, self.is_hk)
+            self.position.prev_close = prev_close
+            self.check_condition(prev_close, '昨收价')
+            self.pre_close_checked = True
+
         # 获取最新价格
-        if self.position.is_hk_stock and self.long_trader is not None:
-            resp = self.long_trader.quote([f'{self.position.code}.HK'])[0]
-            latest_price = float(resp.last_done)  # 最新价
-            self.position.open_price = float(resp.open)  # 开盘价
-            # CommonUtil.printLog(f'长桥 {self.position.code} {self.position.name} 最新价格:{latest_price}')
-        else:
-            latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
+        latest_price = 0.0
+        try:
+            if self.position.is_hk_stock and self.long_trader is not None:
+                resp = self.long_trader.quote([self.position.symbol])[0]
+                latest_price = float(resp.last_done)  # 最新价
+                self.position.open_price = float(resp.open)  # 开盘价
+                self.position.prev_close = float(resp.prev_close)  # 昨收价
+                self.position.cur_price = latest_price  # 最新价
+                self.position.high_price = float(resp.high)  # 最高价
+                self.position.low_price = float(resp.low)  # 最低价
+                # CommonUtil.printLog(f'长桥 {self.position.code} {self.position.name} 最新价格:{latest_price}')
+            else:
+                # latest_price = AkShareUtil.get_latest_price(self.position.code, self.is_hk)  # 获取最新价格
+                stock_min_df = AkShareUtil.get_market_data(self.position.code, self.is_hk, 20, 1)
+                if not stock_min_df.empty:
+                    latest_data = stock_min_df.iloc[-1:]  # 最新1min的数据, 包含开盘价,收盘价,最高价,最低价,成交量,成交额等信息
+                    latest_price: float = latest_data['收盘'].iloc[-1]  # 最新价格
+                    self.position.cur_price = latest_price
+                    self.position.open_price = latest_data['开盘'].iloc[-1]  # 开盘价
+                    self.position.high_price = latest_data['最高'].iloc[-1]  # 最高价
+                    self.position.low_price = latest_data['最低'].iloc[-1]  # 最低价
+                    self.position.prev_close = stock_min_df.iloc[-2]['收盘'].iloc[0]  # 昨收价
+        except Exception as e:
+            NetUtil.push_to_robot(f'get_latest_price error for {self.position.code}: {e}')
+
+        # 先使用昨收价判断下是否已触发基准价
+        if not self.pre_close_checked:
+            self.check_condition(self.position.prev_close, '昨收价')
+            self.pre_close_checked = True
+
         if latest_price == 0.0:
             CommonUtil.printLog(f'conditionOrder 最新价格为0,应该是获取失败了,跳过本轮检测,{self.summary_info_1line}')
             return
 
         self.check_condition(latest_price)
 
-    def check_condition(self, latest_price: float):
+    def check_condition(self, latest_price: float, price_tip: str = '最新价'):
         """
         根据最新价格,判断条件单是否命中
         :param latest_price: 最新价格
+        :param price_tip: 最新价格提示, 默认为 '最新价', 也支持 '昨收价', 其默认会在 09:32:00 之前进行判断
         """
-        if not self.active:
+        if not self.active or latest_price <= 0.0:
             return
+        # CommonUtil.printLog(f'conditionOrder 检测条件单 {self.summary_info_1line} {price_tip}:{latest_price}')
 
         if not self.is_hk and not AkShareUtil.is_trading_day():
             CommonUtil.printLog(f'conditionOrder 今天不是交易日,无需检测 {self.summary_info_1line}')
@@ -141,18 +186,16 @@ class ConditionOrder(Runnable):
         # 若时间不满足,则不做检测
         if (not CommonUtil.isNoneOrBlank(self.start_time) and
                 not TimeUtil.is_time_greater_than(self.start_time, include_equal=True)):
-            CommonUtil.printLog(
-                f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line}')
+            CommonUtil.printLog(f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
             return
 
         if not CommonUtil.isNoneOrBlank(self.end_time) and TimeUtil.is_time_greater_than(self.end_time):
-            CommonUtil.printLog(
-                f'conditionOrder 超过检测时段内(<={self.end_time}),今日跳过:{self.summary_info_1line}')
+            CommonUtil.printLog(f'conditionOrder 超过检测时段内(<={self.end_time}),今日跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
             self.active = False
             return
 
         if TimeUtil.is_time_greater_than(self.end_date):
-            CommonUtil.printLog(f'conditionOrder 超过检测日期{self.end_date},不再检测 {self.summary_info_1line}')
+            CommonUtil.printLog(f'conditionOrder 超过检测日期{self.end_date},不再检测 {self.summary_info_1line},{price_tip}:{latest_price}')
             self.active = False
             return
 
@@ -174,17 +217,21 @@ class ConditionOrder(Runnable):
                 self.hit = True
 
             if self.hit:
-                msg = f'{self.summary_info}\n首次突破基准价:{self.base},最新:{latest_price}'
+                msg = f'{self.summary_info}\n首次突破基准价:{self.base},极值:{self.extreme_value},{price_tip}:{latest_price}'
                 NetUtil.push_to_robot(msg, printLog=True)
-
-        if not self.hit:
-            return
+                return  # 首次突破后返回, 等待下一次价格变化再做检测
+            else:
+                return  # 未突破基准价, 跳过本次检测
 
         # 达到基准价后, 检测反弹力度
         if self.break_upward:  # 向上突破
+            # high_price = self.position.high_price if self.position.high_price > 0 else self.extreme_value
+            # self.extreme_value = max(latest_price, self.extreme_value, high_price)
             self.extreme_value = max(latest_price, self.extreme_value)
             delta = abs(self.extreme_value - latest_price)
         else:
+            # low_price = self.position.low_price if self.position.low_price > 0 else self.extreme_value
+            # self.extreme_value = min(latest_price, self.extreme_value, low_price)
             self.extreme_value = min(latest_price, self.extreme_value)
             delta = abs(self.extreme_value - latest_price)
 
@@ -195,8 +242,22 @@ class ConditionOrder(Runnable):
 
         # 反弹幅度超过预设值,触发交易
         if delta >= expected_delta:
+            if delta >= 3 * expected_delta or (TimeUtil.is_time_greater_than('09:32:00') and '昨收价' == price_tip):
+                msg = f'{self.summary_info}\n极值:{self.extreme_value},{price_tip}:{latest_price},波动了:{delta},超过3倍反弹幅度或者昨收价超期失效,跳过本次交易'
+                NetUtil.push_to_robot(msg, printLog=True)
+                return
+
             self.active = False
-            success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
+
+            CommonUtil.printLog(f'进行交易:{self.summary_info},极值:{self.extreme_value},{price_tip}:{latest_price}, 反弹幅度:{delta}, 预设反弹幅度:{expected_delta}')
+            app_name = '同花顺'
+            if self.use_long_bridge():
+                app_name = '长桥'
+                # from longport.openapi import SubmitOrderResponse
+                result = self.long_trader.deal(self.position.symbol, 0, self.deal_count)
+                success = result is not None and not CommonUtil.isNoneOrBlank(result.order_id)
+            else:
+                success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
 
             # 交易成功后,更新持仓信息
             if success:
@@ -207,5 +268,5 @@ class ConditionOrder(Runnable):
                 else:  # 卖出
                     self.position.balance = str(self.position.balance + self.deal_count)
                     self.position.available_balance = str(self.position.available_balance + self.deal_count)
-            msg = f'{self.summary_info}\n极值:{self.extreme_value},最新:{latest_price}\n进行deal操作:{success}'
+            msg = f'{self.summary_info}\n极值:{self.extreme_value},{price_tip}:{latest_price}\n进行deal操作:{success} by {app_name}'
             NetUtil.push_to_robot(msg, printLog=True)
