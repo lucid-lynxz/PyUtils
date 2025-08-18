@@ -59,7 +59,7 @@ class NetUtil(object):
         fsToken = configDict.get('feishuToken', '')
         if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
             return False
-        # print(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
+        # CommonUtil.printLog(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
         if not CommonUtil.isNoneOrBlank(ddAccessToken):
             NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret)
         if not CommonUtil.isNoneOrBlank(fsToken):
@@ -83,7 +83,7 @@ class NetUtil(object):
         """
         result = DingTalkBot(token=access_token, secret=secret).send_text(content, is_at_all, at_mobiles)
         ddResult = json.dumps(result, default=str)
-        print(f'push_ding_talk_robot result={ddResult}')
+        CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
         return ddResult
         # headers = {"Content-type": "application/json"}
         # json_data_obj = {
@@ -97,7 +97,7 @@ class NetUtil(object):
         #     },
         #     "msgtype": "text"
         # }
-        # print('data_obj', json_data_obj)
+        # CommonUtil.printLog(f'data_obj:{json_data_obj}')
         # # 将str类型转换为bytes类型
         # json_data_obj = json.dumps(json_data_obj).encode('utf-8')
         # # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
@@ -106,7 +106,7 @@ class NetUtil(object):
         #                           headers=headers, method="POST")
         # response = urllib2.urlopen(request)
         # ddResult = response.read().decode('utf-8')
-        # print('push_ding_talk_robot result=%s' % ddResult)
+        # CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
         # return ddResult
 
     @staticmethod
@@ -125,7 +125,7 @@ class NetUtil(object):
             },
             "msg_type": "text"
         }
-        # print('data_obj', json_data_obj)
+        # CommonUtil.printLog(f'data_obj={json_data_obj}')
         # 将str类型转换为bytes类型
         json_data_obj = json.dumps(json_data_obj).encode('utf-8')
         # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
@@ -135,11 +135,11 @@ class NetUtil(object):
         try:
             response = urllib2.urlopen(request)
             fsResult = response.read().decode('utf-8')
-            print('push_feishu_robot result=%s' % fsResult)
+            CommonUtil.printLog(f'push_feishu_robot result={fsResult}')
             return fsResult
         except Exception as e:
             traceback.print_exc()
-            print(f'push_feishu_robot fail url={request.full_url} {e}')
+            CommonUtil.printLog(f'push_feishu_robot fail url={request.full_url} {e}')
             return 'fail'
 
     @staticmethod
@@ -156,7 +156,7 @@ class NetUtil(object):
         # finally:
         #     if s is not None:
         #         s.close()
-        print('ip=', ip)
+        CommonUtil.printLog(f'ip={ip}')
         return ip
 
     @staticmethod

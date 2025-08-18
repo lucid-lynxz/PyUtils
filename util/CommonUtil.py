@@ -26,6 +26,12 @@ class CommonUtil(object):
     #     :return:
     #     """
     #     return srcStr.decode(srcEncode).encode(toEncode)
+    _redirect_log_fun = None
+
+    @classmethod
+    def redirect_print_log(cls, func):
+        """设置外部日志重定向函数, 函数包含一个字符串入参"""
+        cls._redirect_log_fun = func
 
     @staticmethod
     def updateStdOutEncoding(encoding: str = 'utf8'):
@@ -37,12 +43,24 @@ class CommonUtil(object):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
-    def printLog(msg, condition: bool = True, prefix: str = "", includeTime: bool = True):
+    def printLog(msg, condition: bool = True, prefix: str = "", includeTime: bool = True, prefer_redirect_log: bool = True):
+        """
+        打印日志, 默认使用print() 并会自动拼接当前时间信息, 打印格式为: {prefix}{时间信息}{msg}
+        若设置了重定向函数, 并且 prefer_redirect_log=True, 则会使用重定向函数进行日志输出, 日志格式: {prefix}{msg}
+        :param msg: 待打印的日志信息
+        :param condition: 打印条件, 默认为True, false则不会打印
+        :param prefix: 日志前缀, 默认为空
+        :param includeTime: 是否包含时间信息, 默认为True, 默认的print有效
+        :param prefer_redirect_log: 是否优先使用重定向函数进行日志输出, 默认为True
+        """
         if condition:
             # 此处保持使用原始的 print() 语句
             try:
-                ts = f"{TimeUtil.getTimeStr()} " if includeTime else ""
-                print(f"{prefix}{ts}{msg}", flush=True)
+                if prefer_redirect_log and CommonUtil._redirect_log_fun is not None:
+                    CommonUtil._redirect_log_fun(f'{prefix}{msg}')
+                else:
+                    ts = f"{TimeUtil.getTimeStr()} " if includeTime else ""
+                    print(f"{prefix}{ts}{msg}", flush=True)
             except Exception as e:
                 print(f"printLog exception {e}", flush=True)
 

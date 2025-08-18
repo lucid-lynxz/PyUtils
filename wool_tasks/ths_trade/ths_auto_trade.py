@@ -200,7 +200,7 @@ class THSTrader(BaseAir4Windows):
             pos_top = pos[0][1]  # 左上角y值,向下偏移一点
 
             pos, _, _ = self.findTextByCnOCRResult(ocrResList, '交易市场', prefixText='成本价')
-            pos_right = pos[1][0] + 20  # 右边界往右偏移20像素
+            pos_right = pos[1][0] + 5  # 右边界往右偏移N个像素, 首次运行时, 偏移量请根据实际同花顺布局微调, 具体见 'cache/{时间}_ocr_grid_view_{类名信息}.png' 截图效果
             w, h = self.getWH()
             pos_bottom = h - 70
             self.position_rect = pos_left, pos_top, pos_right, pos_bottom
@@ -302,26 +302,28 @@ class THSTrader(BaseAir4Windows):
             else:
                 cache_position.copy_from(stock_position)
 
-        for code, position in self.position_dict.items():
-            if position.balance == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
-                CommonUtil.printLog(f'{code}({position.name})非持仓股,直接请求最新报价')
-                latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock)  # 获取最新价格
-                position.market_price = latest_price
-            if position.open_price == 0:  # 今日开盘价是0, 表明尚未获取过今日开盘价,进行获取
-                CommonUtil.printLog(f'{code}({position.name})今日开盘价是0,直接请求最新报价')
-                _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock)  # 获取最新价格
-                if _df_hist is not None and not _df_hist.empty:
-                    latest_data = _df_hist.iloc[-1:]
-                    CommonUtil.printLog(f'\n开盘信息:{latest_data}')
-                    position.open_price = latest_data["开盘"].iloc[0]  # float 开盘价
-        # self.position_dict = {objDict.code: objDict for objDict in result}
+        # for code, position in self.position_dict.items():
+        #     if position.balance == 0:  # 股票余额是0, 表明无持仓, 可能是条件单加进来的, 更新最新价
+        #         CommonUtil.printLog(f'{code}({position.name})非持仓股,直接请求最新报价')
+        #         latest_price = AkShareUtil.get_latest_price(code, position.is_hk_stock)  # 获取最新价格
+        #         position.market_price = latest_price
+        #     if position.open_price == 0:  # 今日开盘价是0, 表明尚未获取过今日开盘价,进行获取
+        #         CommonUtil.printLog(f'{code}({position.name})今日开盘价是0,直接请求最新报价')
+        #         _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock, n_day_ago=20)  # 获取最新价格和上一个交易日的收盘价
+        #         if _df_hist is not None and not _df_hist.empty:
+        #             latest_data = _df_hist.iloc[-1:]
+        #             yesterday_data = _df_hist.iloc[-2:-1]
+        #             CommonUtil.printLog(f'\n开盘信息:{latest_data}')
+        #             position.open_price = latest_data["开盘"].iloc[0]  # float 今日开盘价
+        #             position.prev_close = yesterday_data["收盘"].iloc[0]  # float 前一个交易日的开盘价
+        # # self.position_dict = {objDict.code: objDict for objDict in result}
 
         # 提取最新价信息并推送机器人
         msg_list = [f"{info.name[:2]}: {float(info.market_price):6.2f}" for code, info in self.position_dict.items()]
         msg_str = "\n".join(msg_list)
         if THSTrader.last_msg != msg_str:
             CommonUtil.printLog(f'持仓StockPositionList: {result}')
-            NetUtil.push_to_robot(msg_str)
+            # NetUtil.push_to_robot(msg_str)
             THSTrader.last_msg = msg_str
 
         # 切换到 f4 资金股票界面查询可用资余额
@@ -365,8 +367,17 @@ class THSTrader(BaseAir4Windows):
         # self.touch(self.refresh_pos) # 耗时1s左右,且光标附近可能会弹出按钮tip信息提示,遮盖其他内容,导致后续ocr识别异常
         self.key_press('F5')  # 刷新快捷键F5 速度大概0.1s,
 
-    @log_time_consume(separate=True)
     def deal(self, code: str, price: float, amount: float) -> bool:
+        try:
+            return self._deal_impl(code, price, amount)
+        except Exception as e:
+            tracebackMsg = traceback.format_exc()
+            msg = f'deal({code},{price},{amount}) exception:{tracebackMsg}'
+            NetUtil.push_to_robot(msg)
+            return False
+
+    @log_time_consume(separate=True)
+    def _deal_impl(self, code: str, price: float, amount: float) -> bool:
         """
         买卖股票
         :param code: 股票代码
@@ -442,6 +453,7 @@ class THSTrader(BaseAir4Windows):
         success = CommonUtil.isNoneOrBlank(pos)
         self.text("{ESC}")  # 按下esc键,部分弹框可被取消
         self.text("{ENTER}")  # 按下回车键, 避免弹框干扰
+        CommonUtil.printLog(f'交易结果:{success},img_name={img_name},ocrResStr:{ocrResStr}')
         return success
 
     def cancel_order(self, code: str):

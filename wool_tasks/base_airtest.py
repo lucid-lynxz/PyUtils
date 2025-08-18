@@ -737,8 +737,8 @@ class BaseAir(AbsWoolProject):
         """
 
         # 请使用python3.7以上的版本,此时dict是按插入顺序存储的
-        keys = list(title_key_dict.keys())  # 获取所有键的列表
-        values = list(title_key_dict.values())  # 获取所有值的列表
+        keys = list(title_key_dict.keys())  # 获取所有键的列表, 比如: ['证券代码' ,'证券名称']
+        values = list(title_key_dict.values())  # 获取所有值的列表, 比如: ['code','name']
         size = len(keys)  # 要求记录的列数量, ocr可能识别更多的列, 但是最终只会记录这些列
 
         # 按行提取持仓信息
@@ -747,7 +747,7 @@ class BaseAir(AbsWoolProject):
         line_dict = dict()  # 每行内容字典
         horizont_index = 0  # 该属性信息索引
         result = list()  # 最终结果
-        # self.saveImage(full_img, imgName='ocr_grid_view', autoAppendDateInfo=True)  # 调试时保存图片
+        self.saveImage(full_img, imgName='ocr_grid_view_full_img', append_date_time=True)  # 调试时保存图片
 
         if vertical_mode:  # 列模式识别
             # 获取每列的范围, 左/上/右 边界通过列标题获取, 下边界通过截图的高来确定
@@ -758,6 +758,7 @@ class BaseAir(AbsWoolProject):
                 prefixText: str = ''
                 subfixText: str = ''
 
+                # 获取目标标题的前后标题名
                 if i > 0:
                     for index in range(i - 1, 0, -1):
                         prefixText = keys[index]
@@ -774,14 +775,14 @@ class BaseAir(AbsWoolProject):
                     pos, ocrResStr, ocrResList = self.findTextByOCR(key, full_img, prefixText=prefixText,
                                                                     subfixText=subfixText, maxSwipeRetryCount=1)
                     title_ocr_result = ocrResList
+                    CommonUtil.printLog(f'持仓数据ocr结果: {ocrResStr}')
                 else:
                     pos, ocrResStr, _ = self.findTextByCnOCRResult(title_ocr_result, key, prefixText=prefixText,
                                                                    subfixText=subfixText)
                 if pos is None:
-                    print(f'列模式定位失败: {key},pre={prefixText},sub={subfixText},ocrStr={ocrResStr}')
+                    CommonUtil.printLog(f'列模式定位失败: {key},pre={prefixText},sub={subfixText},ocrStr={ocrResStr}')
                     continue
-                CommonUtil.printLog(
-                    f'列模式定位成功: {key},pre={prefixText},sub={subfixText},pos={self.calcCenterPos(pos)}')
+                CommonUtil.printLog(f'列模式定位成功: {key},pre={prefixText},sub={subfixText},pos={self.calcCenterPos(pos)}')
 
                 # 根据标题列的坐标, 偏移获取到内容区域的返回
                 pos_left = pos[0][0] - expand  # 左边界往左偏移一点
@@ -790,8 +791,10 @@ class BaseAir(AbsWoolProject):
                 w, h, d = full_img.shape
                 pos_bottom = h - 10  # 截图底部向上偏移一点
 
-                # 每列进行区域截图并ocr
-                ocr_result = self.crop_then_ocr(full_img, fromX=pos_left, fromY=pos_top, toX=pos_right, toY=pos_bottom)
+                # 每列进行区域截图并ocr, 截图文件保存在 cache 目录下,首次运行时,请查看宽度是否符合预期,适当微调,避免ocr错误
+                image_name = None  # f'ocr_grid_view_{key}_{value}_{horizont_index}' # 调试时再保存图片
+                ocr_result = self.crop_then_ocr(full_img, fromX=pos_left, fromY=pos_top, toX=pos_right, toY=pos_bottom, img_name=image_name)
+                CommonUtil.printLog(f'{image_name} 识别结果:{self.composeOcrStr(ocr_result)}')
 
                 # 每行对应一个dict对象的属性
                 center_y = -9999  # 当前正在处理的行y值, 用于判断是否换行了, 有可能一行数据被解析呢多个, 因此不能纯粹按照下表来判断
@@ -814,7 +817,7 @@ class BaseAir(AbsWoolProject):
                         result[line_num][value] += content
 
                 # for line_num, item in enumerate(ocr_result):
-                #     # print(f"行号 {line_num}: 值为 {item}")
+                #     # CommonUtil.printLog(f"行号 {line_num}: 值为 {item}")
                 #     content: str = item['text'].strip()  # 文本内容
                 #     if len(result) < line_num + 1:  # 新一行,创建行内容dict对象
                 #         result.append(dict())
@@ -843,6 +846,19 @@ class BaseAir(AbsWoolProject):
                 if not CommonUtil.isNoneOrBlank(value):
                     line_dict[value] = content
                 horizont_index += 1
+
+        # 只保留非空白数据
+        result = [x for x in result if not CommonUtil.isNoneOrBlank(x)]
+
+        # 处理属性确实的数据, 确保每行都包含所有属性
+        for item in result:
+            for i in range(len(keys)):
+                value = values[i]
+                item_value = item.get(value, None)
+                if item_value is None:
+                    CommonUtil.printLog(f'缺少属性 {value}, 原数据:{item} ')
+                    item[value] = ""
+        # CommonUtil.printLog(f'ocr_grid_view 最终结果: {result}')
         return result
 
     def getWH(self) -> tuple:
