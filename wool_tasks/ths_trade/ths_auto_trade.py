@@ -200,7 +200,7 @@ class THSTrader(BaseAir4Windows):
             pos_top = pos[0][1]  # 左上角y值,向下偏移一点
 
             pos, _, _ = self.findTextByCnOCRResult(ocrResList, '交易市场', prefixText='成本价')
-            pos_right = pos[1][0] + 20  # 右边界往右偏移20像素
+            pos_right = pos[1][0] + 5  # 右边界往右偏移N个像素, 首次运行时, 偏移量请根据实际同花顺布局微调, 具体见 'cache/{时间}_ocr_grid_view_{类名信息}.png' 截图效果
             w, h = self.getWH()
             pos_bottom = h - 70
             self.position_rect = pos_left, pos_top, pos_right, pos_bottom
@@ -309,11 +309,13 @@ class THSTrader(BaseAir4Windows):
                 position.market_price = latest_price
             if position.open_price == 0:  # 今日开盘价是0, 表明尚未获取过今日开盘价,进行获取
                 CommonUtil.printLog(f'{code}({position.name})今日开盘价是0,直接请求最新报价')
-                _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock)  # 获取最新价格
+                _df_hist = AkShareUtil.query_stock_daily_history(code, position.is_hk_stock, n_day_ago=20)  # 获取最新价格和上一个交易日的收盘价
                 if _df_hist is not None and not _df_hist.empty:
                     latest_data = _df_hist.iloc[-1:]
+                    yesterday_data = _df_hist.iloc[-2:-1]
                     CommonUtil.printLog(f'\n开盘信息:{latest_data}')
-                    position.open_price = latest_data["开盘"].iloc[0]  # float 开盘价
+                    position.open_price = latest_data["开盘"].iloc[0]  # float 今日开盘价
+                    position.prev_close = yesterday_data["收盘"].iloc[0]  # float 前一个交易日的开盘价
         # self.position_dict = {objDict.code: objDict for objDict in result}
 
         # 提取最新价信息并推送机器人
@@ -321,7 +323,7 @@ class THSTrader(BaseAir4Windows):
         msg_str = "\n".join(msg_list)
         if THSTrader.last_msg != msg_str:
             CommonUtil.printLog(f'持仓StockPositionList: {result}')
-            NetUtil.push_to_robot(msg_str)
+            # NetUtil.push_to_robot(msg_str)
             THSTrader.last_msg = msg_str
 
         # 切换到 f4 资金股票界面查询可用资余额

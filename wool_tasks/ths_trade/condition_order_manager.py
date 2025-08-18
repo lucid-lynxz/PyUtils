@@ -1,6 +1,7 @@
 import argparse
 import os
 import traceback
+from typing import List, Type
 
 from longport.openapi import SecurityStaticInfo
 from pywinauto import Desktop
@@ -51,6 +52,17 @@ if __name__ == '__main__':
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
     ConditionOrder.ths_trader = ths_trader
 
+
+    def redirect_log(msg):
+        try:
+            ths_trader.logger.warning(msg)
+        except Exception as e:
+            CommonUtil.printLog(f'redirect_log 出错:{e}', prefer_redirect_log=False)
+
+
+    if ths_trader.logger is not None:
+        CommonUtil.redirect_print_log(redirect_log)
+
     # 创建长桥工具类,用于港美股行情的获取
     lb_trader = LBTrader(config_path=config_path, cacheDir=_cache_dir)
     enable_long_bridge = lb_trader.active  # 初始化成功才启用
@@ -68,13 +80,16 @@ if __name__ == '__main__':
         order.position = ths_trader.get_stock_position(code)  # 将数据更换为实际的持仓数据
 
     # 修正同花顺ocr识别的持仓数据信息, 主要是港股的名称
+    hk_code_list = []
     for code, position in ths_trader.position_dict.items():
         ori_name = position.name
         try:
             if position.is_hk_stock:
                 if enable_long_bridge:
-                    resp: SecurityStaticInfo = lb_trader.static_info([f'{code}.HK'])[0]
-                    position.name = resp.name_cn  # 中文简体标的名称
+                    # 此处不单独获取, 避免接口请求频率超过限制
+                    # resp: SecurityStaticInfo = lb_trader.static_info([f'{code}.HK'])[0]
+                    # position.name = resp.name_cn  # 中文简体标的名称
+                    hk_code_list.append(position.symbol)
             else:
                 if '指数' not in position.name:
                     position.name = AkShareUtil.get_stock_name(code)  # A股名称
@@ -82,107 +97,122 @@ if __name__ == '__main__':
         except Exception as e:
             CommonUtil.printLog(f'修正持仓数据信息, 股票代码:{code}, 原始名称:{ori_name}, 修正后名称:{position.name}, 出错:{e}')
 
-
-    def prevent_lock_screen():
-        """防止windows锁屏"""
-        if CommonUtil.isWindows():
-            CommonUtil.printLog(f'prevent_lock_screen')
-            desktop = Desktop(backend="uia")
-            desktop.mouse.move(coords=(100, 100))  # 模拟鼠标移动
-            desktop.mouse.click(button='left')  # 模拟鼠标点击
-            # desktop.keyboard.send_keys('a')  # 模拟键盘输入
-            # time.sleep(60)  # 每隔60秒执行一次操作
-
-
-    hk_order_list = list[ConditionOrder]()
-
-
-    def task_condition_orders():
-        """执行条件单"""
-        # CommonUtil.printLog(f'task_condition_orders')
-        for _order in conditionOrderList:
-            if _order.active:
-
-                # 若长桥可用, 则港股使用长桥获取最新信息
-                if enable_long_bridge and _order.is_hk:
-                    hk_order_list.append(_order)
-                    continue
-
-                try:
-                    _order.run()
-                except Exception as e:
-                    _order.active = False
-                    # traceback.print_exc()
-                    tracebackMsg = traceback.format_exc()
-                    NetUtil.push_to_robot(f'task_condition_orders 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
-                                          printLog=True)
-
-
-    def task_condition_orders_hk():
-        """执行港股条件单"""
-        # CommonUtil.printLog(f'task_condition_orders')
-        if CommonUtil.isNoneOrBlank(hk_order_list):
-            return
-
+    if enable_long_bridge and not CommonUtil.isNoneOrBlank(hk_code_list):
         # 批量获取港股的最新价,若逐个获取,会触发长桥的接口调用次数限制
-        symbols = []
-        for _order in hk_order_list:
-            symbols.append(f'{_order.position.code}.HK')
-
-        _resp = lb_trader.quote(symbols)
+        _resp: List[SecurityStaticInfo] = lb_trader.static_info(hk_code_list)
         for index, _item in enumerate(_resp):
-            _order = hk_order_list[index]
-            _order.position.open_price = float(_item.open)  # 开盘价
-            latest_price = float(_item.last_done)  # 最新价
-            CommonUtil.printLog(f'港股条件单, 股票代码:{_order.position.code}, 最新价:{latest_price}')
-            _order.check_condition(latest_price)
-
-        # for _order in hk_order_list:
-        #     if _order.active:
-        #         try:
-        #             _order.run()
-        #         except Exception as e:
-        #             _order.active = False
-        #             # traceback.print_exc()
-        #             tracebackMsg = traceback.format_exc()
-        #             NetUtil.push_to_robot(
-        #                 f'task_condition_orders_hk 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
-        #                 printLog=True)
+            code = _item.symbol.replace('.HK', '')
+            position = ths_trader.position_dict[code]
+            position.name = _item.name_cn  # 中文简体标的名称
+            position.lot_size = _item.lot_size
 
 
-    def get_sh_index():
-        """获取上证指数"""
-        _df = AkShareUtil.get_stock_zh_index()
-        CommonUtil.printLog(f'get_sh_index\n{_df}')
-        if not _df.empty:
-            _data = _df[_df['名称'] == '上证指数']
-            if not _data.empty:
-                NetUtil.push_to_robot(f'{_data.iloc[0]}', printLog=True)
+        def prevent_lock_screen():
+            """防止windows锁屏"""
+            if CommonUtil.isWindows():
+                CommonUtil.printLog(f'prevent_lock_screen')
+                desktop = Desktop(backend="uia")
+                desktop.mouse.move(coords=(100, 100))  # 模拟鼠标移动
+                desktop.mouse.click(button='left')  # 模拟鼠标点击
+                # desktop.keyboard.send_keys('a')  # 模拟键盘输入
+                # time.sleep(60)  # 每隔60秒执行一次操作
 
 
-    # 等待到下一个交易日
-    # AkShareUtil.wait_next_deal_time()
+        hk_order_list = list[ConditionOrder]()
 
-    # 每分钟触发一次条件单检测
-    with (SystemSleepPreventer()):  # 防止系统休眠
-        settings: dict = configParser.getSectionItems('setting')
-        start_time = settings.get('start_time', '09:30:00')
-        end_time = settings.get('end_time', '16:10:00')
 
-        CommonUtil.printLog(f'start_time:{start_time}, end_time:{end_time}')
-        scheduler = SchedulerTaskManager()
-        (scheduler
-         .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
-         .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds',
-                   condition=enable_long_bridge)
-         .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=20, unit='minutes',
-                   at_time=':05')
-         .add_task("get_sh_index", get_sh_index, interval=1, unit='hours')
-         .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
-         .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
-         .wait_exit_event()  # 等待按下q推出
-         )
+        def task_condition_orders():
+            """执行条件单"""
+            # CommonUtil.printLog(f'task_condition_orders')
+            for _order in conditionOrderList:
+                if _order.active:
 
-        NetUtil.push_to_robot(f'condition_order_manager 已退出', printLog=True)
-        if configParser.getSecionValue('setting', 'auto_sleep', True):
-            CommonUtil.windows_sleep()  # 休眠
+                    # 若长桥可用, 则港股使用长桥获取最新信息
+                    if enable_long_bridge and _order.is_hk:
+                        hk_order_list.append(_order)
+                        continue
+
+                    try:
+                        _order.run()
+                    except Exception as e:
+                        _order.active = False
+                        # traceback.print_exc()
+                        tracebackMsg = traceback.format_exc()
+                        NetUtil.push_to_robot(f'task_condition_orders 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
+                                              printLog=True)
+
+
+        def task_condition_orders_hk():
+            """执行港股条件单"""
+            # CommonUtil.printLog(f'task_condition_orders')
+            if CommonUtil.isNoneOrBlank(hk_order_list):
+                return
+
+            # 批量获取港股的最新价,若逐个获取,会触发长桥的接口调用次数限制
+            symbols = []
+            for _order in hk_order_list:
+                symbols.append(f'{_order.position.code}.HK')
+
+            _resp = lb_trader.quote(symbols)
+            for index, _item in enumerate(_resp):
+                _order = hk_order_list[index]
+                _order.position.open_price = float(_item.open)  # 开盘价
+                latest_price = float(_item.last_done)  # 最新价
+                if not _order.pre_close_checked or _order.position.prev_close <= 0:  # 昨收价
+                    pre_close = float(_item.prev_close)
+                    _order.position.prev_close = pre_close
+                    _order.check_condition(pre_close, '昨收价')  # 使用昨收价先判断下是否已触发了基准价
+                    _order.pre_close_checked = True
+                # CommonUtil.printLog(f'港股条件单, 股票代码:{_order.position.code}, 最新价:{latest_price}')
+                _order.check_condition(latest_price)  # 再用最新价是否到达反弹幅度
+
+            # for _order in hk_order_list:
+            #     if _order.active:
+            #         try:
+            #             _order.run()
+            #         except Exception as e:
+            #             _order.active = False
+            #             # traceback.print_exc()
+            #             tracebackMsg = traceback.format_exc()
+            #             NetUtil.push_to_robot(
+            #                 f'task_condition_orders_hk 出错:{e}\n{_order.summary_info}\n{tracebackMsg}',
+            #                 printLog=True)
+
+
+        def get_sh_index():
+            """获取上证指数"""
+            _df = AkShareUtil.get_stock_zh_index()
+            CommonUtil.printLog(f'get_sh_index\n{_df}')
+            if not _df.empty:
+                _data = _df[_df['名称'] == '上证指数']
+                if not _data.empty:
+                    CommonUtil.printLog(f'上证指数:{_data.iloc[0]}')
+                    # NetUtil.push_to_robot(f'{_data.iloc[0]}', printLog=True)
+
+
+        # 等待到下一个交易日
+        # AkShareUtil.wait_next_deal_time()
+
+        # 每分钟触发一次条件单检测
+        with (SystemSleepPreventer()):  # 防止系统休眠
+            settings: dict = configParser.getSectionItems('setting')
+            start_time = settings.get('start_time', '09:30:00')
+            end_time = settings.get('end_time', '16:10:00')
+
+            CommonUtil.printLog(f'start_time:{start_time}, end_time:{end_time}')
+            scheduler = SchedulerTaskManager()
+            (scheduler
+             .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
+             .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds',
+                       condition=enable_long_bridge)
+             .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='hours',
+                       at_time=':05')
+             .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
+             .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
+             .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
+             .wait_exit_event()  # 等待按下q推出
+             )
+
+            NetUtil.push_to_robot(f'condition_order_manager 已退出', printLog=True)
+            if configParser.getSecionValue('setting', 'auto_sleep', True):
+                CommonUtil.windows_sleep()  # 休眠

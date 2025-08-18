@@ -1,14 +1,13 @@
 import os
+import traceback
 from decimal import Decimal
 from typing import List, Type
 
-from longport.openapi import TradeContext, QuoteContext, Config, SubType, PushQuote, SecurityQuote, OrderType, \
-    OrderSide, TimeInForceType, SecurityStaticInfo
+from longport.openapi import TradeContext, QuoteContext, Config, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo
 
-from util.ConfigUtil import NewConfigParser
 from util.CommonUtil import CommonUtil
+from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
-from util.TimeUtil import TimeUtil
 
 
 class LBTrader(object):
@@ -95,7 +94,12 @@ class LBTrader(object):
         :param symbols: 标的代码列表,比如: ["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]
         :return:
         """
-        return self.quoteCtx.quote(symbols)
+        try:
+            return self.quoteCtx.quote(symbols)
+        except Exception as e:
+            CommonUtil.printLog(f'quote Exception:{e}, symbols: {symbols}')
+            traceback.print_exc()
+            return []
 
     def get_latest_price(self, symbols: list[str]) -> list[float]:
         """
@@ -114,24 +118,30 @@ class LBTrader(object):
         """
         return self.quoteCtx.static_info(symbols)
 
-    def deal(self, code: str, price: float, amount: float):
+    def deal(self, symbol: str, price: float, amount: float):
         """
         买卖股票
         文档: https://open.longportapp.com/zh-CN/docs/trade/order/submit
-        :param code: 股票代码, 比如: '700.HK'
+        :param symbol: 股票代码, 比如: '700.HK'
         :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖出操作时, 会使用买一价, 买入操作时,使用卖一价
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
+        :return SubmitOrderResponse 类型
 
         可能的报错:
         longport.OpenApiException: OpenApiException: (code=602001, trace_id=f7bf2eb409b2605ad23ebe3730253c68) The submitted quantity does not comply with the required multiple of the lot size
         --> 这个表示下单数量不符合该股票的最低下单量, 可通过 self.quoteCtx.static_info([f'{code}'])[0].lot_size 来获取该股票的每手数量
         """
-        order_type = OrderType.MO if price <= 0 else OrderType.LO  # M0: 市价单  L0:限价单 选哟传递价格
-        order_side = OrderSide.Buy if amount > 0 else OrderSide.Sell  # 买入:Buy  卖出:Sell
-        submitted_price = None if price <= 0 else Decimal(price)
-        _resp = self.tradeCtx.submit_order(code, order_type, order_side, Decimal(abs(amount)),
-                                           TimeInForceType.Day, submitted_price, remark='deal from python sdk')
-        return _resp
+        try:
+            order_type = OrderType.MO if price <= 0 else OrderType.LO  # M0: 市价单  L0:限价单 选哟传递价格
+            order_side = OrderSide.Buy if amount > 0 else OrderSide.Sell  # 买入:Buy  卖出:Sell
+            submitted_price = None if price <= 0 else Decimal(price)
+            _resp = self.tradeCtx.submit_order(symbol, order_type, order_side, Decimal(abs(amount)),
+                                               TimeInForceType.Day, submitted_price, remark='deal from python sdk')
+            return _resp
+        except Exception as e:
+            CommonUtil.printLog(f'deal({symbol},{price},{amount}) fail: {e}')
+            traceback.print_exc()
+            return None
 
 
 if __name__ == '__main__':
