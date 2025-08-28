@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import sys
+import os
 
 from airtest.core.api import *
 
@@ -14,25 +15,43 @@ from wool_tasks.base_airtest_4_android_impl import AbsBaseAir4Android
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
-from util.TimeUtil import log_time_consume
+from util.TimeUtil import log_time_consume, TimeUtil
 from util.AkShareUtil import AkShareUtil
 from util.ConfigUtil import NewConfigParser
 
 
+class PositionSet:
+    """位置集容器，统一管理单市场（港股/美股）的所有界面元素坐标"""
+
+    def __init__(self):
+        self.bottom_deal_pos: tuple = None  # 底部 '交易' 页面按钮
+        self.deal_icon_pos: tuple = None  # '交易' tab页面中的 '交易' 入口按钮
+        self.position_code_pos: tuple = None  # '我的持仓' 下方 '代码' 列名位置
+        self.position_cost_pos: tuple = None  # '我的持仓' 下方 '现价/成本' 列名位置
+        self.search_edt_pos: tuple = None  # '交易' 搜索框坐标
+        self.spinner_list_item0_pos: tuple = None  # 搜索框提示列表第一个元素坐标
+        self.buy_pos: tuple = None  # 买入按钮
+        self.sell_pos: tuple = None  # '卖出' 按钮
+        self.price_pos: tuple = None  # 委托价输入框位置
+        self.amount_pos: tuple = None  # 委托数量输入框位置
+        self.can_deal_amount_pos: tuple = None  # '现金可买'/'持仓可卖' 文本位置
+        self.confirm_deal_pos: tuple = None  # '确认买入'/'确认卖出' 按钮位置
+
+
 class ZJTrader(AbsBaseAir4Android):
     """
-    基于尊嘉证券android端 下单 窗口,进行条件单监控(主要是港美股), 然后触发交易操作
+    基于尊嘉证券android端 下单窗口,支持港美股条件单监控与交易操作
     """
 
     def __init__(self, config_path: str = None, cacheDir: str = None):
         """
-        :param config_path: 配置文件路径, 若为空,则会依次尝试使用 {cacheDir}/config.ini 或者 当前目录下的 config.ini 文件
-        :param cacheDir: 缓存目录, 默认为当前目录下的 cache 目录
+        :param config_path: 配置文件路径, 若为空则使用缓存目录或当前目录下的config.ini
+        :param cacheDir: 缓存目录, 默认为当前目录下的cache目录
         """
         if CommonUtil.isNoneOrBlank(cacheDir):
             cacheDir = ZJTrader.create_cache_dir()
 
-        # 配置文件解析器
+        # 配置文件解析
         cur_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = f'{cacheDir}/config.ini' if CommonUtil.isNoneOrBlank(config_path) else config_path
         if not FileUtil.isFileExist(config_path):
@@ -40,363 +59,353 @@ class ZJTrader(AbsBaseAir4Android):
 
         configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
         zj_settings = configParser.getSectionItems('zunjia')
-        deviceId: str = zj_settings.get('deviceId', '')  # 要运行的手机序列号
-        self.deal_pwd: str = zj_settings.get('deal_pwd', '')   # 尊嘉交易密码,用于解锁交易
-        CommonUtil.printLog(f'zhunjia deviceId={deviceId},pwd={self.deal_pwd}')
+        deviceId: str = zj_settings.get('deviceId', '')  # 手机序列号
+        self.deal_pwd: str = zj_settings.get('deal_pwd', '')  # 交易密码
+        CommonUtil.printLog(f'尊嘉配置: deviceId={deviceId}, pwd={self.deal_pwd}')
 
+        # 初始化父类(Android自动化基础类)
         pkgName = 'com.juniorchina.jcstock'  # 尊嘉app包名
-        homeActPath = 'com.juniorchina.jcstock.SplashActivity'  # 启动页类名
+        homeActPath = 'com.juniorchina.jcstock.SplashActivity'  # 启动页
         super().__init__(deviceId, pkgName=pkgName, homeActPath=homeActPath, appName='尊嘉证券', cacheDir=cacheDir)
 
-        # 清空本设备的截图目录
+        # 设备截图目录初始化
         model = self.adbUtil.getDeviceInfo(deviceId).get('model', '')
         FileUtil.createFile(f'{cacheDir}/{model}_{deviceId}/', True)
 
-        self.adbUtil.pointerLocation(1)
-        is_zj_running = self.adbUtil.isAppRunning(pkgName, deviceId)  # app是否已在运行中
-        self.startApp(forceRestart=False)  # 无需强制重启app
+        # APP状态初始化
+        self.adbUtil.pointerLocation(1)  # 显示指针位置(调试用)
+        is_zj_running = self.adbUtil.isAppRunning(pkgName, deviceId)
+        self.startApp(forceRestart=False)  # 非强制重启
 
-        # 刷新按钮坐标/持仓列表矩形框坐标
-        self.bottom_deal_pos: tuple = None  # 底部 '交易' 页面按钮
-        self.deal_icon_pos: tuple = None  # '交易' tab页面中的 '交易' 入口按钮
-        self.position_code_pos: tuple = None  # '交易' tab页面中的 '我的持仓' 下方 '代码' 列名位置
-        self.position_cost_pos: tuple = None  # '交易' tab页面中的 '我的持仓' 下方 '现价/成本' 列名位置
-        self.search_edt_pos: tuple = None  # '交易' 搜索框坐标
-        self.spinner_list_item0_pos: tuple = None  # '交易' 搜索框提示列表框中第一个元素坐标
+        # 多市场位置集初始化(港股/美股)
+        self.hk_pos = PositionSet()  # 港股界面坐标集
+        self.us_pos = PositionSet()  # 美股界面坐标集
+        self.current_pos = self.hk_pos  # 当前活跃市场坐标(默认港股)
 
-        self.buy_pos: tuple = None  # 买入按钮
-        self.sell_pos: tuple = None  # 卖出按钮
-        self.price_pos: tuple = None  # 委托价输入框位置
-        self.amount_pos: tuple = None  # 委托数量输入框位置
-        self.can_deal_amount_pos: tuple = None  # 买入时 '现金可买' 文本位置, 卖出时, '持仓可卖' 位置
-        # self.unlock_pos: tuple = None  # 解锁按钮位置 也是默认的 '确认买入' 按钮位置
-        self.confirm_deal_pos: tuple = None  # 解锁成功后, 底部显示的 '确认买入' / '确认卖出' 按钮位置
+        # 其他属性初始化
+        self.akshare_util: AkShareUtil = AkShareUtil()
+        self.available_balance_cash: float = -1  # 可用资金
+        self.last_unlock_ts: int = 0  # 上次解锁时间戳, 每5min检测一次
 
-        self.akshare_util: AkShareUtil = AkShareUtil()  # akshare 工具类
-        self.available_balance_cash: float = -1  # 可用金额, 单位:元
-
-        # 尝试从缓存文件中读取数据
-        self.pos_cache_file = f'{cacheDir}/pos_cache_zj.txt'  # 缓存各按钮位置信息, 对于同一台设备, 不需要每次都重新获取
+        # 位置缓存加载
+        self.pos_cache_file = f'{cacheDir}/pos_cache_zj.txt'  # 坐标缓存文件
         line_list = FileUtil.readFile(self.pos_cache_file)
-        self.need_find_pos: bool = len(line_list) <= 3  # 是否需要重新获取各坐标信息
-        for line in line_list:
-            if '__slots__:' in line:
-                continue
-            # 分离属性名和属性值
-            key, pos_str = line.split(':')
-            if CommonUtil.isNoneOrBlank(pos_str):
-                self.need_find_pos = True
-                continue
-            # 将属性值按逗号分割并转换为元组
-            pos_tuple = tuple(map(int, map(float, pos_str.split(','))))
-            # 将元组赋值给对象对应的属性
-            setattr(self, key, pos_tuple)
+        self.need_find_pos: dict = {'hk': True, 'us': True}  # 标记是否需要重新定位
+        self._load_pos_cache(line_list)  # 从缓存文件加载坐标
 
-        if self.need_find_pos or not is_zj_running:  # 刚打开的app, 需要机型解锁操作
-            self._find_bs_pos()
+        # 首次运行或缓存缺失时执行界面定位
+        if self.need_find_pos['hk']:
+            self._find_bs_pos(market='hk')  # 定位港股界面
+        # 美股定位可在首次交易前触发
+        if self.need_find_pos['us']:
+            self._find_bs_pos(market='us')  # 定位美股界面
+        self.unlock_deal()  # 尝试解锁一次
+
+    def _load_pos_cache(self, line_list: list):
+        """从缓存文件加载多市场坐标数据"""
+        for line in line_list:
+            if '__slots__:' in line or ':' not in line:
+                continue
+            key, pos_str = line.split(':', 1)
+            if CommonUtil.isNoneOrBlank(pos_str):
+                continue
+            # 解析格式: market_attr: x,y (如 hk_bottom_deal_pos:100,200)
+            if '_' in key:
+                market, attr = key.split('_', 1)
+                target_pos = self.hk_pos if market == 'hk' else self.us_pos
+                if market in ['hk', 'us'] and hasattr(target_pos, attr):
+                    # 转换坐标元组并赋值给对应市场的位置集
+                    pos_tuple = tuple(map(int, map(float, pos_str.split(','))))
+                    setattr(target_pos, attr, pos_tuple)
+
+        self.need_find_pos['hk'] = not self._are_all_pos_attributes_set(self.hk_pos)  # 标记缓存有效
+        self.need_find_pos['us'] = not self._are_all_pos_attributes_set(self.us_pos)  # 标记缓存有效
+
+    def _are_all_pos_attributes_set(self, pos_set: PositionSet) -> bool:
+        """检查 PositionSet 实例的所有 _pos 属性是否均非空"""
+        for attr in dir(pos_set):
+            # 只检查以 _pos 结尾且非特殊属性（如 __init__）的属性
+            if attr.endswith('_pos') and not attr.startswith('__'):
+                attr_value = getattr(pos_set, attr)
+                if CommonUtil.isNoneOrBlank(attr_value):
+                    CommonUtil.printLog(f"坐标属性 {attr} 为空，需要重新定位")
+                    return False
+        return True
 
     @staticmethod
     def create_cache_dir() -> str:
-        """
-        在当前文件同级目录下创建一个缓存目录
-        :return: 缓存目录路径
-        """
-        _cache_path = FileUtil.create_cache_dir(None, __file__, name='cache/')
-        # FileUtil.delete_files(_cache_path, [r'.*\.png', r'.*.\.jpg'])
-        return _cache_path
+        """创建缓存目录"""
+        return FileUtil.create_cache_dir(None, __file__, name='cache/')
 
     def back_to_home(self) -> bool:
-        """返回到首页"""
+        """返回到APP首页"""
         return self.back_until(targetText='交易', prefixText='自选', subfixText='我')
 
     def back_to_deal(self):
-        """
-        返回到主页面中的 '交易' 页面
-        """
+        """返回到交易tab页面"""
         success = self.back_to_home()
-        if success and self.bottom_deal_pos is not None:
-            return self.tapByTuple(self.bottom_deal_pos, sleepSec=0.2)
+        if success and self.current_pos.bottom_deal_pos:
+            return self.tapByTuple(self.current_pos.bottom_deal_pos, sleepSec=0.2)
         return False
 
     def save_pos_info(self):
-        """将已找到的各控件位置信息保存到缓存文件中"""
+        """保存多市场坐标到缓存文件"""
         with open(self.pos_cache_file, 'w') as file:
-            for attr_name in dir(self):
-                attr_value = getattr(self, attr_name)
-                if isinstance(attr_value, tuple):
-                    file.write(f"{attr_name}:{','.join(map(str, attr_value))}\n")
+            # 保存港股坐标(前缀hk_)
+            for attr in dir(self.hk_pos):
+                if not attr.endswith('_pos') or attr.startswith('__'):
+                    continue
+                pos_tuple = getattr(self.hk_pos, attr)
+                if pos_tuple:
+                    file.write(f"hk_{attr}:{','.join(map(str, pos_tuple))}\n")
+            # 保存美股坐标(前缀us_)
+            for attr in dir(self.us_pos):
+                if not attr.endswith('_pos') or attr.startswith('__'):
+                    continue
+                pos_tuple = getattr(self.us_pos, attr)
+                if pos_tuple:
+                    file.write(f"us_{attr}:{','.join(map(str, pos_tuple))}\n")
 
-    def _find_bs_pos(self):
+    def _find_bs_pos(self, market: str = 'hk'):
         """
-        主页面-'交易' tab 页面上各个按钮
+        定位指定市场的界面元素坐标
+        :param market: 市场类型, 'hk'(港股)或'us'(美股)
         """
-        input_delta = (0, 0)
-        if not self.back_to_home():  # 返回到首页
-            msg = '返回首页失败'
+        target_pos = self.hk_pos if market == 'hk' else self.us_pos  # 目标市场坐标集
+        input_delta = (0, 0)  # 坐标微调值
+        CommonUtil.printLog(f'开始{market}市场界面定位...')
+
+        # 1. 返回首页并定位底部交易按钮
+        if not self.back_to_home():
+            msg = f'{market}市场-返回首页失败'
             self.saveImage(self.snapshot(), msg)
-            raise f'{msg},请查看原因'
+            raise RuntimeError(f'{msg}, 请检查APP状态')
 
         pos, _, ocr_result = self.findTextByOCR('交易', prefixText='自选', subfixText='我', maxSwipeRetryCount=1)
-        self.bottom_deal_pos = self.calcCenterPos(pos, input_delta, self.bottom_deal_pos)  # 首页底部 '交易' 按钮位置
-        CommonUtil.printLog(f'首页底部交易按钮位置: {self.bottom_deal_pos}')
-        self.tapByTuple(self.bottom_deal_pos)  # 点击交易按钮
+        target_pos.bottom_deal_pos = self.calcCenterPos(pos, input_delta, target_pos.bottom_deal_pos)
+        CommonUtil.printLog(f'{market}市场-底部交易按钮: {target_pos.bottom_deal_pos}')
+        self.tapByTuple(target_pos.bottom_deal_pos)  # 点击进入交易tab
 
+        # 2. 定位交易入口按钮(交易tab内)
         pos, ocrResStr, ocr_result = self.findTextByOCR('交易', prefixText=r'总市值|净资产',
                                                         subfixText=r'全部|我的持仓', maxSwipeRetryCount=1)
-        self.deal_icon_pos = self.calcCenterPos(pos, input_delta, self.deal_icon_pos)
-        CommonUtil.printLog(f'交易tab中的交易入口按钮位置: {self.deal_icon_pos}')
+        target_pos.deal_icon_pos = self.calcCenterPos(pos, input_delta, target_pos.deal_icon_pos)
+        CommonUtil.printLog(f'{market}市场-交易入口按钮: {target_pos.deal_icon_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '代码', prefixText='我的持仓',
-                                                                subfixText='数量')
-        self.position_code_pos = self.calcCenterPos(pos, input_delta, self.position_code_pos)  # 证券代码输入框位置
-        CommonUtil.printLog(f'交易tab-我的持仓-代码 列名位置: {self.position_code_pos}')
+        # 3. 定位持仓列表列名(代码/现价)
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '代码', prefixText='我的持仓', subfixText='数量')
+        target_pos.position_code_pos = self.calcCenterPos(pos, input_delta, target_pos.position_code_pos)
+        CommonUtil.printLog(f'{market}市场-代码位置: {target_pos.position_code_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '现价', prefixText='代码',
-                                                                subfixText='交易')
-        self.position_cost_pos = self.calcCenterPos(pos, input_delta, self.position_cost_pos)  # 股票价格输入框
-        CommonUtil.printLog(f'交易tab-我的持仓-现价/成本 列名位置: : {self.position_cost_pos}')
-        if CommonUtil.isNoneOrBlank(self.position_cost_pos):
-            CommonUtil.printLog(f'未找到 现价/成本 列名位置,ocrResStr={ocrResStr}')
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '现价', prefixText='代码', subfixText='交易')
+        target_pos.position_cost_pos = self.calcCenterPos(pos, input_delta, target_pos.position_cost_pos)
+        CommonUtil.printLog(f'{market}市场-现价位置: {target_pos.position_cost_pos}')
 
-        # 点击 '交易' 入口按钮, 跳转到交易页面
-        self.tapByTuple(self.deal_icon_pos)
+        # 4. 进入交易搜索页面并定位搜索框
+        self.tapByTuple(target_pos.deal_icon_pos)  # 点击交易入口
         pos, _, ocr_result = self.findTextByOCR('请输入', subfixText='自选', maxSwipeRetryCount=1)
+        target_pos.search_edt_pos = self.calcCenterPos(pos, input_delta, target_pos.search_edt_pos)
+        target_pos.spinner_list_item0_pos = self.calcCenterPos(pos, (0, 140))  # 搜索下拉第一项
+        CommonUtil.printLog(f'{market}市场-搜索框位置: {target_pos.search_edt_pos}')
 
-        self.search_edt_pos = self.calcCenterPos(pos, input_delta, self.search_edt_pos)
-        self.spinner_list_item0_pos = self.calcCenterPos(pos, (0, 140))
-        CommonUtil.printLog(f'交易页面顶部搜索输入框位置: {self.search_edt_pos}')
-        CommonUtil.printLog(f'交易搜索列表第一项位置: {self.spinner_list_item0_pos}')
-
-        # 跳转到股票交易页面
-        self.text('01810')  # 随便输入一个股票代码, 01810-小米集团-W
+        # 5. 进入股票详情页(使用市场代表性代码)
+        test_code = '01810' if market == 'hk' else 'TME'  # 港股测试代码01810小米集团/美股测试代码TME腾讯音乐
+        self.text(test_code)  # 输入代码
         self.sleep(1)
-        self.touch(self.spinner_list_item0_pos)  # 点击下拉框中的第一个元素, 跳转到股票下个详情页面
-        self.sleep(1)
+        self.touch(target_pos.spinner_list_item0_pos)  # 选择下拉第一项
+        self.sleep(2)
 
-        pos, ocrResStr, ocr_result = self.findTextByOCR('买入', prefixText=r'买盘|卖盘', subfixText=r'卖出|解锁',
-                                                        maxSwipeRetryCount=1)
-        self.buy_pos = self.calcCenterPos(pos, default_value=self.buy_pos)  # 买入按钮
-        CommonUtil.printLog(f'交易页面的 买入 按钮: {self.buy_pos}')
+        # 6. 定位买卖按钮
+        pos, ocrResStr, ocr_result = self.findTextByOCR('买入', prefixText=r'买盘|卖盘', subfixText=r'卖出|解锁', maxSwipeRetryCount=1)
+        target_pos.buy_pos = self.calcCenterPos(pos, default_value=target_pos.buy_pos)
+        CommonUtil.printLog(f'{market}市场-买入按钮: {target_pos.buy_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出', prefixText='买入',
-                                                                subfixText='委托|解锁')
-        self.sell_pos = self.calcCenterPos(pos, default_value=self.sell_pos)  # 卖出 按钮
-        CommonUtil.printLog(f'交易页面的 卖出 按钮: {self.sell_pos}')
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出', prefixText='买入', subfixText='委托|解锁')
+        target_pos.sell_pos = self.calcCenterPos(pos, default_value=target_pos.sell_pos)
+        CommonUtil.printLog(f'{market}市场-卖出按钮: {target_pos.sell_pos}')
 
+        # 7. 定位委托价/数量输入框(偏移x=600,适应输入框位置)
         input_delta = (600, 0)
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '委托价', prefixText='买入',
-                                                                subfixText='订单|解锁')
-        self.price_pos = self.calcCenterPos(pos, input_delta, default_value=self.price_pos)  # 委托价 输入框
-        CommonUtil.printLog(f'交易页面的 委托价 输入框: {self.price_pos}')
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '委托价', prefixText='买入', subfixText='订单|解锁')
+        target_pos.price_pos = self.calcCenterPos(pos, input_delta, default_value=target_pos.price_pos)
+        CommonUtil.printLog(f'{market}市场-委托价输入框: {target_pos.price_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '委托数量', prefixText='买入',
-                                                                subfixText='订单|解锁')
-        self.amount_pos = self.calcCenterPos(pos, input_delta, default_value=self.amount_pos)  # 委托数量 输入框
-        CommonUtil.printLog(f'交易页面的 委托数量 输入框: {self.amount_pos}')
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '委托数量', prefixText='买入', subfixText='订单|解锁')
+        target_pos.amount_pos = self.calcCenterPos(pos, input_delta, default_value=target_pos.amount_pos)
+        CommonUtil.printLog(f'{market}市场-委托数量输入框: {target_pos.amount_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '现金可买', prefixText='买入',
-                                                                subfixText='订单|解锁')
-        self.can_deal_amount_pos = self.calcCenterPos(pos, default_value=self.can_deal_amount_pos)
-        CommonUtil.printLog(f'交易页面的 持仓可买/现金可买 文本框: {self.can_deal_amount_pos}')
+        # 8. 定位可交易数量文本(现金可买/持仓可卖)
+        pos, _, ocrResList = self.findTextByCnOCRResult(ocr_result, '现金可买|持仓可卖', prefixText='买入', subfixText='订单|解锁|确认买入')
+        target_pos.can_deal_amount_pos = self.calcCenterPos(pos, default_value=target_pos.can_deal_amount_pos)
+        CommonUtil.printLog(f'{market}市场-可交易数量文本: {target_pos.can_deal_amount_pos}')
 
-        self.need_find_pos = (CommonUtil.isNoneOrBlank(self.bottom_deal_pos)
-                              or CommonUtil.isNoneOrBlank(self.deal_icon_pos)
-                              or CommonUtil.isNoneOrBlank(self.position_code_pos)
-                              or CommonUtil.isNoneOrBlank(self.position_cost_pos)
-                              or CommonUtil.isNoneOrBlank(self.search_edt_pos)
-                              or CommonUtil.isNoneOrBlank(self.spinner_list_item0_pos)
-                              or CommonUtil.isNoneOrBlank(self.buy_pos)
-                              or CommonUtil.isNoneOrBlank(self.sell_pos)
-                              or CommonUtil.isNoneOrBlank(self.price_pos)
-                              or CommonUtil.isNoneOrBlank(self.amount_pos)
-                              or CommonUtil.isNoneOrBlank(self.can_deal_amount_pos)
-                              )
-        CommonUtil.printLog(f'_find_bs_pos end, need_find_pos={self.need_find_pos} ')
+        # 9. 检查坐标完整性
+        self.need_find_pos[market] = self._are_all_pos_attributes_set(target_pos)
+        CommonUtil.printLog(f'{market}市场坐标完整性: need_find_pos={self.need_find_pos[market]},target_pos={target_pos}')
 
-        # 模拟正常输入委托数量后, '确认按钮' 的位置
-        self.tapByTuple(self.amount_pos)  # '委托数量输入框'
-        self.clear_text()  # 清空文本
-        self.text('200')  # 输入数量
+        # 10. 定位确认交易按钮(模拟输入数量后)
+        self.tapByTuple(target_pos.amount_pos)  # 点击数量输入框
+        self.clear_text()  # 清空
+        self.text('200')  # 输入测试数量
         self.sleep(1)
+        self.unlock_deal(market=market)  # 解锁并定位确认按钮
 
-        self.unlock_deal()  # 进行交易解锁
-        self.save_pos_info()  # 保存各控件位置信息
-        self.back_to_deal()  # 返回到首页的交易入口tab页面
+        # 11. 保存坐标缓存并返回
+        self.save_pos_info()
+        self.back_to_deal()
 
-    def unlock_deal(self, ocr_result: list = None) -> bool:
+    def unlock_deal(self, market: str = 'hk', ocr_result: list = None) -> bool:
+        """1
+        解锁交易并定位确认按钮
+        :param market: 市场类型(hk/us)
+        :param ocr_result: 预识别的OCR结果(可选)
         """
-        界面上显示有 '解锁' 按钮时, 先解锁再进行交易
-        见: '尊嘉证券_解锁交易_提示框.png'
-        :param ocr_result: 界面OCR识别结果,若为空,则会重新进行截图识别
-        """
+
+        cur_ts = TimeUtil.currentTimeMillis()
+        if cur_ts - self.last_unlock_ts <= 5 * 60 * 1000:
+            return True
+
+        is_hk_market = market == 'hk'
+        target_pos = self.hk_pos if is_hk_market else self.us_pos
+        # 1. 查找解锁按钮
         if ocr_result is None:
             pos, ocrResStr, ocrResList = self.findTextByOCR('解锁', prefixText=r'订单|委托数量',
-                                                            imgPrefixName='find_bs_pos', maxSwipeRetryCount=1)
+                                                            imgPrefixName=f'{market}_unlock', maxSwipeRetryCount=1)
         else:
             pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '解锁', prefixText=r'订单|委托数量')
-        unlock_pos = self.calcCenterPos(pos)  # 解锁 按钮
-        CommonUtil.printLog(f'交易页面的 解锁 按钮: {unlock_pos}')  # 若为空表示不需要解锁
+        unlock_pos = self.calcCenterPos(pos)
+        CommonUtil.printLog(f'{market}市场-解锁按钮位置: {unlock_pos}')
 
-        # 点击 '解锁' 按钮, 弹出输入框
+        # 2. 输入密码并解锁
         if '解锁' in ocrResStr and self.tapByTuple(unlock_pos):
-            # pos, ocrResStr, ocr_result = self.findTextByOCR('交易密码', prefixText='解锁', subfixText=r'解锁')
-            # dialog_pwd_edt_pos = self.calcCenterPos(pos, (0, 100))  # 交易密码输入款
-            self.text(self.deal_pwd)
-            pos, ocrResStr, ocr_result = self.findTextByOCR('解锁', prefixText='交易密码', subfixText='指纹',
-                                                            imgPrefixName='find_bs_pos_解锁', maxSwipeRetryCount=1)
-            dialog_unlock_btn_pos = self.calcCenterPos(pos)  # 解锁按钮
-            self.tapByTuple(dialog_unlock_btn_pos)  # 点击解锁按钮, 隐藏弹框
+            self.text(self.deal_pwd)  # 输入交易密码
+            pos, ocrResStr, ocr_result = self.findTextByOCR('解锁', prefixText='交易密码|解锁交易', subfixText='指纹|忘记密码|解锁',
+                                                            imgPrefixName=f'{market}_unlock_confirm', maxSwipeRetryCount=1)
+            dialog_unlock_btn_pos = self.calcCenterPos(pos)
+            if not self.tapByTuple(dialog_unlock_btn_pos):  # 确认解锁
+                CommonUtil.printLog(f'确认解锁失败, dialog_unlock_btn_pos={dialog_unlock_btn_pos},ocrResStr={ocrResStr}')
 
-        CommonUtil.printLog(f'搜索交易页面的 确认买入 按钮位置')  # 若为空表示不需要解锁
-        pos, ocrResStr, ocrResList = self.findTextByOCR('确认买入', prefixText=r'订单|委托数量',
-                                                        imgPrefixName='find_bs_pos_确认买入', maxSwipeRetryCount=1)
-        self.confirm_deal_pos = self.calcCenterPos(pos)
-        CommonUtil.printLog(f'交易页面的 确认买入 按钮: {self.confirm_deal_pos}')  # 若为空表示不需要解锁
-        return not CommonUtil.isNoneOrBlank(self.confirm_deal_pos)
+        # 3. 定位确认交易按钮
+        pos, _, _ = self.findTextByOCR('确认买入', prefixText=r'订单|委托数量',
+                                       imgPrefixName=f'{market}_confirm_deal', maxSwipeRetryCount=1)
+        target_pos.confirm_deal_pos = self.calcCenterPos(pos)
+        CommonUtil.printLog(f'{market}市场-确认交易按钮: {target_pos.confirm_deal_pos}')
+        success = not CommonUtil.isNoneOrBlank(target_pos.confirm_deal_pos)
+        if success:
+            self.last_unlock_ts = cur_ts
+        return success
 
-    last_msg: str = ''
+    def _detect_market(self, code: str) -> str:
+        """根据股票代码判断市场类型"""
+        if code.isdigit():  # 港股代码为数字(如01810)
+            return 'hk'
+        elif code.isalpha():  # 美股代码为字母(如TME)
+            return 'us'
+        return 'hk'  # 默认港股
 
     @log_time_consume(separate=True)
     def deal(self, code: str, price: float, amount: float, name: str = '') -> bool:
         """
-        买卖股票
-        :param code: 股票代码
-        :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖出擦欧总时, 会使用买一价, 买入操作时,使用卖一价
-        :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出
-        :param name: 股票名称
+        执行买卖交易
+        :param code: 股票代码(港股数字/美股字母)
+        :param price: 委托价格(>0有效)
+        :param amount: 委托数量(正数买入/负数卖出)
+        :param name: 股票名称(可选)
+        :return: 交易是否成功
         """
-        if not self.back_to_deal():  # 返回到首页的交易tab页面
-            msg = 'deal_返回交易tab失败'
+        # 1. 自动切换市场坐标集
+        market = self._detect_market(code)
+        self.current_pos = self.hk_pos if market == 'hk' else self.us_pos
+        CommonUtil.printLog(f'交易开始: {market}市场, 代码={code}, 价格={price}, 数量={amount}')
+
+        # 2. 回到交易页面
+        if not self.back_to_deal():
+            msg = f'{market}市场-返回交易页面失败'
             self.saveImage(self.snapshot(), msg)
-            raise f'{msg},请查看原因'
+            raise RuntimeError(msg)
 
-        if not self.tapByTuple(self.deal_icon_pos):  # 点击 '交易' 按钮, 进入交易搜索页
-            msg = 'deal_点击交易icon失败'
+        # 3. 进入交易搜索页面
+        if not self.tapByTuple(self.current_pos.deal_icon_pos):
+            msg = f'{market}市场-点击交易入口失败'
             self.saveImage(self.snapshot(), msg)
-            raise f'{msg},请查看原因'
+            raise RuntimeError(msg)
 
-        CommonUtil.printLog(f'zj deal({code},{price},{amount},{name})')
-        buy = amount > 0  # true-买入 false-卖出
-        amount = abs(amount)
-
-        # 跳转到股票交易页面
-        self.text(code)  # 输入股票代码
+        # 4. 输入股票代码并进入详情页
+        self.text(code)  # 输入代码
         self.sleep(1)
-        self.touch(self.spinner_list_item0_pos)  # 点击下拉框中的第一个元素, 跳转到股票下个详情页面
-        self.sleep(2)
+        self.touch(self.current_pos.spinner_list_item0_pos)  # 选择搜索结果第一项
+        self.sleep(1)
 
+        # 5. 点击买卖按钮
+        buy = amount > 0
+        amount_abs = abs(amount)
         if buy:
-            self.tapByTuple(self.buy_pos)  # '买入' 按钮
-            # todo 补充判断最大可买量
-            # self.findTextByOCR(r'\d+', prefixText='附加订单', subfixText='订单金额|解锁|确定',
-            #                    fromX=0, fromY=self.can_deal_amount_pos[1] - 150, width=300, height=100)
-            # if self.available_balance_cash >= 0 and price > 0:  # 获取到有效的可用金额
-            #     amount = min(amount, int(self.available_balance_cash / price))
-            #     amount = CommonUtil.round_down_to_hundred(amount)
-            #     # 买入时, 不能超过当前可买数量
-            #     if amount <= 0:
-            #         CommonUtil.printLog(f'交易:{stock_name}({code}) 可买数量为0,买入失败')
-            #         return False
+            self.tapByTuple(self.current_pos.buy_pos)  # 买入
         else:
-            self.tapByTuple(self.sell_pos)  # '卖出' 按钮
-            # todo 补充判断最大可卖量
-            # if position is None and not buy:
-            #     CommonUtil.printLog(f'{code} 不存在持仓信息,卖出失败')
-            #     return False
-            #
-            # self.key_press('F2')  # '卖出[F2]'
-            # amount = min(amount, int(position.available_balance))
+            self.tapByTuple(self.current_pos.sell_pos)  # 卖出
 
-            # # 卖出时, 不能超过当前可卖数量
-            # if amount <= 0:
-            #     CommonUtil.printLog(f'交易:{stock_name}({code}) 可卖数量为0,卖出失败')
-            #     return False
-
-        # 委托价格
+        # 6. 输入委托价格(若指定)
         if price > 0:
-            self.tapByTuple(self.price_pos)  # 委托价 输入框
-            self.clear_text()  # 清空文本
+            self.tapByTuple(self.current_pos.price_pos)
+            self.clear_text()
             self.text(f'{price}')
+            self.sleep(0.5)
 
-        # 委托数量
-        self.tapByTuple(self.amount_pos)  # '委托数量输入框'
-        self.clear_text()  # 清空文本
-        self.text(str(amount))  # 输入数量
+        # 7. 输入委托数量
+        self.tapByTuple(self.current_pos.amount_pos)
+        self.clear_text()
+        self.text(str(amount_abs))
         self.sleep(1)
 
-        deal_tip = '买入' if buy else "卖出"
-        deal_dir_path = FileUtil.recookPath(f'{self.cacheDir}/deal/')
-        img_name = f'{deal_tip}_{code if CommonUtil.isNoneOrBlank(name) else name}_{amount}股'
-        success: bool = False  # 是否交易成功
-        for i in range(3):
-            CommonUtil.printLog(f'{img_name}_index{i}')
-            self.tapByTuple(self.confirm_deal_pos, printCmdInfo=True)  # 底部的 '确认买入/卖出'  按钮  也可能是 '解锁' 按钮
+        self.unlock_deal(market)  # 尝试解锁
 
-            # 验证是否已交易成功 耗时4s左右
-            CommonUtil.printLog(f'截图并ocr检测是否 提交订单 成功')
-            pos, ocrResStr, ocrResList = self.findTextByOCR('订单已提交', prefixText=r'我的持仓|委托数量',
-                                                            maxSwipeRetryCount=1)
-            success = pos is not None and len(pos) > 1  # 交易成功则无需继续测试
+        # 8. 尝试提交订单(最多3次重试)
+        deal_tip = '买入' if buy else '卖出'
+        deal_dir = FileUtil.recookPath(f'{self.cacheDir}/deal/')
+        img_name = f'{deal_tip}_{code}_{name}_{amount_abs}股'
+        success = False
+
+        for i in range(3):
+            CommonUtil.printLog(f'{img_name}-第{i + 1}次提交')
+            self.tapByTuple(self.current_pos.confirm_deal_pos, printCmdInfo=True)  # 点击确认按钮
+
+            # 验证订单提交结果
+            pos, ocrResStr, ocrResList = self.findTextByOCR('订单已提交', prefixText=r'我的持仓|委托数量', maxSwipeRetryCount=1)
+            success = pos is not None and len(pos) > 1
             if success:
                 break
 
-            # 检测是否有 '确认下单' 的提示框
-            CommonUtil.printLog(f'截图并ocr检测是否有 确认下单 弹框')
-            pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, '确认下单', prefixText='不再提示')
-            confirm_pos = self.calcCenterPos(pos)
+            # 处理弹窗(确认下单/解锁/购买力不足)
+            confirm_pos = self._find_dialog_pos(ocrResList, '确认下单', '不再提示')
+            unlock_pos = self._find_dialog_pos(ocrResList, '解锁', '交易密码')
+            power_pos = self._find_dialog_pos(ocrResList, '取消', '最大购买力')
 
-            # 检测是否是 '解锁交易' 提示框, 见: '尊嘉证券_解锁交易_提示框.png'   已有ocr结果, 重新检测文本, 耗时1ms左右
-            CommonUtil.printLog(f'检测是否有 解锁交易 弹框, ocrResStr:{ocrResStr}')
-            pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, '解锁', prefixText=r'交易密码',
-                                                           subfixText='指纹')
-            dialog_unlock_btn_pos = self.calcCenterPos(pos)
-
-            # 检测是否有 '超过最大购买力' 提示框
-            CommonUtil.printLog(f'检测是否有 超过最大购买力 弹框')
-            pos, ocrResStr, _ = self.findTextByCnOCRResult(ocrResList, '取消', prefixText=r'最大购买力')
-            purchasing_power_pos = self.calcCenterPos(pos)
-
-            if not CommonUtil.isNoneOrBlank(confirm_pos):
-                # 存在 '确认下单' 提示框则点击确定按钮进行提交
-                CommonUtil.printLog(f'deal 关闭 确认下单 提示框')
-                self.tapByTuple(confirm_pos)
-            elif not CommonUtil.isNoneOrBlank(dialog_unlock_btn_pos):
-                # 存在 '交易密码' 提示框,则输入密码进行确认, 然后重新尝试点击底部的 '确认买入/卖出' 按钮
-                CommonUtil.printLog(f'deal 进行解锁后重试')
-                self.text(self.deal_pwd)  # 输入交易密码
-                self.tapByTuple(dialog_unlock_btn_pos)  # 点击解锁按钮, 隐藏弹框
-                continue  # 重新点击底部的 '确认买入/卖出' 按钮
-            elif not CommonUtil.isNoneOrBlank(purchasing_power_pos):
-                CommonUtil.printLog(f'deal 超过最大购买力, 取消本次交易')
-                self.tapByTuple(purchasing_power_pos)  # 点击 '取消' 按钮, 隐藏弹框
+            if confirm_pos:
+                self.tapByTuple(confirm_pos)  # 确认下单
+            elif unlock_pos:
+                self.text(self.deal_pwd)  # 输入密码解锁
+                self.tapByTuple(unlock_pos)
+            elif power_pos:
+                self.tapByTuple(power_pos)  # 购买力不足,取消
                 success = False
-                break  # 现金不够, 无需重新尝试提交订单呢
+                break
 
-            # 验证是否已交易成功
-            CommonUtil.printLog(f'deal 检测是否提交订单成功')
-            pos, ocrResStr, ocrResList = self.findTextByOCR('订单已提交', prefixText=r'我的持仓|委托数量',
-                                                            maxSwipeRetryCount=1)
-            success = pos is not None and len(pos) > 1
-            break
-
+        # 9. 保存交易结果截图
         img_name = f'{img_name}_{"成功" if success else "失败"}'
-        CommonUtil.printLog(f'deal {img_name}')
-        self.saveImage(self.snapshot_img, img_name, dirPath=deal_dir_path, auto_create_sub_dir=False)
-        self.back_to_deal()  # 返回到交易入口页
+        self.saveImage(self.snapshot_img, img_name, dirPath=deal_dir, auto_create_sub_dir=False)
+        self.back_to_deal()
+        CommonUtil.printLog(f'交易结束: {img_name}')
         return success
 
+    def _find_dialog_pos(self, ocr_res_list: list, keyword: str, prefix: str = '') -> tuple:
+        """查找弹窗按钮位置"""
+        pos, _, _ = self.findTextByCnOCRResult(ocr_res_list, keyword, prefixText=prefix)
+        return self.calcCenterPos(pos) if pos else None
 
-# python your_script.py --condition_order_path /path/to/orders.csv
+
 if __name__ == '__main__':
-    ths_trader = ZJTrader()
-    # ths_trader.deal('01810', 52.15, -100)
-    ths_trader.deal('01810', 0, 200, '小米集团')
-    # ths_trader.deal('600980', 22.05, -200)
-    # time.sleep(3)
-    #
-    # ths_trader.deal('002731', 0, -200)
-    # time.sleep(3)
-    # # ths_trader.deal('000903', 3.55, 200)
-    #
-    # ths_trader.deal('600980', 22.05, 200)
-    # time.sleep(3)
+    trader = ZJTrader()
+    # 测试港股交易(数字代码)
+    # trader.deal('01810', 52.5, -100, '小米集团-W')
+    # 测试美股交易(字母代码)
+    trader.deal('TME', 18, 1, '腾讯音乐')
