@@ -8,6 +8,7 @@ from util.CommonUtil import CommonUtil
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 from wool_tasks.ths_trade.long_bridge_trade import LBTrader
+from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
 
 
 class ConditionOrder(Runnable):
@@ -16,6 +17,7 @@ class ConditionOrder(Runnable):
     """
     ths_trader: THSTrader  # 同花顺工具类,用于实现买入/卖出等操作
     long_trader: LBTrader  # 长桥工具类,用于实现买入/卖出等操作
+    zj_trader: ZJTrader  # 尊嘉工具类,用于实现买入/卖出等操作
 
     @staticmethod
     def get_or_default(data: List[str], index: int, def_value: str):
@@ -256,6 +258,10 @@ class ConditionOrder(Runnable):
                 # from longport.openapi import SubmitOrderResponse
                 result = self.long_trader.deal(self.position.symbol, 0, self.deal_count)
                 success = result is not None and not CommonUtil.isNoneOrBlank(result.order_id)
+            elif self.use_zhunjia():
+                app_name = '尊嘉'
+                # from longport.openapi import SubmitOrderResponse
+                success = self.zj_trader.deal(self.position.code, 0, self.deal_count)
             else:
                 success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
 

@@ -17,6 +17,7 @@ from wool_tasks.scheduler_task_manager import SchedulerTaskManager
 from wool_tasks.ths_trade.bean.condition_order import ConditionOrder
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 from wool_tasks.ths_trade.long_bridge_trade import LBTrader
+from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
 
 # python your_script.py --condition_order_path /path/to/orders.csv
 if __name__ == '__main__':
@@ -65,10 +66,21 @@ if __name__ == '__main__':
         CommonUtil.redirect_print_log(redirect_log)
 
     # 创建长桥工具类,用于港美股行情的获取
-    lb_trader = LBTrader(config_path=config_path, cacheDir=_cache_dir)
-    enable_long_bridge = lb_trader.active  # 初始化成功才启用
-    if enable_long_bridge:
-        ConditionOrder.long_trader = lb_trader
+    try:
+        lb_trader = LBTrader(config_path=config_path, cacheDir=_cache_dir)
+        enable_long_bridge = lb_trader.active  # 初始化成功才启用
+        if enable_long_bridge:
+            ConditionOrder.long_trader = lb_trader
+    except Exception as e:
+        CommonUtil.printLog(f'创建长桥工具类出错:{e}')
+
+    # 创建尊嘉工具类,用于港美股交易(手续费低, 但只有Android/ios客户端)
+    try:
+        zj_trader = ZJTrader(config_path=config_path, cacheDir=_cache_dir)
+        if zj_trader.active:
+            ConditionOrder.zj_trader = zj_trader
+    except Exception as e:
+        CommonUtil.printLog(f'创建尊嘉工具类出错:{e}')
 
     # 读取CSV文件并转换为条件单对象列表
     conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)

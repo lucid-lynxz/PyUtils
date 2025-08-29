@@ -99,7 +99,8 @@ class ZJTrader(AbsBaseAir4Android):
         # 美股定位可在首次交易前触发
         if self.need_find_pos['us']:
             self._find_bs_pos(market='us')  # 定位美股界面
-        self.unlock_deal()  # 尝试解锁一次
+
+        self.active: bool = self.unlock_deal()  # 尝试解锁一次, 有解锁密码才可用
 
     def _load_pos_cache(self, line_list: list):
         """从缓存文件加载多市场坐标数据"""
@@ -376,9 +377,13 @@ class ZJTrader(AbsBaseAir4Android):
                 break
 
             # 处理弹窗(确认下单/解锁/购买力不足)
+            # 弹框标题 按钮  内容
+            # 提示   确定/取消   订单金额超过最大购买力，有可能导致下单失败，是否确认下单？
+            # 提示   确定/取消   该股票不支持融券卖空，有可能导致下单失败，是否确认下单？
+            # 提示   确定/取消   该笔订单使用了跨币种的资金，为避免利息的产生及风控要求，我司有权帮客户于交收日对此进行货币兑换。   什么是分币种欠款？   不再提示，关闭后您可在设置中重新开启
             confirm_pos = self._find_dialog_pos(ocrResList, '确认下单', '不再提示')
             unlock_pos = self._find_dialog_pos(ocrResList, '解锁', '交易密码')
-            power_pos = self._find_dialog_pos(ocrResList, '取消', '最大购买力')
+            power_pos = self._find_dialog_pos(ocrResList, '取消', '最大购买力|融券|跨币种')
 
             if confirm_pos:
                 self.tapByTuple(confirm_pos)  # 确认下单
@@ -386,7 +391,7 @@ class ZJTrader(AbsBaseAir4Android):
                 self.text(self.deal_pwd)  # 输入密码解锁
                 self.tapByTuple(unlock_pos)
             elif power_pos:
-                self.tapByTuple(power_pos)  # 购买力不足,取消
+                self.tapByTuple(power_pos)  # 购买力不足或融券,取消
                 success = False
                 break
 
