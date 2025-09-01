@@ -2,18 +2,21 @@
 # -*- coding:utf-8 -*-
 
 import email.encoders
-import os.path
-import smtplib
 import imaplib
-from base64 import b64decode
+import os.path
 import re
+import smtplib
+from base64 import b64decode
+from email import message_from_bytes
 from email.header import Header
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
-from email import message_from_bytes
+from typing import TypedDict
+
 from util.CommonUtil import CommonUtil
+from util.TimeUtil import TimeUtil
 
 
 class MailBean(object):
@@ -23,6 +26,18 @@ class MailBean(object):
     receiver: str = ''  # 收件人
     date: str = ''  # 日期
     content: str = ''  # 邮件内容
+
+
+class MailConfig(TypedDict):
+    senderEmail: str  # 发件人邮件地址（必填）
+    receiverEmail: str  # 发送邮件时, 默认收件人邮箱地址（可选）
+    subject: str  # 发送邮件时,默认的邮件主题信息
+    senderPwd: str  # 密码/授权码（必填）
+    smtpServer: str  # SMTP服务器地址（可选） 发送邮件时需配置
+    smtpPort: int  # SMTP服务器端口（可选）
+    imapServer: str  # IMAP服务器地址（可选） 收取邮件时需配置
+    imapPort: int  # IMAP服务器端口（可选）
+    debugLevel: int  # 调试级别（可选） 1-打印所有日志 0-不打印日志
 
 
 class MailUtil(object):
@@ -35,33 +50,77 @@ class MailUtil(object):
     3. 发送邮件: sendTo
     4. 关闭服务器链接: quit
     5. 监听新邮件并读取内容: listen_and_read_new_mails
+
+    可以在配置文件中定义如下section信息:
+    [mail]
+    # 以下是发送邮箱所需,若无需发送邮件,则可不配置
+    # 发送邮件的服务器, 默认使用qq邮箱,其对应端口号通常是587或465
+    smtpServer = smtp.qq.com
+    smtpPort = 587
+
+    # 接收邮件的服务器和端口号
+    imapServer = imap.qq.com
+    imapPort = 993
+
+    # 发件人邮箱地址, 如: 66666@qq.com, 也是使用imap服务器读取邮件的地址
+    senderEmail =
+
+    # 邮箱密码或者授权码
+    senderPwd =
+
+    # 默认的邮件接收者, 比如8888@qq.com
+    receiverEmail =
+
+    # 邮件主题内容, 会在后面拼接 "-{姓名}"
+    subject =
+
+    # 打印调试信息 1-显示所有smtp交互日志  0-不打印
+    debugLevel = 1
     """
 
-    def __init__(self, address: str, pwd: str,
-                 smtpServer: str = "smtp.qq.com",  # 发送邮件使用
-                 smtpPort: int = 587,
-                 imapServer: str = "imap.qq.com",  # 收取邮件使用
-                 imapPort: int = 993,
-                 debugLevel: int = 0):
+    def __init__(self, config: MailConfig):
         """
-        :param address:  发件人邮件地址
-        :param pwd: 密码, qq邮箱使用的授权码,文档: https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=1001256
-        :param smtpServer: smtp服务器地址, qq邮箱是: smtp.qq.com,  文档:https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=167
-        :param smtpPort: smtp服务器端口,qq邮箱的默认端口是 587
-        :param imapServer: imap服务器地址, qq邮箱是: imap.qq.com
-        :param imapPort: imap服务器端口, qq邮箱的默认端口是 993
-        :param debugLevel: 打印调试信息 1-显示所有smtp交互日志
+        :param config: 邮件配置字典
+                      必选键: address, pwd
+                      可选键: smtpServer, smtpPort, imapServer, imapPort, debugLevel
+                  address:  发件人邮件地址
+                  pwd: 密码, qq邮箱使用的授权码,文档: https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=1001256
+                  smtpServer: smtp服务器地址, qq邮箱是: smtp.qq.com,  文档:https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=167
+                  smtpPort: smtp服务器端口,qq邮箱的默认端口是 587
+                  imapServer: imap服务器地址, qq邮箱是: imap.qq.com
+                  imapPort: imap服务器端口, qq邮箱的默认端口是 993
+                  debugLevel: 打印调试信息 1-显示所有smtp交互日志
         """
-        self.fromMail = address
+        # 设置默认值
+        default_config = {
+            "senderEmail": "",
+            "senderPwd": "",
+            "smtpServer": "smtp.qq.com",
+            "smtpPort": 587,
+            "imapServer": "imap.qq.com",
+            "imapPort": 993,
+            "debugLevel": 1,
+            "receiverEmail": "",
+            "subject": "",
+        }
+        # 合并配置（用户提供的配置优先于默认配置）
+        merged_config = {**default_config, **config}
+
+        self.mailConfig = merged_config
+        self.fromMail = merged_config['senderEmail']
+
         # 使用 smtp() 接口可能会报错: Connection unexpectedly closed, 改为: smtp_ssl()
-        # self.server = smtplib.SMTP(smtpServer, smtpPort)  # SMTP协议默认端口是25
-        self.smtpServer = smtplib.SMTP_SSL(smtpServer)
-        self.smtpServer.set_debuglevel(debugLevel)
-        self.smtpServer.login(address, pwd)
+        self.smtpServer = smtplib.SMTP_SSL(merged_config["smtpServer"])
+        self.smtpServer.set_debuglevel(merged_config["debugLevel"])
+        self.smtpServer.login(merged_config['senderEmail'], merged_config['senderPwd'])
         self.mineMsg: MIMEMultipart = MIMEMultipart()  # 邮件对象
+
         self.attachCnt: int = 0  # 附件个数
-        self.imapServer = imaplib.IMAP4_SSL(imapServer, imapPort)
-        self.imapServer.login(address, pwd)
+        self.imapServer = imaplib.IMAP4_SSL(merged_config["imapServer"], merged_config["imapPort"])
+
+        self.imapServer.login(merged_config['senderEmail'], merged_config['senderPwd'])
+        self.default_receiver = merged_config['receiverEmail']
+        self.default_subject = merged_config['subject']
 
     @staticmethod
     def _format_addr(s: str):
@@ -96,6 +155,9 @@ class MailUtil(object):
         """
         self.obtainMailMsg(False)
         self.mineMsg['From'] = MailUtil._format_addr(fromTip if fromTip is not None else self.fromMail)
+        if CommonUtil.isNoneOrBlank(subject):
+            subject = self.default_subject
+
         if subject is not None:  # 主题
             self.mineMsg['Subject'] = Header(subject, 'utf-8').encode()
         self.mineMsg.attach(MIMEText(content, 'html', 'utf-8'))  # 邮件正文是MIMEText:
@@ -140,13 +202,15 @@ class MailUtil(object):
             return ''
         return "".join(mailAddress.split())
 
-    def sendTo(self, toMails: list, toNames: list = None) -> bool:
+    def sendTo(self, toMails: list = None, toNames: list = None) -> bool:
         """
         发送邮件给指定的收件人
-        :param toMails: 收件人邮件列表
+        :param toMails: 收件人邮件列表, 若为空,则使用默认
         :param toNames: 收件人名称列表 要求与 toMails 长度一致, 若为None,这使用 toMails 替代
         :return: 是否发送成功
         """
+        if CommonUtil.isNoneOrBlank(toMails):
+            toMails = [self.default_receiver]
         toMails = list(map(self._recookMailAddresss, toMails))
         toNames = toMails if (toNames is None or len(toNames) == 0) else toNames
 
@@ -319,7 +383,7 @@ class MailUtil(object):
             status, _ = self.imapServer.store(message_id_str, '+FLAGS', imap_flag)
             __success = status == 'OK'
             __tip = "成功" if __success else f"失败 status={status}"
-            CommonUtil.printLog(f'set_mail_flags({mail.msg_id}, {flag}, {folder_name}) {__tip}')
+            CommonUtil.printLog(f'set_mail_flags({message_id_str}, {flag}, {folder_name}) {__tip}')
             return __success
         except Exception as e:
             CommonUtil.printLog(f"set_mail_flags 设置邮件标记时出错: {e}")
@@ -418,39 +482,52 @@ class MailUtil(object):
 
 
 if __name__ == "__main__":
-    mailUtil = MailUtil("4456xxxx@qq.com", "dflgfbxxxxxxxxx", "smtp.qq.com", 587, "imap.qq.com", 993, debugLevel=0)
+    mail_config = {
+        "senderEmail": "4456xxxx@qq.com",
+        "senderPwd": "kgxpeoiqzaspxxx",
+        "smtpServer": "smtp.qq.com",
+        "smtpPort": 587,
+        "imapServer": "imap.qq.com",
+        "imapPort": 993,
+        "debugLevel": 0,
+        "receiverEmail": "3605xxx@qq.com",
+        "subject": "测试config_dict发送邮件",
+    }
+    mailUtil = MailUtil(mail_config)
 
     # 普通文本正文
     # msg = mailUtil.setMailMsg("你好,hello from python", "我是4456 <%s>" % mailUtil.fromMail, "测试python2")
+    # msg = mailUtil.setMailMsg("你好,hello2", "我是4456 <%s>" % mailUtil.fromMail)
 
     # 正文中插入图片, 测试后,该文件不会再显示再附件中(qq邮箱)
     # 1. 添加图片附件
-    # cid = mailUtil.addAttachFile("/Users/Lynxz/Desktop/hello.png", "image")
-    # # 2. 插入image标签
-    # mailUtil.setMailMsg('<html><body><h1>你好,hello from python</h1>' +
-    #                     '<p><img src="cid:%s"></p>' % cid +
-    #                     '</body></html>', "我是4456 <%s>" % mailUtil.fromMail, "测试python 2")
-    #
+    cid = mailUtil.addAttachFile("H:/Pictures/壁纸/hello.jpg", "image")
+    # 2. 插入image标签
+    mailUtil.setMailMsg('<html><body><h1>你好,hello from python</h1>' +
+                        '<p><img src="cid:%s"></p>' % cid +
+                        '</body></html>', "我是4456 <%s>" % mailUtil.fromMail, "测试python")
+
     # # 添加普通文件附件
     # # mailUtil.addAttachFile("/Users/***/Desktop/test.py", "file")
-    # # 发送到指定邮箱
+    # 发送到指定邮箱
     # senderrs = mailUtil.sendTo(["360***@qq.com"])
+    senderrs = mailUtil.sendTo()
 
-    # 列出所有文件夹
-    CommonUtil.printLog(f'{mailUtil.list_folders()}')
-
-    # # 读取指定文件夹中的邮件
-    # # mail_list = mailUtil.fetch_mails("其他文件夹/尊嘉",'UNSEEN')
-    mail_list = mailUtil.fetch_mails('INBOX', 'UNSEEN', limit=0)
-    for mail in mail_list:
-        CommonUtil.printLog('')
-        CommonUtil.printLog(f'邮件ID: {mail.msg_id}')
-        CommonUtil.printLog(f'主题: {mail.subject}')
-        CommonUtil.printLog(f'发件人: {mail.sender}')
-        CommonUtil.printLog(f'日期: {mail.date}')
-        # CommonUtil.printLog(f'内容: {mail.content}')
-        CommonUtil.printLog('-----------------')
-        _success = mailUtil.set_mail_flags([mail.msg_id], 'SEEN', 'INBOX')
-        CommonUtil.printLog(f'设置邮件ID: {mail.msg_id} 为已读={_success}')
+    # # 列出所有文件夹
+    # CommonUtil.printLog(f'{mailUtil.list_folders()}')
+    #
+    # # # 读取指定文件夹中的邮件
+    # # # mail_list = mailUtil.fetch_mails("其他文件夹/尊嘉",'UNSEEN')
+    # mail_list = mailUtil.fetch_mails('INBOX', 'UNSEEN', limit=0)
+    # for mail in mail_list:
+    #     CommonUtil.printLog('')
+    #     CommonUtil.printLog(f'邮件ID: {mail.msg_id}')
+    #     CommonUtil.printLog(f'主题: {mail.subject}')
+    #     CommonUtil.printLog(f'发件人: {mail.sender}')
+    #     CommonUtil.printLog(f'日期: {mail.date}')
+    #     # CommonUtil.printLog(f'内容: {mail.content}')
+    #     CommonUtil.printLog('-----------------')
+    #     _success = mailUtil.set_mail_flags([mail.msg_id], 'SEEN', 'INBOX')
+    #     CommonUtil.printLog(f'设置邮件ID: {mail.msg_id} 为已读={_success}')
 
     mailUtil.quit()

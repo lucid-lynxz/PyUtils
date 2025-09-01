@@ -326,10 +326,6 @@ class SendSalaryEmailImpl(BaseConfig):
             mailConfig = configParser.getSectionItems('mail')
             if sendEmailNow:
                 CommonUtil.printLog('准备发送邮件...')
-                smtpServer = mailConfig['smtpServer']
-                smtpPort = int(mailConfig['smtpPort'])
-                senderEmail = mailConfig['senderEmail']
-                senderPwd = mailConfig['senderPwd']
                 subject = mailConfig['subject']
 
                 if durationSec <= 0:
@@ -339,7 +335,7 @@ class SendSalaryEmailImpl(BaseConfig):
                 try:
                     for employeeInfo in employeeList:
                         # qq要求使用邮件授权码, 依次传入发件人邮箱, 密码, 发送服务器地址, 服务器端口
-                        mailUtil = MailUtil(senderEmail, senderPwd, smtpServer, smtpPort, debugLevel=0)
+                        mailUtil = MailUtil(mailConfig)
 
                         path = employeeInfo.imagePath
                         name, email = employeeInfo.name, employeeInfo.email
