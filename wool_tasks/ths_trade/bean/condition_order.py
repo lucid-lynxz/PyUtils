@@ -5,6 +5,8 @@ from util.AkShareUtil import AkShareUtil
 from util.NetUtil import NetUtil
 from util.TimeUtil import TimeUtil
 from util.CommonUtil import CommonUtil
+from util.MailUtil import MailUtil
+from util.FileUtil import FileUtil
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 from wool_tasks.ths_trade.long_bridge_trade import LBTrader
@@ -18,6 +20,7 @@ class ConditionOrder(Runnable):
     ths_trader: THSTrader  # 同花顺工具类,用于实现买入/卖出等操作
     long_trader: LBTrader  # 长桥工具类,用于实现买入/卖出等操作
     zj_trader: ZJTrader  # 尊嘉工具类,用于实现买入/卖出等操作
+    mailUtil: MailUtil  # 邮件工具类,用于将交易结果发送到指定邮箱
 
     @staticmethod
     def get_or_default(data: List[str], index: int, def_value: str):
@@ -188,7 +191,7 @@ class ConditionOrder(Runnable):
         # 若时间不满足,则不做检测
         if (not CommonUtil.isNoneOrBlank(self.start_time) and
                 not TimeUtil.is_time_greater_than(self.start_time, include_equal=True)):
-            CommonUtil.printLog(f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
+            # CommonUtil.printLog(f'conditionOrder 尚未到达开始检测的时间(>={self.start_time}),本次跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
             return
 
         if not CommonUtil.isNoneOrBlank(self.end_time) and TimeUtil.is_time_greater_than(self.end_time):
@@ -244,7 +247,7 @@ class ConditionOrder(Runnable):
 
         # 反弹幅度超过预设值,触发交易
         if delta >= expected_delta:
-            if delta >= 3 * expected_delta or (TimeUtil.is_time_greater_than('09:32:00') and '昨收价' == price_tip):
+            if delta > 3 * expected_delta or (TimeUtil.is_time_greater_than('09:32:00') and '昨收价' == price_tip):
                 msg = f'{self.summary_info}\n极值:{self.extreme_value},{price_tip}:{latest_price},波动了:{delta},超过3倍反弹幅度或者昨收价超期失效,跳过本次交易'
                 NetUtil.push_to_robot(msg, printLog=True)
                 return
@@ -253,6 +256,7 @@ class ConditionOrder(Runnable):
 
             CommonUtil.printLog(f'进行交易:{self.summary_info},极值:{self.extreme_value},{price_tip}:{latest_price}, 反弹幅度:{delta}, 预设反弹幅度:{expected_delta}')
             app_name = '同花顺'
+            deal_img_path: str = ''  # 交易的截图文件保存路径
             if self.use_long_bridge():
                 app_name = '长桥'
                 # from longport.openapi import SubmitOrderResponse
@@ -262,8 +266,10 @@ class ConditionOrder(Runnable):
                 app_name = '尊嘉'
                 # from longport.openapi import SubmitOrderResponse
                 success = self.zj_trader.deal(self.position.code, 0, self.deal_count)
+                deal_img_path = self.zj_trader.last_deal_img_path
             else:
                 success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
+                deal_img_path = self.ths_trader.last_deal_img_path
 
             # 交易成功后,更新持仓信息
             if success:
@@ -276,3 +282,15 @@ class ConditionOrder(Runnable):
                     self.position.available_balance = str(self.position.available_balance + self.deal_count)
             msg = f'{self.summary_info}\n极值:{self.extreme_value},{price_tip}:{latest_price}\n进行deal操作:{success} by {app_name}'
             NetUtil.push_to_robot(msg, printLog=True)
+
+            # 将交易结果发送到指定邮箱
+            if not CommonUtil.isNoneOrBlank(deal_img_path) and self.mailUtil is not None:
+                # 正文中插入图片, 测试后,该文件不会再显示再附件中(qq邮箱)
+                # 1. 添加图片附件
+                cid = self.mailUtil.addAttachFile(deal_img_path, "image")
+                # 2. 插入image标签
+                self.mailUtil.setMailMsg('<html><body><h1>imgName:%s</h1>' % deal_img_path +
+                                         '<p><img src="cid:%s"></p>' % cid, subject=f'{FileUtil.getFileName(deal_img_path)[0]}')
+                # 发送到指定邮箱
+                senderrs = self.mailUtil.sendTo()
+                NetUtil.push_to_robot(f'发送邮件结果:{senderrs}\ndeal_img_path={deal_img_path}', printLog=True)

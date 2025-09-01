@@ -101,6 +101,7 @@ class ZJTrader(AbsBaseAir4Android):
             self._find_bs_pos(market='us')  # 定位美股界面
 
         self.active: bool = self.unlock_deal()  # 尝试解锁一次, 有解锁密码才可用
+        self.last_deal_img_path: str = ''  # 最后一次交易的截图文件保存路径
 
     def _load_pos_cache(self, line_list: list):
         """从缓存文件加载多市场坐标数据"""
@@ -397,7 +398,7 @@ class ZJTrader(AbsBaseAir4Android):
 
         # 9. 保存交易结果截图
         img_name = f'{img_name}_{"成功" if success else "失败"}'
-        self.saveImage(self.snapshot_img, img_name, dirPath=deal_dir, auto_create_sub_dir=False)
+        self.last_deal_img_path = self.saveImage(self.snapshot_img, img_name, dirPath=deal_dir, auto_create_sub_dir=False)
         self.back_to_deal()
         CommonUtil.printLog(f'交易结束: {img_name}')
         return success

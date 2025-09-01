@@ -6,6 +6,7 @@ import imaplib
 import os.path
 import re
 import smtplib
+import traceback
 from base64 import b64decode
 from email import message_from_bytes
 from email.header import Header
@@ -111,7 +112,7 @@ class MailUtil(object):
 
         # 使用 smtp() 接口可能会报错: Connection unexpectedly closed, 改为: smtp_ssl()
         self.smtpServer = smtplib.SMTP_SSL(merged_config["smtpServer"])
-        self.smtpServer.set_debuglevel(merged_config["debugLevel"])
+        self.smtpServer.set_debuglevel(int(merged_config["debugLevel"]))
         self.smtpServer.login(merged_config['senderEmail'], merged_config['senderPwd'])
         self.mineMsg: MIMEMultipart = MIMEMultipart()  # 邮件对象
 
@@ -232,6 +233,7 @@ class MailUtil(object):
             self.smtpServer.sendmail(self.fromMail, toMails, self.mineMsg.as_string())
             return True
         except Exception as e:
+            traceback.print_exc()
             CommonUtil.printLog(' 发送邮件给 %s 失败, 错误信息: %s' % (toMails, e))
             return False
 

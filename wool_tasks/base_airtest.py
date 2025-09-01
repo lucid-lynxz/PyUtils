@@ -747,7 +747,7 @@ class BaseAir(AbsWoolProject):
         line_dict = dict()  # 每行内容字典
         horizont_index = 0  # 该属性信息索引
         result = list()  # 最终结果
-        self.saveImage(full_img, imgName='ocr_grid_view_full_img', append_date_time=True)  # 调试时保存图片
+        # self.saveImage(full_img, imgName='ocr_grid_view_full_img', append_date_time=True)  # 调试时保存图片
 
         if vertical_mode:  # 列模式识别
             # 获取每列的范围, 左/上/右 边界通过列标题获取, 下边界通过截图的高来确定

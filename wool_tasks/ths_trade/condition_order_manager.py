@@ -11,6 +11,7 @@ from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.NetUtil import NetUtil
+from util.MailUtil import MailUtil
 from util.SystemSleepPreventer import SystemSleepPreventer
 from util.TimeUtil import TimeUtil
 from wool_tasks.scheduler_task_manager import SchedulerTaskManager
@@ -47,6 +48,7 @@ if __name__ == '__main__':
     NetUtil.robot_dict = configParser.getSectionItems('robot')  # 推送消息设置
 
     NetUtil.push_to_robot(f'condition_order_manager 开始工作', printLog=True)
+    ConditionOrder.mailUtil = MailUtil(configParser.getSectionItems('mail'))  # 邮箱工具
 
     # 创建同花顺工具类
     ths_trader = THSTrader(cacheDir=_cache_dir)
@@ -66,6 +68,8 @@ if __name__ == '__main__':
         CommonUtil.redirect_print_log(redirect_log)
 
     # 创建长桥工具类,用于港美股行情的获取
+    enable_long_bridge = False
+    lb_trader = None
     try:
         lb_trader = LBTrader(config_path=config_path, cacheDir=_cache_dir)
         enable_long_bridge = lb_trader.active  # 初始化成功才启用
@@ -137,6 +141,7 @@ if __name__ == '__main__':
         def task_condition_orders():
             """执行条件单"""
             # CommonUtil.printLog(f'task_condition_orders')
+            ths_trader.key_press('F5')  # 触发按键操作,避免屏幕锁屏
             for _order in conditionOrderList:
                 if _order.active:
 

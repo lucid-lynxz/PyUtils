@@ -62,6 +62,7 @@ class THSTrader(BaseAir4Windows):
         self.akshare_util: AkShareUtil = AkShareUtil()  # akshare 工具类
 
         self.available_balance_cash: float = -1  # 可用金额, 单位:元
+        self.last_deal_img_path: str = ''  # 最后一次交易的截图文件保存路径
 
         # 尝试从缓存文件中读取数据
         self.pos_cache_file = f'{cacheDir}/pos_cache.txt'  # 缓存各按钮位置信息, 对于同一台设备, 不需要每次都重新获取
@@ -446,11 +447,11 @@ class THSTrader(BaseAir4Windows):
 
         CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
-        self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
+        self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
 
         pos, ocrResStr, ocrResList = self.findTextByOCR('失败', img=self.snapshot_img, prefixText='提示',
                                                         subfixText='确定')
-        success = CommonUtil.isNoneOrBlank(pos)
+        success = CommonUtil.isNoneOrBlank(pos) and not CommonUtil.isNoneOrBlank(ocrResStr)
         self.text("{ESC}")  # 按下esc键,部分弹框可被取消
         self.text("{ENTER}")  # 按下回车键, 避免弹框干扰
         CommonUtil.printLog(f'交易结果:{success},img_name={img_name},ocrResStr:{ocrResStr}')
