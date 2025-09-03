@@ -75,7 +75,7 @@ class ZJTrader(AbsBaseAir4Android):
         # APP状态初始化
         self.adbUtil.pointerLocation(1)  # 显示指针位置(调试用)
         is_zj_running = self.adbUtil.isAppRunning(pkgName, deviceId)
-        self.startApp(forceRestart=False)  # 非强制重启
+        self.startApp(forceRestart=True)  # 强制重启
 
         # 多市场位置集初始化(港股/美股)
         self.hk_pos = PositionSet()  # 港股界面坐标集
@@ -406,7 +406,8 @@ class ZJTrader(AbsBaseAir4Android):
     def _find_dialog_pos(self, ocr_res_list: list, keyword: str, prefix: str = '') -> tuple:
         """查找弹窗按钮位置"""
         pos, _, _ = self.findTextByCnOCRResult(ocr_res_list, keyword, prefixText=prefix)
-        return self.calcCenterPos(pos) if pos else None
+        print(f'_find_dialog_pos pos={pos}')
+        return self.calcCenterPos(pos)
 
 
 if __name__ == '__main__':

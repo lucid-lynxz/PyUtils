@@ -549,6 +549,7 @@ class GitUtil(object):
         CommonUtil.printLog(f'show git status/log before reset')
         self.getStatus()
         CommonUtil.exeCmd('git log --oneline -3')
+        CommonUtil.exeCmd('git clean -fd')
 
         modeOpt = '--%s' % mode
         if CommonUtil.isNoneOrBlank(mode):

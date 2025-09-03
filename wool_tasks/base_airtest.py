@@ -192,6 +192,10 @@ class BaseAir(AbsWoolProject):
             # >>> touch((100, 100), right_click=True)
 
         """
+        if isinstance(v, (list, tuple)) and len(v) < 2:
+            print(f'touch fail as pos iv {v}')
+            return None
+
         if isinstance(v, Template):
             pos = self.loop_find(v, timeout=ST.FIND_TIMEOUT)
         else:
@@ -205,11 +209,14 @@ class BaseAir(AbsWoolProject):
         return pos
 
     @logwrap
-    def text(self, text, enter=True, **kwargs):
+    def text(self, content, enter=True, **kwargs):
         """
         Input text on the target device. Text input widget must be active first.
+        输入文本
+        :param content: 输入的文本内容
+        :param enter: 是否按下回车键, 默认为True
         """
-        self.airtest_device.text(text, enter=enter, **kwargs)
+        self.airtest_device.text(content, enter=enter, **kwargs)
         delay_after_operation()
 
     def clear_text(self):
@@ -219,6 +226,19 @@ class BaseAir(AbsWoolProject):
         # 连续删除文本（假设最多8个字符）
         for _ in range(8):
             keyevent("KEYCODE_DEL")
+
+    def key_press(self, key: str, cnt: int = 1, interval: float = 0.1):
+        """
+        模拟一个按下按键的事件
+        文档: https://airtest.readthedocs.io/zh-cn/latest/all_module/airtest.core.win.win.html#airtest.core.win.win.Windows.key_press
+         若需要组合按键, 请使用 keyevent() 接口,比如:alt+f4  -> keyevent("%{F4}")   delte -> keyevent("{DEL}")
+        :param key: 要模拟的按键, 如: 'F2'
+        :param cnt: 按键次数, 默认1次
+        :param interval: 按键后等待的时间, 单位:秒
+        """
+        for i in range(cnt):
+            self.airtest_device.key_press(key)
+            self.sleep(interval)
 
     @logwrap
     def loop_find(self, query, timeout=ST.FIND_TIMEOUT, threshold=None, interval=0.5, intervalfunc=None):
@@ -747,7 +767,7 @@ class BaseAir(AbsWoolProject):
         line_dict = dict()  # 每行内容字典
         horizont_index = 0  # 该属性信息索引
         result = list()  # 最终结果
-        # self.saveImage(full_img, imgName='ocr_grid_view_full_img', append_date_time=True)  # 调试时保存图片
+        self.saveImage(full_img, imgName='ocr_grid_view_full_img', append_date_time=True)  # 调试时保存图片
 
         if vertical_mode:  # 列模式识别
             # 获取每列的范围, 左/上/右 边界通过列标题获取, 下边界通过截图的高来确定
@@ -792,7 +812,7 @@ class BaseAir(AbsWoolProject):
                 pos_bottom = h - 10  # 截图底部向上偏移一点
 
                 # 每列进行区域截图并ocr, 截图文件保存在 cache 目录下,首次运行时,请查看宽度是否符合预期,适当微调,避免ocr错误
-                image_name = None  # f'ocr_grid_view_{key}_{value}_{horizont_index}' # 调试时再保存图片
+                image_name = ''  # f'ocr_grid_view_{key}_{value}_{horizont_index}' # 调试时再保存图片
                 ocr_result = self.crop_then_ocr(full_img, fromX=pos_left, fromY=pos_top, toX=pos_right, toY=pos_bottom, img_name=image_name)
                 CommonUtil.printLog(f'{image_name} 识别结果:{self.composeOcrStr(ocr_result)}')
 

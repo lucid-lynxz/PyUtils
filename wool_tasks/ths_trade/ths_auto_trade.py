@@ -431,10 +431,10 @@ class THSTrader(BaseAir4Windows):
 
         # todo 价格不能超过涨跌停价, 建议找其他接口直接获取而不是截图进行ocr势必诶
         if price > 0:
-            touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
-            # keyevent("A", modifiers=["CTRL"])  # 全选无效
+            self.touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
+            #  self.keyevent("A", modifiers=["CTRL"])  # 全选无效
             self.key_press('BACKSPACE', 6)  # 通过回退键来清除
-            text(str(price), '卖出价格')  # 输入卖出价格
+            self.text(str(price), '卖出价格')  # 输入卖出价格
 
         self.touch(self.bs_amount_pos, '买卖数量输入框')  # 买入/卖出数量输入框
         # self.key_press('BACKSPACE', 6)  # 通过回退键来清除
@@ -447,11 +447,21 @@ class THSTrader(BaseAir4Windows):
 
         CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
-        self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
 
-        pos, ocrResStr, ocrResList = self.findTextByOCR('失败', img=self.snapshot_img, prefixText='提示',
-                                                        subfixText='确定')
+        # startTs = TimeUtil.currentTimeMillis()
+        # self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
+        img = self.crop_img(self.snapshot(), 800, 500, 1600,1000)
+        self.last_deal_img_path = self.saveImage(img, img_name, dirPath=f'{self.cacheDir}/deal/')
+
+        # delta = (TimeUtil.currentTimeMillis() - startTs) / 1000
+        # CommonUtil.printLog(f'交易股票保存裁剪后的截图耗时: {delta} 秒, 图片路径: {self.last_deal_img_path}')
+
+        pos, ocrResStr, ocrResList = self.findTextByOCR('失败|超出涨跌停限制', img=img, prefixText='提示')
         success = CommonUtil.isNoneOrBlank(pos) and not CommonUtil.isNoneOrBlank(ocrResStr)
+
+        # delta = (TimeUtil.currentTimeMillis() - startTs) / 1000
+        # CommonUtil.printLog(f'交易结果:{success},耗时: {delta}秒, img_name={img_name},ocrResStr:{ocrResStr}')
+
         self.text("{ESC}")  # 按下esc键,部分弹框可被取消
         self.text("{ENTER}")  # 按下回车键, 避免弹框干扰
         CommonUtil.printLog(f'交易结果:{success},img_name={img_name},ocrResStr:{ocrResStr}')

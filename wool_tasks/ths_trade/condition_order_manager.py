@@ -256,11 +256,9 @@ if __name__ == '__main__':
             scheduler = SchedulerTaskManager()
             (scheduler
              .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
-             # .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds',
-             #           condition=enable_long_bridge)
-             .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='hours',
-                       at_time=':05')
-             .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
+             .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='hours', at_time=':02')
+             # .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds', condition=enable_long_bridge)
+             # .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
              .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
              # .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
              # .start(start_time, task_condition_orders_hk)  # 启动调度器

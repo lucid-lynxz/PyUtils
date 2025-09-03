@@ -109,29 +109,6 @@ class BaseAir4Windows(BaseAir):
             CommonUtil.printLog(f"未找到匹配正则表达式 '{window_title}' 的窗口")
             return 0, ""
 
-    def key_press(self, key: str, cnt: int = 1, interval: float = 0.1):
-        """
-        模拟一个按下按键的事件
-        文档: https://airtest.readthedocs.io/zh-cn/latest/all_module/airtest.core.win.win.html#airtest.core.win.win.Windows.key_press
-         若需要组合按键, 请使用 keyevent() 接口,比如:alt+f4  -> keyevent("%{F4}")   delte -> keyevent("{DEL}")
-        :param key: 要模拟的按键, 如: 'F2'
-        :param cnt: 按键次数, 默认1次
-        :param interval: 按键后等待的时间, 单位:秒
-        """
-        for i in range(cnt):
-            self.airtest_device.key_press(key)
-            self.sleep(interval)
-
-    # @log_time_consume()
-    def text(self, content: str, tip: str = '', enter: bool = True, **kwargs):
-        """
-        输入文本
-        :param content: 输入的文本内容
-        :param tip: 提示信息, 仅用于打印日志
-        :param enter: 是否按下回车键, 默认为True
-        """
-        text(content, enter, **kwargs)
-
     def touch(self, v, tip: str = '', times: int = 1, **kwargs) -> bool:
         """
         点击操作
@@ -139,10 +116,7 @@ class BaseAir4Windows(BaseAir):
         :param tip: 提示信息, 仅用于打印日志
         :param times: 点击次数, 默认1次
         """
-        if isinstance(v, (list, tuple)) and len(v) < 2:
-            print(f'touch fail as pos iv {v}')
-            return False
-        click_pos = touch(v, times, **kwargs)
+        click_pos = super().touch(v, times, **kwargs)
         # print(f'touch({v})={click_pos}')
         return click_pos is not None and len(click_pos) >= 2
 
