@@ -19,6 +19,7 @@ from util.CommonUtil import CommonUtil
 from util.NetUtil import NetUtil
 from base.BaseConfig import BaseConfig
 from util.SSHUtil import SSHUtil
+from util.FileUtil import FileUtil
 
 
 class UpDownloadImpl(BaseConfig):
@@ -31,6 +32,7 @@ class UpDownloadImpl(BaseConfig):
         enable_upload: bool = settings.get('enable_upload', True)
         enable_download: bool = settings.get('enable_download', True)
         overwrite: bool = settings.get('overwrite', True)
+        upload_info_name: bool = settings.get('upload_info_name', '')
 
         upload_items: dict = self.configParser.getSectionItems('upload')
         download_items: dict = self.configParser.getSectionItems('download')
@@ -57,7 +59,14 @@ class UpDownloadImpl(BaseConfig):
                     success = ssh.upload_directory_to_server(local_dir, remote_dir, overwrite=overwrite)
                     progress += 1
                     result = '成功' if success else '失败'
-                    NetUtil.push_to_robot(f'上传{result} ({progress}/{total}) : {local_dir} -> {remote_dir}')
+
+                    info_msg = ''
+                    if not CommonUtil.isNoneOrBlank(upload_info_name):
+                        info_file_path = FileUtil.recookPath(f'{local_dir}/{upload_info_name}')
+                        info_msg = ''.join(FileUtil.readFile(info_file_path)).strip()
+                        if not CommonUtil.isNoneOrBlank(info_msg):
+                            info_msg = f'\n\n{upload_info_name}\n{info_msg}'
+                    NetUtil.push_to_robot(f'上传{result} ({progress}/{total}) : {local_dir} -> {remote_dir}{info_msg}')
 
             # 下载文件(.txt/.png/.jpg)
             if enable_download:
