@@ -51,7 +51,7 @@ class ConditionOrder(Runnable):
                 code=row[0],  # 股票代码
                 name=row[1],  # 名称
                 market=row[2]),  # 交易市场
-            base=float(row[3]),  # 基准价
+            base=row[3],  # 基准价 支持两种写法, 如:0.5%~1.5%  和 0.5, 前者表示比昨收价突破0.5%以上且1.5%以下, 后者表示0.5元
             break_up=row[4].lower() in ['true', 'up'],  # 是否是向上突破基准价, 支持的格式: true/up/false/down ,忽略大小写
             bounce_info=ConditionOrder.get_or_default(row, 5, "0.4%"),  # 反弹幅度
             deal_count=int(ConditionOrder.get_or_default(row, 6, "0")),  # 交易数量
@@ -61,22 +61,27 @@ class ConditionOrder(Runnable):
         )
 
     def __init__(self, position: StockPosition,
-                 base: float,
+                 base: str,
                  bounce_info: str,
                  deal_count: int,
                  break_up: bool,
                  start_time: str = '09:30:00',
                  end_time: str = '16:30:00',
-                 end_date: str = '2099-12-1'):
+                 end_date: str = '2099-12-1',
+                 base_pct: bool = False):
         """
         :param position: 股票的持仓信息
-        :param base: 基准价格, 正数有效, 表示突破该价格后开始监控反弹力度, 0或负数表示不设置基准价格(默认会以持仓成本价/最新价为基准)
+        :param base: 基准价格, 支持百分比写法和纯数字写法, 比如: 0.5%~1.5%  -0.5%~-1.5%  和 0.5, 注意百分比写法时,固定小的在前
+                    0.5%~1.5% 表示: 当前价格 ≥ (昨收价 * 1.005) &&  当前价格 ≤ (昨收价 * 1.015) 时触发条件单
+                    -1.5%~-0.5% 表示: 当前价格 ≥ (昨收价*0.985) &&  当前价格 ≤ (昨收价 * 0.995)  时触发条件单
+                    0.5 表示当价格突破0.5元时触发条件单, 此时仅正数有效, 表示突破该价格后开始监控反弹力度, 0或负数表示不设置基准价格(默认会以持仓成本价/最新价为基准)
         :param bounce_info: 表示反弹幅度, 支持两种写法, 如:0.5% 和 0.5, 前者表示反弹0.5%, 后者表示反弹0.5元
         :param deal_count: 执行交易的股数, 正数表示买入, 负数表示卖出, 如: -100 表示卖出100股
         :param break_up: true-向上突破 false-向下突破
         :start_time: 每日开始监测的时间, 默认为9:30:00开盘, 若为了减少开盘前几分钟的大波动, 可以适当后延, 若为空, 则不做判断
         :end_time: 每日结束监测的时间, 默认为16:30:00, 若为空, 则不做判断
         :end_date: 条件单截止日期(含)
+        :base_pct: 基准价格是否为百分比, 默认为false, 表示基准价格为固定值, 如: 100.00, 若为true, 则表示基准价格为昨收价基础上波动的百分比, 如: 0.5%
         """
         self.active: bool = True  # 是否有效, 超期/已触发 就会变为无效
         self.hit: bool = False  # 是否已突破基准价
@@ -85,13 +90,24 @@ class ConditionOrder(Runnable):
         self.position = position  # 持仓信息
         self.is_hk = self.position.is_hk_stock  # 是否为港股
 
-        cost_price = float(self.position.cost_price)  # 持仓成本价
-        self.base: float = cost_price if base <= 0 else base  # 基准价格
+        self.is_base_unit_ration: bool = '%' in base
+        if self.is_base_unit_ration:
+            arr = base.split('~')
+            _base_lower_limit: float = float(arr[0].replace('%', '')) / 100.0
+            _base_upper_limit: float = float(arr[1].replace('%', '')) / 100.0
+            self.base: float = _base_lower_limit
+            self.base_upper_limit: float = _base_upper_limit
+        else:
+            cost_price = float(self.position.cost_price)  # 持仓成本价
+            _base: float = float(base)
+            self.base: float = cost_price if _base <= 0 else _base  # 基准价格
+            self.base_upper_limit = self.base
+
         self.break_upward: bool = break_up  # 突破base基准价的方向
 
-        self.is_unit_ratio: bool = '%' in bounce_info
+        self.is_bounce_unit_ratio: bool = '%' in bounce_info
         _bounce: float = float(bounce_info.replace('%', ''))
-        self.bounce: float = _bounce / 100.0 if self.is_unit_ratio else _bounce  # 反弹幅度
+        self.bounce: float = _bounce / 100.0 if self.is_bounce_unit_ratio else _bounce  # 反弹幅度
 
         # 极值, 突破base基准价后的的最高/最低值, 用于判断是否已达到反弹幅度
         # break_upward=true, 向上突破成功时, 记录突破后的最高价
@@ -204,6 +220,21 @@ class ConditionOrder(Runnable):
             self.active = False
             return
 
+        if self.is_base_unit_ration:
+            if self.position.prev_close <= 0.0:
+                CommonUtil.printLog(f'conditionOrder 昨收价为0,无法计算基准价,本次跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
+                return
+            self.base = self.position.prev_close * (1 + self.base)  # 计算基准价格
+            self.base_upper_limit = self.position.prev_close * (1 + self.base_upper_limit)  # 计算基准价格上限
+            self.is_base_unit_ration = False
+
+            # 计算开盘价是否处于昨收价的指定范围
+            CommonUtil.printLog(f'conditionOrder 昨收价为 {self.position.prev_close},计算后的基准价为: {self.base}, 上限价格为: {self.base_upper_limit}')
+            if latest_price > self.base_upper_limit:
+                CommonUtil.printLog(f'conditionOrder 最新价格{latest_price}超过上限价格:{self.base_upper_limit},本次跳过:{self.summary_info_1line},{price_tip}:{latest_price}')
+                self.active = False
+                return
+
         # 卖出股票时, 若可用余额不足,则调整为可用余额
         if self.deal_count < 0 and int(self.position.available_balance) < abs(self.deal_count):
             self.deal_count = int(self.position.available_balance) * -1
@@ -240,7 +271,7 @@ class ConditionOrder(Runnable):
             self.extreme_value = min(latest_price, self.extreme_value)
             delta = abs(self.extreme_value - latest_price)
 
-        if self.is_unit_ratio:
+        if self.is_bounce_unit_ratio:
             expected_delta = self.extreme_value * self.bounce
         else:
             expected_delta = self.bounce
