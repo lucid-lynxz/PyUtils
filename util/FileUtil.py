@@ -15,6 +15,25 @@ T = TypeVar('T')  # 泛型类型
 
 class FileUtil(object):
     @staticmethod
+    def rename(src: str, dst: str) -> bool:
+        """
+        重命名文件或目录
+        :param src: 源文件或目录路径
+        :param dst: 目标文件或目录路径
+        :return: 是否重命名成功
+        """
+        if not FileUtil.isFileExist(src):
+            CommonUtil.printLog(f'重命名失败: 源文件或目录不存在:{src}')
+            return False
+
+        try:
+            os.rename(src, dst)
+            return True
+        except (OSError, EnvironmentError) as reason:
+            CommonUtil.printLog(f'重命名失败: {reason} , 原目录为:{src}')
+            return False
+
+    @staticmethod
     def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = None) -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠

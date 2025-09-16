@@ -422,6 +422,16 @@ class CommonUtil(object):
         except Exception as e:
             CommonUtil.printLog(f"发生错误: {e}")
 
+    @staticmethod
+    def safe_decode(bytes_data):
+        encodings = ['utf-8', 'gbk', 'gb2312', 'latin1']
+        for encoding in encodings:
+            try:
+                return bytes_data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return bytes_data.decode('utf-8', errors='replace')
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
