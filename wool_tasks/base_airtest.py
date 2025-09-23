@@ -742,7 +742,7 @@ class BaseAir(AbsWoolProject):
         return self.cnocrImpl.ocr(target_img)
 
     @log_time_consume(exclude_params=['full_img', 'title_key_dict'])
-    def ocr_grid_view(self, full_img, title_key_dict: dict, vertical_mode: bool = False, expand: int = 18) -> list:
+    def ocr_grid_view(self, full_img, title_key_dict: dict, vertical_mode: bool = False, expand: int = 18, save_column_img: bool = False) -> list:
         """
         对于带标题行的表格区域进行识别
         支持按行识别或者按列识别
@@ -753,6 +753,7 @@ class BaseAir(AbsWoolProject):
                                 其中 '列标题名' 是表格中列标题的文本, '标题key' 是该列的唯一标识, 最终会作为结果字典的key
         :param vertical_mode: 是否是列识别模式
         :param expand: 列识别模式时, 对每列进行区域截图时, 额外增加的宽度, 默认为18
+        :param save_column_img: 列识别模式时, 保存每列的截图, 用于调试, 默认为False
         :return: 除标题行外的表格内容, 每个元素是一个dict, 格式为: [{'标题key1': '列1内容', '标题key2': '列2内容', ...}, ...]
         """
 
@@ -812,7 +813,7 @@ class BaseAir(AbsWoolProject):
                 pos_bottom = h - 10  # 截图底部向上偏移一点
 
                 # 每列进行区域截图并ocr, 截图文件保存在 cache 目录下,首次运行时,请查看宽度是否符合预期,适当微调,避免ocr错误
-                image_name = ''  # f'ocr_grid_view_{key}_{value}_{horizont_index}' # 调试时再保存图片
+                image_name = f'ocr_grid_view_{key}_{value}_{horizont_index}' if save_column_img else ''  # 调试时再保存图片
                 ocr_result = self.crop_then_ocr(full_img, fromX=pos_left, fromY=pos_top, toX=pos_right, toY=pos_bottom, img_name=image_name)
                 CommonUtil.printLog(f'{image_name} 识别结果:{self.composeOcrStr(ocr_result)}')
 
@@ -870,7 +871,7 @@ class BaseAir(AbsWoolProject):
         # 只保留非空白数据
         result = [x for x in result if not CommonUtil.isNoneOrBlank(x)]
 
-        # 处理属性确实的数据, 确保每行都包含所有属性
+        # 处理属性缺失的数据, 确保每行都包含所有属性
         for item in result:
             for i in range(len(keys)):
                 value = values[i]

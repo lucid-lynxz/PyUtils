@@ -57,7 +57,7 @@ class THSTrader(BaseAir4Windows):
         self.bs_spinner_pos: tuple = None  # 数量股票代码后弹出的下拉列表框首个元素位置
         self.bs_price_pos: tuple = None  # 买入/卖出 界面中的 '价格' 中心点坐标偏移得到的输入框坐标
         self.bs_amount_pos: tuple = None  # 买入/卖出 界面中的 '数量' 中心点坐标偏移得到的输入框坐标
-        self.bs_rest_btn: tuple = None  # 买入/卖出 界面中的 '重填' 按钮中心点坐标
+        # self.bs_rest_btn: tuple = None  # 买入/卖出 界面中的 '重填' 按钮中心点坐标
         self.bs_confirm_btn: tuple = None  # 买入/卖出 界面中的 '买入/卖出' 确定按钮中心点坐标
         self.akshare_util: AkShareUtil = AkShareUtil()  # akshare 工具类
 
@@ -116,33 +116,33 @@ class THSTrader(BaseAir4Windows):
         :param ocr_result: 之前全屏ocr结果对象
         """
 
-        input_delta = (100, 0)
+        input_delta = (180, -8)
         pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '证券代码', prefixText='卖出股票',
-                                                                subfixText='重填')
+                                                                subfixText='证券名称')
         self.bs_code_pos = self.calcCenterPos(pos, input_delta)  # 证券代码输入框位置
-        CommonUtil.printLog(f'证券代码输入框位置: {self.bs_code_pos}')
+        CommonUtil.printLog(f'证券代码输入框位置: {self.bs_code_pos} , 原位置: {pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '证券名称', prefixText='卖出股票',
-                                                                subfixText='重填')
+        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '证券名称', prefixText='证券代码',
+                                                                subfixText='卖出|数量')
         self.bs_spinner_pos = self.calcCenterPos(pos, input_delta)  # 证券代码输入框位置
         CommonUtil.printLog(f'证券名称右侧提示位置: {self.bs_spinner_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出价格', prefixText='卖出股票',
-                                                                subfixText='重填')
+        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出价格', prefixText='证券名称',
+                                                                subfixText='卖出|数量')
         self.bs_price_pos = self.calcCenterPos(pos, input_delta)  # 股票价格输入框
         CommonUtil.printLog(f'股票价格输入框: {self.bs_price_pos}')
 
         pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出数量', prefixText='可用余额',
-                                                                subfixText='重填')
+                                                                subfixText='卖出|持仓')
         self.bs_amount_pos = self.calcCenterPos(pos, input_delta)  # 股票数量价格输入框, 单位: 股
         CommonUtil.printLog(f'股票数量价格输入框: {self.bs_amount_pos}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '重填', prefixText='卖出数量',
-                                                                subfixText='卖出')
-        self.bs_rest_btn = self.calcCenterPos(pos)  # 重填按钮
-        CommonUtil.printLog(f'重填按钮: {self.bs_rest_btn}')
+        # pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '重填', prefixText='卖出数量',
+        #                                                         subfixText='卖出')
+        # self.bs_rest_btn = self.calcCenterPos(pos)  # 重填按钮
+        # CommonUtil.printLog(f'重填按钮: {self.bs_rest_btn}')
 
-        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出', prefixText='重填',
+        pos, ocrResStr, ocrResList = self.findTextByCnOCRResult(ocr_result, '卖出', prefixText='卖出数量',
                                                                 subfixText='涨停|持仓|股票余额')
         self.bs_confirm_btn = self.calcCenterPos(pos)  # 确定 买入/卖出 按钮
         CommonUtil.printLog(f'买入/卖出 按钮: {self.bs_confirm_btn}')
@@ -151,7 +151,7 @@ class THSTrader(BaseAir4Windows):
                               or CommonUtil.isNoneOrBlank(self.bs_spinner_pos)
                               or CommonUtil.isNoneOrBlank(self.bs_price_pos)
                               or CommonUtil.isNoneOrBlank(self.bs_amount_pos)
-                              or CommonUtil.isNoneOrBlank(self.bs_rest_btn)
+                              # or CommonUtil.isNoneOrBlank(self.bs_rest_btn)
                               or CommonUtil.isNoneOrBlank(self.bs_confirm_btn))
         CommonUtil.printLog(f'_find_bs_pos end need_find_pos={self.need_find_pos}')
         self.save_pos_info()  # 将位置信息缓存到文件中
@@ -195,7 +195,7 @@ class THSTrader(BaseAir4Windows):
             pos, ocrResStr, ocrResList = self.findTextByOCR('证券代码', img=self.snapshot_img, prefixText='持仓',
                                                             subfixText='可用余额')
             CommonUtil.printLog(f'证券代码中心点坐标: {self.calcCenterPos(pos)}')
-            # CommonUtil.printLog(f'\n\nocrResStr: {ocrResStr}')
+            CommonUtil.printLog(f'\n\nocrResStr: {ocrResStr}')
 
             pos_left = pos[0][0] - 20  # 左边界往左偏移20像素
             pos_top = pos[0][1]  # 左上角y值,向下偏移一点
@@ -214,7 +214,7 @@ class THSTrader(BaseAir4Windows):
 
         full_img = self.crop_img(self.snapshot_img, fromX=self.position_rect[0], fromY=self.position_rect[1],
                                  toX=self.position_rect[2], toY=self.position_rect[3])
-        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True)
+        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, save_column_img=False)
         # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
@@ -423,11 +423,12 @@ class THSTrader(BaseAir4Windows):
                 CommonUtil.printLog(f'交易:{stock_name}({code}) 可卖数量为0,卖出失败')
                 return False
 
-        self.touch(self.bs_rest_btn, "重填")  # 重填按钮
+        # self.touch(self.bs_rest_btn, "重填")  # 重填按钮
         self.touch(self.bs_code_pos, "证券代码输入框")  # 证券代码输入框
+        self.key_press('BACKSPACE', 8)  # 通过回退键来清除
         self.text(code, '股票代码')  # 输入股票代码
         self.touch(self.bs_spinner_pos, '股票代码下拉候选框')  # 下拉提示框第一个元素位置, 主要是港股会显示下拉提示框, 需要点击进行取消,也可以按esc取消
-        # self.text("{ESC}")  # touch(self.bs_code_pos)  #避免提示弹框挡住下方的输入框
+        # self.text("{ESC}")  # touch(0self.bs_code_pos)  #避免提示弹框挡住下方的输入框
 
         # todo 价格不能超过涨跌停价, 建议找其他接口直接获取而不是截图进行ocr势必诶
         if price > 0:
@@ -450,7 +451,7 @@ class THSTrader(BaseAir4Windows):
 
         # startTs = TimeUtil.currentTimeMillis()
         # self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
-        img = self.crop_img(self.snapshot(), 800, 500, 1600,1000)
+        img = self.crop_img(self.snapshot(), 800, 500, 1600, 1000)
         self.last_deal_img_path = self.saveImage(img, img_name, dirPath=f'{self.cacheDir}/deal/')
 
         # delta = (TimeUtil.currentTimeMillis() - startTs) / 1000
