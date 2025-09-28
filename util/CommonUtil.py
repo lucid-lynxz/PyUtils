@@ -1,18 +1,17 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
-
+import os
+import re
+import sys
+import time
+import subprocess
 import functools
 import importlib.util
 import logging
-import os
 import platform
-import re
-import time
 from typing import Type, Union, Optional
 
 Number = Union[int, float]
-
-from util.TimeUtil import TimeUtil
 
 
 class CommonUtil(object):
@@ -39,7 +38,6 @@ class CommonUtil(object):
         修改标准输出的编码为utf8,可解决部分终端中文乱码问题
         """
         import io
-        import sys
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encoding)
 
     @staticmethod
@@ -53,6 +51,7 @@ class CommonUtil(object):
         :param includeTime: 是否包含时间信息, 默认为True, 默认的print有效
         :param prefer_redirect_log: 是否优先使用重定向函数进行日志输出, 默认为True
         """
+        from util.TimeUtil import TimeUtil
         if condition:
             # 此处保持使用原始的 print() 语句
             try:
@@ -65,32 +64,39 @@ class CommonUtil(object):
                 print(f"printLog exception {e}", flush=True)
 
     @classmethod
-    def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
+    def exeCmd(cls, cmd: str, printCmdInfo: bool = True, timeout: int = 30) -> str:
         """
         执行shell命令, 可得到返回值
         :param cmd: 待执行的命令
         :param printCmdInfo: 是否打印命令内容
+        :param timeout: 超时时间, 单位秒, 默认30秒
         """
-        # CommonUtil.printLog("execute cmd: %s" % cmd, printCmdInfo)
-        # readlines = os.popen(cmd).readlines()
-        # result = "".join(readlines)
-        # CommonUtil.printLog("result=%s" % result)
-        # return result
-
         try:
-            with os.popen(cmd) as fp:
-                bf = fp._stream.buffer.read()
-        except Exception as e:
-            CommonUtil.printLog(f"exeCmd exception:{cmd}\n{e}".strip())
+            # 使用subprocess模块执行命令，捕获标准输出和标准错误
+            # shell=True表示在shell中执行命令
+            # universal_newlines=True表示将输出视为文本而不是字节
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # 合并标准错误到标准输出
+                text=True,  # Python 3.7+ 使用text代替universal_newlines
+                encoding=sys.getdefaultencoding(),  # 使用系统默认编码
+                timeout=timeout  # 添加超时时间，防止命令卡死
+            )
+
+            # 获取命令的输出结果
+            cmd_result = result.stdout.strip()
+
+            # 打印命令信息和结果
+            CommonUtil.printLog(f"exeCmd:{cmd}\n{cmd_result}".strip(), printCmdInfo)
+            return cmd_result
+        except subprocess.TimeoutExpired:
+            CommonUtil.printLog(f"exeCmd 超时: {cmd}", printCmdInfo)
             return ""
-
-        try:
-            cmd_result = bf.decode('utf8', 'ignore').strip()
-        except UnicodeDecodeError:
-            cmd_result = bf.decode('gbk', 'ignore').strip()
-
-        CommonUtil.printLog(f"exeCmd:{cmd}\n{cmd_result}".strip(), printCmdInfo)
-        return cmd_result
+        except Exception as e:
+            CommonUtil.printLog(f"exeCmd exception:{cmd}\n{e}".strip(), printCmdInfo)
+            return ""
 
     @classmethod
     def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
@@ -408,7 +414,6 @@ class CommonUtil(object):
         """让 Windows 系统进入休眠状态"""
         if not CommonUtil.isWindows():
             return
-        import subprocess
         try:
             # 调用 Windows 系统命令实现休眠
             subprocess.run(
