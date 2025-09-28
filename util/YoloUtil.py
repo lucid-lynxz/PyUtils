@@ -23,8 +23,27 @@ yolo v8工具类
 
 class YoloUtil(object):
     def __init__(self, model="yolov8n.pt", **kwargs):
-        self.model = YOLO(model, **kwargs)
+        self._ori_model = YOLO(model, **kwargs)
+        self.best_pt_path: str = ''  # 训练得到的 best.pt 路径
+        self.best_model: YOLO = None  # 训练得到的 best.pt 模型
+
         self.last_predict_results: list = None
+        self.model = self._ori_model
+
+    def toggle_model(self, is_best: bool = True) -> bool:
+        """
+        切换模型
+        :param is_best: 是否切换到 best.pt 模型
+        :return: 是否切换成功
+        """
+        if is_best:
+            if self.best_model is not None:
+                self.model = self.best_model
+                return True
+        else:
+            self.model = self._ori_model
+            return True
+        return False
 
     def train(self, data, epochs: int = 100, batch: int = 8, exist_ok: bool = False, **kwargs) -> str:
         """
@@ -39,9 +58,11 @@ class YoloUtil(object):
         """
         results = self.model.train(data=data, epochs=epochs, batch=batch, exist_ok=exist_ok, **kwargs)
         save_dir = '/'.join(results.save_dir.parts)
-        best_pt_path = save_dir + "/weights/best.pt"
-        print('train finished:', best_pt_path)
-        return best_pt_path
+        self.best_pt_path = save_dir + "/weights/best.pt"
+        print('train finished:', self.best_pt_path)
+        if os.path.exists(self.best_pt_path):
+            self.best_model = YOLO(self.best_pt_path)
+        return self.best_pt_path
 
     def predict(self, source: Union[str, Path, int, list, tuple, np.ndarray, torch.Tensor], classes: list = None,
                 conf: float = 0.25, save: bool = True,
