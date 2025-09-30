@@ -2,9 +2,12 @@
 # -*- coding:utf-8 -*-
 
 import os
-import platform
-from typing_extensions import Self
+from typing import Tuple, Union, List
+
 from PIL import Image, ImageDraw, ImageFont
+from typing_extensions import Self
+
+from util.CommonUtil import CommonUtil
 
 
 class ImageUtil:
@@ -22,8 +25,22 @@ class ImageUtil:
         """
         self.image = None
         self.original_image = None
+
+        self._font_path: str = None  # 绘制文字时的字体路径
+        self._font: ImageFont = None  # 绘制文字时的字体对象
+
         if image_path and os.path.exists(image_path):
             self.open_image(image_path)
+
+    def new(self, size: Union[Tuple[int, int], List[int]], bg_color: Union[float, Tuple[float, ...], str] = 'white', mode: str = 'RGB') -> Self:
+        """
+        创建一张新图片, 并在图片上进行各种操作
+        :param size: 图像大小, 如: (400, 800) 表示宽400, 高800像素
+        :param bg_color: 背景颜色,如: 'white'   '#ff0000'
+        :param mode: 图像模式, 默认RGB模式
+        """
+        self.image = Image.new(mode, size, bg_color)
+        return self
 
     def open_image(self, image_path) -> Self:
         """
@@ -41,7 +58,7 @@ class ImageUtil:
             self.original_image = self.image.copy()
             return self
         except Exception as e:
-            print(f"打开图像失败: {e}")
+            CommonUtil.printLog(f"open_image fail:{e}")
             return self
 
     def resize(self, width=None, height=None, keep_aspect_ratio=False) -> Self:
@@ -57,7 +74,7 @@ class ImageUtil:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            self.new((width, height))
             return self
 
         try:
@@ -78,7 +95,7 @@ class ImageUtil:
             self.image = self.image.resize((width, height), Image.LANCZOS)
             return self
         except Exception as e:
-            print(f"缩放图像失败: {e}")
+            CommonUtil.printLog(f"resize fail:{e}")
             return self
 
     def crop(self, left, top, right, bottom) -> Self:
@@ -95,7 +112,7 @@ class ImageUtil:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            CommonUtil.printLog("crop fail:未加载图像")
             return self
 
         try:
@@ -109,62 +126,95 @@ class ImageUtil:
                 self.image = self.image.crop((left, top, right, bottom))
                 return self
             else:
-                print("裁剪坐标无效")
+                CommonUtil.printLog("crop fail:裁剪坐标无效")
                 return self
         except Exception as e:
-            print(f"裁剪图像失败: {e}")
+            CommonUtil.printLog(f"crop fail:{e}")
             return self
 
-    def draw_text(self, text, position, font_path=None, font_size=20, color=(0, 0, 0)) -> Self:
+    def draw_text(self, text, position: Tuple[float, float], font_path=None, font_size=20, color=(0, 0, 0),
+                  align='left', vertical_align='top') -> Self:
         """
-        在图像上绘制文字
+        在图像上绘制文字，支持水平和垂直对齐
 
         Args:
             text (str): 要绘制的文字
-            position (tuple): 文字起始位置 (x, y)
+            position (tuple): 文字参考位置 (x, y)
             font_path (str, optional): 字体文件路径
             font_size (int, optional): 字体大小，默认20
             color (tuple, optional): 文字颜色，默认黑色
+            align (str): 水平对齐方式 ('left', 'middle','center', 'right'), 默认 'left'
+            vertical_align (str): 垂直对齐方式 ('top', 'middle','center', 'bottom'), 默认 'top'
 
         Returns:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            CommonUtil.printLog("draw_text fail:未加载图像")
             return self
 
         try:
             draw = ImageDraw.Draw(self.image)
+            font = self.load_font(font_path, font_size)
+            # 获取文字的包围盒
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
 
-            # 尝试加载指定字体，失败则尝试查找系统中文字体
-            try:
-                if font_path and os.path.exists(font_path):
-                    font = ImageFont.truetype(font_path, font_size)
-                else:
-                    # 尝试自动查找系统中的中文字体
-                    system_font = self._find_system_chinese_font()
-                    if system_font:
-                        font = ImageFont.truetype(system_font, font_size)
-                    else:
-                        # 如果找不到中文字体，使用默认字体并给出警告
-                        print("警告: 未找到支持中文的字体，可能会出现乱码")
-                        font = ImageFont.load_default()
-            except Exception as e:
-                print(f"加载字体时出错: {e}")
-                font = ImageFont.load_default()
+            # 计算最终的文字位置
+            final_x = position[0]
+            final_y = position[1]
 
-            draw.text(position, text, font=font, fill=color)
+            # 水平对齐处理
+            if align == 'center' or align == 'middle':
+                final_x -= text_width // 2
+            elif align == 'right':
+                final_x -= text_width
+
+            # 垂直对齐处理
+            if vertical_align == 'center' or vertical_align == 'middle':
+                final_y -= text_height // 2
+            elif vertical_align == 'bottom':
+                final_y -= text_height
+
+            draw.text((final_x, final_y), text, font=font, fill=color)
             return self
         except Exception as e:
-            print(f"绘制文字失败: {e}")
+            CommonUtil.printLog(f"draw_text fail:{e}")
             return self
 
-    def draw_rectangle(self, position, outline_color=(255, 0, 0), fill_color=None, width=2) -> Self:
+    def load_font(self, font_path: str = None, font_size: int = 20) -> ImageFont:
+        if self._font_path == font_path and self._font is not None:
+            return self._font
+
+        # 尝试加载指定字体，失败则尝试查找系统中文字体
+        try:
+            if font_path and os.path.exists(font_path):
+                font = ImageFont.truetype(font_path, font_size)
+            else:
+                # 尝试自动查找系统中的中文字体
+                system_font = CommonUtil.find_system_chinese_font()
+                if system_font:
+                    font = ImageFont.truetype(system_font, font_size)
+                else:
+                    # 如果找不到中文字体，使用默认字体并给出警告
+                    CommonUtil.printLog("警告: 未找到支持中文的字体，可能会出现乱码")
+                    font = ImageFont.load_default()
+        except Exception as e:
+            CommonUtil.printLog(f"load_font fail:{e}")
+            font = ImageFont.load_default()
+
+        self._font_path = font_path
+        self._font = font
+        return font
+
+    def draw_rectangle(self, position: list, ltrb: bool = True, outline_color=(255, 0, 0), fill_color=None, width=3) -> Self:
         """
         在图像上绘制矩形框
 
         Args:
-            position (tuple): 矩形位置 (left, top, right, bottom)
+            position (list): 矩形位置 (left, top, right, bottom) 或者 (left,top,width,height)
+            ltrb(bool): position是否表示左上右下坐标  若为false,则表示: left,top,width,height
             outline_color (tuple, optional): 边框颜色，默认红色
             fill_color (tuple, optional): 填充颜色，默认无填充
             width (int, optional): 边框宽度，默认2
@@ -173,15 +223,20 @@ class ImageUtil:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            CommonUtil.printLog("draw_rectangle fail:未加载图像")
             return self
+
+        if ltrb:
+            pos = tuple(position)
+        else:
+            pos = (position[0], position[1], position[0] + position[2], position[1] + position[3])
 
         try:
             draw = ImageDraw.Draw(self.image)
-            draw.rectangle(position, outline=outline_color, fill=fill_color, width=width)
+            draw.rectangle(pos, outline=outline_color, fill=fill_color, width=width)
             return self
         except Exception as e:
-            print(f"绘制矩形失败: {e}")
+            CommonUtil.printLog(f"draw_rectangle fail:{e}")
             return self
 
     def draw_circle(self, center, radius, outline_color=(255, 0, 0), fill_color=None, width=2) -> Self:
@@ -199,7 +254,7 @@ class ImageUtil:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            CommonUtil.printLog("draw_circle fail:未加载图像")
             return self
 
         try:
@@ -213,10 +268,10 @@ class ImageUtil:
             draw.ellipse((left, top, right, bottom), outline=outline_color, fill=fill_color, width=width)
             return self
         except Exception as e:
-            print(f"绘制圆形失败: {e}")
+            CommonUtil.printLog(f"draw_circle fail:{e}")
             return self
 
-    def save(self, output_path) -> bool:
+    def save(self, output_path) -> Self:
         """
         保存处理后的图像
 
@@ -227,8 +282,8 @@ class ImageUtil:
             bool: 保存成功返回True，失败返回False
         """
         if not self.image:
-            print("未加载图像")
-            return False
+            CommonUtil.printLog("save fail:未加载图像")
+            return self
 
         try:
             # 确保输出目录存在
@@ -237,11 +292,11 @@ class ImageUtil:
                 os.makedirs(output_dir)
 
             self.image.save(output_path)
-            print(f"图像已保存至: {output_path}")
-            return True
+            CommonUtil.printLog(f"save success,path={output_path}")
+            return self
         except Exception as e:
-            print(f"保存图像失败: {e}")
-            return False
+            CommonUtil.printLog(f"save fail:{e}")
+            return self
 
     def show(self) -> Self:
         """
@@ -251,14 +306,14 @@ class ImageUtil:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
-            print("未加载图像")
+            CommonUtil.printLog("save fail:未加载图像")
             return self
 
         try:
             self.image.show()
             return self
         except Exception as e:
-            print(f"显示图像失败: {e}")
+            CommonUtil.printLog(f"save fail:{e}")
             return self
 
     def reset(self) -> Self:
@@ -272,49 +327,8 @@ class ImageUtil:
             self.image = self.original_image.copy()
             return self
         else:
-            print("没有原始图像可供重置")
+            CommonUtil.printLog("reset fail:没有原始图像可供重置")
             return self
-
-    def _find_system_chinese_font(self):
-        """
-        自动查找系统中支持中文的字体
-
-        Returns:
-            str: 找到的字体文件路径，找不到则返回None
-        """
-        # 根据不同操作系统查找可能的中文字体
-        system = platform.system()
-
-        if system == "Windows":
-            # Windows系统常见中文字体路径
-            font_paths = [
-                r"C:\Windows\Fonts\simsun.ttc",  # 宋体
-                r"C:\Windows\Fonts\simhei.ttf",  # 黑体
-                r"C:\Windows\Fonts\msyh.ttc",  # 微软雅黑
-                r"C:\Windows\Fonts\msyhbd.ttc",  # 微软雅黑加粗
-                r"C:\Windows\Fonts\simkai.ttf",  # 楷体
-                r"C:\Windows\Fonts\simfang.ttf"  # 仿宋
-            ]
-        elif system == "Darwin":  # macOS
-            font_paths = [
-                "/System/Library/Fonts/PingFang.ttc",  # 苹方
-                "/System/Library/Fonts/SFNS.ttc",  # San Francisco
-                "/Library/Fonts/Arial Unicode.ttf"
-            ]
-        else:  # Linux等其他系统
-            font_paths = [
-                "/usr/share/fonts/wqy/wqy-microhei.ttc",  # 文泉驿微米黑
-                "/usr/share/fonts/wqy/wqy-zenhei.ttc",  # 文泉驿正黑
-                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
-            ]
-
-        # 检查是否存在这些字体文件
-        for font_path in font_paths:
-            if os.path.exists(font_path):
-                return font_path
-
-        return None
 
 
 # 使用示例

@@ -197,7 +197,7 @@ class AdbUtil(object):
                 pass
             else:
                 success = False
-            print("push %s 结果success=%s,result=%s" % (runCmd, success, result))
+            print("push: %s 结果success=%s,result=%s" % (runCmd, success, result))
         return success
 
     def setLogcatBufferSize(self, size: str = '16M', deviceId: str = None) -> str:
@@ -677,11 +677,13 @@ class AdbUtil(object):
         """
         获取设备的其他信息,当前支持的key如下：
         imei:设备imei,高版本可能无法获取到
+        serial:序列号,若 deviceId 变量未传, 则默认为 self.defaultDeviceId
         mac:设备mac地址
         android_id: androidId字符串，重置手机后会变
         model:机型，如：pixel 5
         android_version:系统版本， 如: 12， 表示 android 12
         api_version:系统api版本， 如: 32
+        ip:手机ip地址
         size: 设备的原始物理尺寸像素，如：1080x2340
         width: 设备宽度像素， 如： 1080
         height： 设备长度像素，如： 2340
@@ -689,6 +691,7 @@ class AdbUtil(object):
         ov_width: 设备当前宽度像素， 如： 1080， 若未修改过，则等同于上方的 width
         ov_height： 设备当前长度像素，如： 1920，若未修改过，则等同于上方的 height
         """
+        deviceId = self.defaultDeviceId if CommonUtil.isNoneOrBlank(deviceId) else deviceId
         if CommonUtil.isNoneOrBlank(deviceId):
             device_ids_list, _ = self.getAllDeviceId(True)
             if len(device_ids_list) == 1:
@@ -701,12 +704,14 @@ class AdbUtil(object):
             return cacheItem
 
         result = dict()
+        result['serial'] = deviceId
         result['imei'] = self.getImeiInfo(deviceId) if hasRoot else ""
         result['mac'] = self.getMacAddress(deviceId) if hasRoot else ""
         result['android_id'], _ = self.exeShellCmds(['settings get secure android_id'], deviceId)
         result['model'], _ = self.exeShellCmds(['getprop ro.product.model'], deviceId)
         result['android_version'], _ = self.exeShellCmds(['getprop ro.build.version.release'], deviceId)
         result['api_version'], _ = self.exeShellCmds(['getprop ro.build.version.sdk'], deviceId)
+        result['ip'] = self.get_ip_address(deviceId)
 
         # 获取屏幕物理尺寸，结果示例:
         # Physical size: 1080x2340
@@ -728,6 +733,25 @@ class AdbUtil(object):
         self.deviceInfoCacheMap[deviceId] = result
         return result
 
+    def get_ip_address(self, device_id: str):
+        device_id = self.defaultDeviceId if CommonUtil.isNoneOrBlank(device_id) else device_id
+        if CommonUtil.isNoneOrBlank(device_id):
+            device_id = self.getAllDeviceId(True)[0][0]
+        try:
+            output, stderr = self.exeShellCmds(['ip addr show wlan0'])
+            # 解析IP地址
+            lines = output.splitlines()
+            for line in lines:
+                if "inet" in line and "brd" in line:
+                    parts = line.strip().split()
+                    ip_with_mask = parts[1]
+                    ip = ip_with_mask.split('/')[0]  # 只取IP部分，去掉子网掩码
+                    CommonUtil.printLog(f'get_ip_address device_id={device_id},ip={ip}')
+                    return ip
+        except Exception as e:
+            CommonUtil.printLog(f"Error getting IP address for {device_id}: {e}")
+            return None
+
 
 if __name__ == '__main__':
     adbUtil = AdbUtil()
@@ -741,4 +765,5 @@ if __name__ == '__main__':
     # adbUtil.back()
     # print('--->%s' % adbUtil.pointerLocation(0))
     # print(f'curAct={adbUtil.getCurrentActivity(deviceId="7b65fc7a")}')
-    adbUtil.killApp(appPkgName=None)
+    # adbUtil.killApp(appPkgName=None)
+    adbUtil.get_ip_address(device_id="")

@@ -437,6 +437,47 @@ class CommonUtil(object):
                 continue
         return bytes_data.decode('utf-8', errors='replace')
 
+    @staticmethod
+    def find_system_chinese_font():
+        """
+        自动查找系统中支持中文的字体
+
+        Returns:
+            str: 找到的字体文件路径，找不到则返回None
+        """
+        # 根据不同操作系统查找可能的中文字体
+        system = platform.system()
+
+        if system == "Windows":
+            # Windows系统常见中文字体路径
+            font_paths = [
+                r"C:\Windows\Fonts\simsun.ttc",  # 宋体
+                r"C:\Windows\Fonts\simhei.ttf",  # 黑体
+                r"C:\Windows\Fonts\msyh.ttc",  # 微软雅黑
+                r"C:\Windows\Fonts\msyhbd.ttc",  # 微软雅黑加粗
+                r"C:\Windows\Fonts\simkai.ttf",  # 楷体
+                r"C:\Windows\Fonts\simfang.ttf"  # 仿宋
+            ]
+        elif system == "Darwin":  # macOS
+            font_paths = [
+                "/System/Library/Fonts/PingFang.ttc",  # 苹方
+                "/System/Library/Fonts/SFNS.ttc",  # San Francisco
+                "/Library/Fonts/Arial Unicode.ttf"
+            ]
+        else:  # Linux等其他系统
+            font_paths = [
+                "/usr/share/fonts/wqy/wqy-microhei.ttc",  # 文泉驿微米黑
+                "/usr/share/fonts/wqy/wqy-zenhei.ttc",  # 文泉驿正黑
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+            ]
+
+        # 检查是否存在这些字体文件
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                return font_path
+        return None
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
