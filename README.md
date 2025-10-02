@@ -5,7 +5,10 @@
 # 其中 airtest pocoui 必装
 # psutil是检测笔记本电脑电量以及是否插电,用于提醒用户,避免挂机失败
 # cnocr 是因为部分页面使用pocoui/airtest无法识别,需要文字识别
-pip3 install pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare pandas openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 使用 pybroker 进行回测需要安装以下库
+pip install lib-pybroker TA-Lib akshare matplotlib yfinance
 ```
 
 ## 注意事项：
