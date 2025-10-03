@@ -11,7 +11,6 @@ class StrategyBreakout(BaseStrategy):
     def __init__(self, days: int = 11, **kwargs):
         super().__init__(**kwargs)
         self.days = days
-        self.name = '突破策略'
         self.description = f'股价突破近{days}日新高时买入, 跌破近{days}日新低时卖出'
 
     def buy_func(self, ctx: ExecContext) -> None:

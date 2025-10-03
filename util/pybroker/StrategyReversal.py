@@ -23,7 +23,7 @@ class StrategyReversal(BaseStrategy):
         self.days = days
         self.bounce_low = bounce_low
         self.bounce_high = bounce_high
-        self.name = '高低点反转策略'
+        self.description = f'高低点反转策略'
 
     def buy_func(self, ctx: ExecContext) -> None:
         high = ctx.high[-self.days:-1].max()  # 近10日最高价

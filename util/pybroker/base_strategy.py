@@ -1,3 +1,6 @@
+import threading
+from pathlib import Path
+
 import pybroker
 from pybroker.ext.data import AKShare, DataSource
 from pybroker import ExecContext, StrategyConfig, Strategy, IndicatorSet
@@ -7,7 +10,7 @@ import talib
 import pandas as pd
 import datetime
 import matplotlib.pyplot as plt
-from typing import Union, Optional, Iterable
+from typing import Union, Optional, Iterable, List
 from typing_extensions import Self
 
 from util.TimeUtil import TimeUtil
@@ -21,11 +24,42 @@ class BackTestInfo:
     """
     回测结果数据类
     """
+    ori_backtest_result: pybroker.TestResult = None  # 原始回测结果
+    strategy_name: str = None  # 策略名称
+    symbols: Union[str, Iterable[str]] = None  # 策略对应的股票代码
     init_value: float = 0.0  # 初始资金
     end_value: float = 0.0  # 最终资金
     profit: float = 0.0  # 利润  end_value - init_value
     profit_rate: float = 0.0  # 利润率 0.1 表示 profit/init_value=10%收益
     orders: pd.DataFrame = None  # 买卖交易操作记录
+
+    def __init__(self, strategy_name: str, symbols: Union[str, Iterable[str]], result: pybroker.TestResult):
+        self.ori_backtest_result = result
+        df = result.metrics_df
+        self.strategy_name = strategy_name
+        self.symbols = symbols
+        self.init_value = df['value'].loc[1]
+        self.end_value = df['value'].loc[2]
+        self.profit = self.end_value - self.init_value
+        self.profit_rate = self.profit / self.init_value
+        self.orders = self.orders
+        pass
+
+    def __str__(self):
+        """返回格式化的回测结果信息"""
+        return (
+            f"{self.strategy_name}回测结果:"
+            f"资金: {self.init_value:,.2f} -> {self.end_value:,.2f}"
+            f",利润: {self.profit:,.2f},收益率: {self.profit_rate * 100:.2f}%"
+            # f"\n交易记录数: {len(self.orders) if self.orders is not None else 0}"
+        )
+
+    def plot_portfolio(self):
+        """
+        绘制回测的资金的变化情况
+        """
+        self.ori_backtest_result.portfolio.equity.plot()
+        plt.show()  # 启动 matplotlib 的事件循环，使图形窗口保持显示
 
 
 class BaseStrategy(object):
@@ -70,6 +104,11 @@ class BaseStrategy(object):
         """
         # 创建策略配置对象，设置初始现金
         pybroker.enable_data_source_cache('akshare')
+
+        self.strategy_name: str = self.__class__.__name__  # 获取子类类名
+        self.description: str = ''  # 策略描述, 子类可以按需重写
+        self.symbols: Union[str, Iterable[str]] = symbols  # 策略对应的股票代码
+
         self.config = StrategyConfig(initial_cash=initial_cash)
         self.strategy = Strategy(data_source=data_source, start_date=start_date, end_date=end_date, config=self.config)
         self.strategy.add_execution(fn=self.buy_func, symbols=symbols, indicators=self.generate_indicators())
@@ -82,6 +121,8 @@ class BaseStrategy(object):
         self.stop_loss_pct: float = stop_loss_pct  # 止损百分比, 10 表示 10%,大于0有效
         self.stop_profit_pct: float = stop_profit_pct  # 止盈百分比,大于0有效
         self.stop_trailing_pct: float = stop_trailing_pct  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
+
+        self.plot_figure = None  # 收益图形
 
         print(f'symbols:{symbols},initial_cash:{initial_cash}, start_date:{start_date}, end_date:{end_date}')
 
@@ -107,23 +148,43 @@ class BaseStrategy(object):
         self.backtest_result = self.strategy.backtest(warmup=warmup)
 
         # 获取回测结果信息,比如资金变化,收益率和订单信息等, 按需扩展
-        df = self.backtest_result.metrics_df
-        self.backtest_info = BackTestInfo()
-        self.backtest_info.init_value = df['value'].loc[1]
-        self.backtest_info.end_value = df['value'].loc[2]
-        self.backtest_info.profit = self.backtest_info.end_value - self.backtest_info.init_value
-        self.backtest_info.profit_rate = self.backtest_info.profit / self.backtest_info.init_value
-        self.backtest_info.orders = self.backtest_result.orders
+        self.backtest_info = BackTestInfo(self.strategy_name, self.symbols, self.backtest_result)
         return self
 
-    def plot_portfolio(self) -> Self:
+    def plot_portfolio(self, condition: bool = True) -> Self:
         """
         绘制回测的资金的变化情况
+        :param condition: 是否绘制, 默认为True
         """
+        if not condition:
+            return self
         if self.backtest_result is None:
             return self
-        self.backtest_result.portfolio.equity.plot()
-        plt.show()  # 启动 matplotlib 的事件循环，使图形窗口保持显示
+
+        # 若是在主线程调用,则可直接显示:
+        if threading.current_thread() is threading.main_thread():
+            self.backtest_result.portfolio.equity.plot()
+            plt.show()  # 启动 matplotlib 的事件循环，使图形窗口保持显示
+            return self
+
+        # 创建图形
+        fig, ax = plt.subplots()
+        self.backtest_result.portfolio.equity.plot(ax=ax)
+        ax.set_title('Portfolio Equity')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Equity')
+
+        # 创建输出目录
+        output_dir = Path('plots')
+        output_dir.mkdir(exist_ok=True)
+
+        # 保存图形文件
+        plot_file = output_dir / f'{self.strategy_name}_{self.symbols}_equity.png'
+        fig.savefig(plot_file)
+        plt.close(fig)  # 关闭图形以释放内存
+
+        # 保存文件路径
+        self.plot_figure = str(plot_file)
         return self
 
     def print_backtest_profit_info(self) -> Self:

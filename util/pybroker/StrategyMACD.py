@@ -38,6 +38,7 @@ class StrategyMACD(BaseStrategy):
         self.slowperiod = slowperiod
         self.signalperiod = signalperiod
         super().__init__(**kwargs)
+        self.description = f'MACD策略-快线DIF上穿慢线DEA买入,反之卖出'
         print(f'MACD策略 fastperiod:{fastperiod}, slowperiod:{slowperiod}, signalperiod:{signalperiod}')
 
     def generate_indicators(self) -> list:

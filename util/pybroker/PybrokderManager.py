@@ -1,12 +1,154 @@
-import pybroker
+import os, sys, subprocess
+import concurrent.futures
+from typing import Dict, List, Tuple, Type, Any, Optional
+import matplotlib.pyplot as plt
+from typing_extensions import Self
+
 from util.TimedStdout import TimedStdout
 from util.pybroker.StrategyBrakout import StrategyBreakout
 from util.pybroker.StrategyReversal import StrategyReversal
 from util.pybroker.StrategyMACD import StrategyMACD
 from util.pybroker.StrategyDMA import StrategyDMA
+from util.pybroker.base_strategy import BackTestInfo
+
+
+class StrategyManager:
+    """
+    策略管理器，用于并行执行多个交易策略并收集结果
+    """
+
+    def __init__(self, init_cash: int = 100000,  # 初始资金
+                 buy_shares: float = 1,  # 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
+                 stop_loss_pct: float = 0,  # 止损百分比, 10 表示 10%,大于0有效
+                 stop_profit_pct: float = 0,  # 止盈百分比,大于0有效
+                 stop_trailing_pct: float = 0,  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
+                 warmup: int = 15,
+                 enable_plot: bool = True,  # 是否允许绘制回测结果
+                 start_date: str = '20250101',  # 回测的起始日期
+                 end_date: str = '20251230'  # 回测的结束日期
+                 ):
+        """
+        初始化策略管理器
+        :param init_cash: 初始资金
+        :param warmup: 预热期
+        :param start_date: 回测开始日期
+        :param end_date: 回测结束日期
+        """
+        TimedStdout.activate(True)
+        self.init_cash = init_cash
+        self.warmup = warmup
+        self.start_date = start_date
+        self.end_date = end_date
+        self.enable_plot = enable_plot
+        self.common_params = {
+            'initial_cash': init_cash,
+            'buy_shares': buy_shares,
+            'stop_loss_pct': stop_loss_pct,
+            'stop_profit_pct': stop_profit_pct,
+            'stop_trailing_pct': stop_trailing_pct,
+            'start_date': start_date,
+            'end_date': end_date
+        }
+
+        self.strategies: List[Tuple[Type, Dict[str, Any]]] = []
+        self.results: Dict[str, Optional[BackTestInfo]] = {}
+        self._all_completed = False  # 添加完成标志
+
+        self._plot_figures = []  # 保存所有图形对象
+        # 设置非交互式后端
+        plt.switch_backend('Agg')
+
+    def _show_plot(self, fig):
+        """在主线程中显示图形"""
+        self._plot_figures.append(fig)
+        # plt.show()
+
+    def add_strategy(self, strategy_class: Type, **kwargs):
+        """
+        添加策略到执行列表
+        :param strategy_class: 策略类
+        :param kwargs: 策略参数
+        """
+        params = {**self.common_params, **kwargs}
+        self.strategies.append((strategy_class, params))
+
+    def _run_strategy(self, strategy_class: Type, params: Dict[str, Any]) -> Optional[BackTestInfo]:
+        """
+        执行单个策略
+        :param strategy_class: 策略类
+        :param params: 策略参数
+        :return: 策略收益率等信息
+        """
+        strategy_instance = strategy_class(**params)
+        result = (strategy_instance
+                  .backtest(warmup=self.warmup)
+                  .print_backtest_profit_info()
+                  .plot_portfolio(condition=self.enable_plot)
+                  .backtest_info)
+
+        # 保存图形文件路径
+        if hasattr(strategy_instance, 'plot_figure'):
+            self._plot_figures.append(strategy_instance.plot_figure)
+        return result
+
+    def run_all_strategies(self, max_workers: int = 4) -> Dict[str, Optional[BackTestInfo]]:
+        """
+        并行执行所有策略
+        :param max_workers: 最大线程数
+        :return: 策略结果字典
+        """
+        self.results.clear()  # 清空之前的结果
+        self._all_completed = False  # 重置完成标志
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_strategy = {
+                executor.submit(self._run_strategy, strategy_class, params): strategy_class.__name__
+                for strategy_class, params in self.strategies
+            }
+
+            for future in concurrent.futures.as_completed(future_to_strategy):
+                strategy_name = future_to_strategy[future]
+                try:
+                    result = future.result()
+                    self.results[f'{strategy_name}'] = result
+                except Exception as exc:
+                    print(f'{strategy_name} generated an exception: {exc}')
+        self._all_completed = True  # 设置完成标志
+        return self.results
+
+    def print_results(self) -> Self:
+        """
+        打印策略执行结果
+        """
+        if not self._all_completed:
+            print("Warning: Not all strategies have completed execution!")
+            return self
+
+        print(f'{self.results}')
+        return self
+
+    def wait_for_completion(self) -> Self:
+        """
+        等待所有策略执行完成
+        """
+        while not self._all_completed:
+            continue
+        return self
+
+    def show_all_plots(self) -> Self:
+        """使用系统默认程序打开所有图形文件"""
+        os_name = os.name
+        for plot_file in self._plot_figures:
+            print(f'show_all_plots: {os_name} {plot_file}')
+            if os.path.exists(plot_file):
+                if os_name == 'nt':  # Windows
+                    os.startfile(plot_file)
+                elif os_name == 'posix':  # macOS/Linux
+                    subprocess.run(['open', plot_file] if sys.platform == 'darwin' else ['xdg-open', plot_file])
+        return self
+
 
 if __name__ == '__main__':
-    TimedStdout.activate(True)
+    # TimedStdout.activate(True)
 
     init_cash: int = 100000  # 初始资金, 10w
     warmup: int = 15
@@ -19,52 +161,68 @@ if __name__ == '__main__':
     # symbol4 = '01024.HK'  # 快手-W 港股
     symbol = symbol3
 
-    common_params = {
-        'symbols': symbol,  # 股票代码, 默认为 '000001.SZ', 也可以传入多个股票代码, 如 ['000001.SZ', '000002.SZ']
-        'initial_cash': init_cash,  # 初始资金
-        'buy_shares': 1,  # 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
-        'stop_loss_pct': 0,  # 止损百分比, 10 表示 10%,大于0有效
-        'stop_profit_pct': 0,  # 止盈百分比,大于0有效
-        'stop_trailing_pct': 0,  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
-        'start_date': start_date,  # 回测的起始日期
-        'end_date': end_date  # 回测的结束日期
-    }
+    # 创建策略管理器实例
+    manager = StrategyManager(init_cash=100000, warmup=15,
+                              start_date=start_date, end_date=end_date)
 
-    rate_dict: dict = {}
-    # 突破策略收益率
-    common_params['stop_loss_pct'] = 8
-    common_params['stop_profit_pct'] = 25
-    rateBreakout = (StrategyBreakout(days=11, **common_params)
-                    .backtest(warmup=warmup)
-                    .print_backtest_profit_info()
-                    .plot_portfolio()
-                    .backtest_info.profit_rate)
-    rate_dict['rateBreakout'] = f'{rateBreakout * 100:.2f}%'
+    # 添加策略
+    manager.add_strategy(StrategyBreakout, symbols=symbol, days=11, stop_loss_pct=8, stop_profit_pct=25)
+    manager.add_strategy(StrategyReversal, symbols=symbol, days=5, bounce_low=1.05, bounce_high=0.97, stop_loss_pct=8, stop_profit_pct=13)
+    manager.add_strategy(StrategyMACD, symbols=symbol, fastperiod=12, slowperiod=26, signalperiod=9)
+    manager.add_strategy(StrategyDMA, symbols=symbol, short_period=5, long_period=20)
 
-    # 高低点反转策略收益率
-    common_params['stop_loss_pct'] = 8
-    common_params['stop_profit_pct'] = 13
-    rateReversal = (StrategyReversal(days=5, bounce_low=1.05, bounce_high=0.97, **common_params)
-                    .backtest(warmup=warmup)
-                    .print_backtest_profit_info()
-                    .plot_portfolio()
-                    .backtest_info.profit_rate)
-    rate_dict['rateReversal'] = f'{rateReversal * 100:.2f}%'
+    # 执行所有策略
+    manager.run_all_strategies()
 
-    # MACD策略收益率
-    rateMACD = (StrategyMACD(fastperiod=12, slowperiod=26, signalperiod=9, **common_params)
-                .backtest(warmup=warmup)
-                .print_backtest_profit_info()
-                .plot_portfolio()
-                .backtest_info.profit_rate)
-    rate_dict['rateMACD'] = f'{rateMACD * 100:.2f}%'
+    # 打印结果并显示图形
+    manager.print_results().show_all_plots()
 
-    # 双均线DMA策略收益率
-    rateDMA = (StrategyDMA(short_period=5, long_period=20, **common_params)
-               .backtest(warmup=warmup)
-               .print_backtest_profit_info()
-               .plot_portfolio()
-               .backtest_info.profit_rate)
-    rate_dict['rateDMA'] = f'{rateDMA * 100:.2f}%'
-
-    print(f'symbol={symbol}, 回测期间={start_date}~{end_date}, 初始资金={init_cash},收益率:\n{rate_dict}')
+    # common_params = {
+    #     'symbols': symbol,  # 股票代码, 默认为 '000001.SZ', 也可以传入多个股票代码, 如 ['000001.SZ', '000002.SZ']
+    #     'initial_cash': init_cash,  # 初始资金
+    #     'buy_shares': 1,  # 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
+    #     'stop_loss_pct': 0,  # 止损百分比, 10 表示 10%,大于0有效
+    #     'stop_profit_pct': 0,  # 止盈百分比,大于0有效
+    #     'stop_trailing_pct': 0,  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
+    #     'start_date': start_date,  # 回测的起始日期
+    #     'end_date': end_date  # 回测的结束日期
+    # }
+    #
+    # rate_dict: dict = {}
+    # # 突破策略收益率
+    # common_params['stop_loss_pct'] = 8
+    # common_params['stop_profit_pct'] = 25
+    # rateBreakout = (StrategyBreakout(days=11, **common_params)
+    #                 .backtest(warmup=warmup)
+    #                 .print_backtest_profit_info()
+    #                 .plot_portfolio()
+    #                 .backtest_info.profit_rate)
+    # rate_dict['rateBreakout'] = f'{rateBreakout * 100:.2f}%'
+    #
+    # # 高低点反转策略收益率
+    # common_params['stop_loss_pct'] = 8
+    # common_params['stop_profit_pct'] = 13
+    # rateReversal = (StrategyReversal(days=5, bounce_low=1.05, bounce_high=0.97, **common_params)
+    #                 .backtest(warmup=warmup)
+    #                 .print_backtest_profit_info()
+    #                 .plot_portfolio()
+    #                 .backtest_info.profit_rate)
+    # rate_dict['rateReversal'] = f'{rateReversal * 100:.2f}%'
+    #
+    # # MACD策略收益率
+    # rateMACD = (StrategyMACD(fastperiod=12, slowperiod=26, signalperiod=9, **common_params)
+    #             .backtest(warmup=warmup)
+    #             .print_backtest_profit_info()
+    #             .plot_portfolio()
+    #             .backtest_info.profit_rate)
+    # rate_dict['rateMACD'] = f'{rateMACD * 100:.2f}%'
+    #
+    # # 双均线DMA策略收益率
+    # rateDMA = (StrategyDMA(short_period=5, long_period=20, **common_params)
+    #            .backtest(warmup=warmup)
+    #            .print_backtest_profit_info()
+    #            .plot_portfolio()
+    #            .backtest_info.profit_rate)
+    # rate_dict['rateDMA'] = f'{rateDMA * 100:.2f}%'
+    #
+    # print(f'symbol={symbol}, 回测期间={start_date}~{end_date}, 初始资金={init_cash},收益率:\n{rate_dict}')

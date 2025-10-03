@@ -25,6 +25,7 @@ class StrategyDMA(BaseStrategy):
         self.short_period = short_period
         self.long_period = long_period
         super().__init__(**kwargs)
+        self.description = f'双均线策略-所谓的黄金交叉,短均线上穿长均线买入,反之卖出'
         print(f'双均线策略, 短期均线周期:{self.short_period}, 长期均线周期:{self.long_period}')
 
     def generate_indicators(self) -> list:
