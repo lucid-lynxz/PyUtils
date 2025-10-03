@@ -480,11 +480,11 @@ class CommonUtil(object):
 
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-default_logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# default_logger = logging.getLogger(__name__)
 
 
-def catch_exceptions(max_retries=0, retry_interval=1, logger=default_logger):
+def catch_exceptions(max_retries=0, retry_interval=1, logger=None):
     """
     带重试功能的异常处理装饰器
 

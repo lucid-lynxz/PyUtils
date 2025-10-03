@@ -291,15 +291,15 @@ class ConditionOrder(Runnable):
             if self.use_long_bridge():
                 app_name = '长桥'
                 # from longport.openapi import SubmitOrderResponse
-                result = self.long_trader.deal(self.position.symbol, 0, self.deal_count)
+                result = self.long_trader.deal(self.position.symbol, latest_price, self.deal_count)
                 success = result is not None and not CommonUtil.isNoneOrBlank(result.order_id)
             elif self.use_zhunjia():
                 app_name = '尊嘉'
                 # from longport.openapi import SubmitOrderResponse
-                success = self.zj_trader.deal(self.position.code, 0, self.deal_count)
+                success = self.zj_trader.deal(self.position.code, latest_price, self.deal_count)
                 deal_img_path = self.zj_trader.last_deal_img_path
             else:
-                success = ConditionOrder.ths_trader.deal(self.position.code, 0, self.deal_count)
+                success = ConditionOrder.ths_trader.deal(self.position.code, latest_price, self.deal_count)
                 deal_img_path = self.ths_trader.last_deal_img_path
 
             # 交易成功后,更新持仓信息

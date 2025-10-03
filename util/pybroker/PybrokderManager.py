@@ -1,14 +1,19 @@
-import os, sys, subprocess
 import concurrent.futures
+import os
+import subprocess
+import sys
 from typing import Dict, List, Tuple, Type, Any, Optional
+
 import matplotlib.pyplot as plt
 from typing_extensions import Self
 
+from util.FileUtil import FileUtil
+from util.ImageUtil import ImageUtil
 from util.TimedStdout import TimedStdout
 from util.pybroker.StrategyBrakout import StrategyBreakout
-from util.pybroker.StrategyReversal import StrategyReversal
-from util.pybroker.StrategyMACD import StrategyMACD
 from util.pybroker.StrategyDMA import StrategyDMA
+from util.pybroker.StrategyMACD import StrategyMACD
+from util.pybroker.StrategyReversal import StrategyReversal
 from util.pybroker.base_strategy import BackTestInfo
 
 
@@ -18,7 +23,7 @@ class StrategyManager:
     """
 
     def __init__(self, init_cash: int = 100000,  # 初始资金
-                 buy_shares: float = 1,  # 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
+                 buy_shares: float = -1,  # 每只股票妈单次买入股数, 默认-1会根据传入的股票数均分, 比如共2只股票回测,则每只份额0.5, 表示50%  >=1 时表示股数
                  stop_loss_pct: float = 0,  # 止损百分比, 10 表示 10%,大于0有效
                  stop_profit_pct: float = 0,  # 止盈百分比,大于0有效
                  stop_trailing_pct: float = 0,  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
@@ -63,14 +68,25 @@ class StrategyManager:
         self._plot_figures.append(fig)
         # plt.show()
 
-    def add_strategy(self, strategy_class: Type, **kwargs):
+    def add_strategy(self, strategy_class: Type, **kwargs) -> Self:
         """
         添加策略到执行列表
         :param strategy_class: 策略类
-        :param kwargs: 策略参数
+        :param kwargs: 策略参数, 其中必传 'symbols' 表示要回测的股票代码, 支持列表或者单个字符串
         """
+        symbols = kwargs.get('symbols')
+        if not symbols:
+            raise ValueError("Symbols must be provided for the strategy.")
+        if isinstance(symbols, str):
+            symbols = [symbols]
+
+        if self.common_params['buy_shares'] <= 0:
+            self.common_params['buy_shares'] = 1 / len(symbols)
+
         params = {**self.common_params, **kwargs}
         self.strategies.append((strategy_class, params))
+        print(f"add_strategy: {strategy_class.__name__} with symbols: {symbols}, params: {params}")
+        return self
 
     def _run_strategy(self, strategy_class: Type, params: Dict[str, Any]) -> Optional[BackTestInfo]:
         """
@@ -136,14 +152,25 @@ class StrategyManager:
 
     def show_all_plots(self) -> Self:
         """使用系统默认程序打开所有图形文件"""
-        os_name = os.name
+        cache_path = FileUtil.create_cache_dir(None, __file__, True, f'plots_temp')
+        cnt = len(self._plot_figures)
         for plot_file in self._plot_figures:
-            print(f'show_all_plots: {os_name} {plot_file}')
-            if os.path.exists(plot_file):
-                if os_name == 'nt':  # Windows
-                    os.startfile(plot_file)
-                elif os_name == 'posix':  # macOS/Linux
-                    subprocess.run(['open', plot_file] if sys.platform == 'darwin' else ['xdg-open', plot_file])
+            full_name, _, _ = FileUtil.getFileName(plot_file)
+            FileUtil.copy(plot_file, f'{cache_path}/{full_name}')
+
+        cols: int = 1 if cnt <= 1 else 2
+        rows: int = 1 if cnt <= 1 else int(cnt / 2)
+        image = ImageUtil.merge_images(cache_path, rows=rows, cols=cols)
+        FileUtil.createFile(cache_path, True)
+        image_path = FileUtil.recookPath(f'{cache_path}/merged_image.jpg')
+        ImageUtil.save_img(image_path, image)
+
+        if os.path.exists(image_path):
+            os_name = os.name
+            if os_name == 'nt':  # Windows
+                os.startfile(image_path)
+            elif os_name == 'posix':  # macOS/Linux
+                subprocess.run(['open', image_path] if sys.platform == 'darwin' else ['xdg-open', image_path])
         return self
 
 

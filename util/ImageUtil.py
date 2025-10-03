@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os
-from typing import Tuple, Union, List
+from typing import Tuple, Union, List, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 from typing_extensions import Self
@@ -281,22 +281,8 @@ class ImageUtil:
         Returns:
             bool: 保存成功返回True，失败返回False
         """
-        if not self.image:
-            CommonUtil.printLog("save fail:未加载图像")
-            return self
-
-        try:
-            # 确保输出目录存在
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-
-            self.image.save(output_path)
-            CommonUtil.printLog(f"save success,path={output_path}")
-            return self
-        except Exception as e:
-            CommonUtil.printLog(f"save fail:{e}")
-            return self
+        ImageUtil.save_img(output_path, self.image)
+        return self
 
     def show(self) -> Self:
         """
@@ -329,6 +315,119 @@ class ImageUtil:
         else:
             CommonUtil.printLog("reset fail:没有原始图像可供重置")
             return self
+
+    @staticmethod
+    def merge_images(image_dir: str, rows: int = 1, cols=None, single_column: bool = False, bg_color: str = "white", keep_original_size: bool = True) -> Optional[Image.Image]:
+        """
+        将指定目录下的所有图片,合并成一张大图
+        Args:
+            image_dir (str): 图片目录路径
+            rows (int): 行数，默认为1
+            cols (int): 列数，默认为None（根据行数自动计算）
+        """
+        # 获取目录下所有图片文件
+        image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if
+                       f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if not image_files:
+            print('No images found in the directory.')
+            return None
+
+        # 提取文件名并排序（按字典顺序升序）
+        image_files.sort(key=lambda x: os.path.basename(x))
+        images = [Image.open(f) for f in image_files]
+
+        # 处理单列模式：强制1列，行数等于图片数量
+        if single_column:
+            cols = 1
+            rows = len(images)
+        else:
+            # 如果未指定列数，则根据行数计算
+            if cols is None:
+                cols = len(images) // rows if len(images) % rows == 0 else len(images) // rows + 1
+
+        # 如果不需要保持原始尺寸，则将所有图片缩放到相同大小
+        if not keep_original_size:
+            # 计算所有图片的平均宽度和高度，作为统一大小
+            avg_width = sum(img.width for img in images) // len(images)
+            avg_height = sum(img.height for img in images) // len(images)
+
+            # 缩放所有图片
+            scaled_images = []
+            for img in images:
+                scaled_img = img.resize((avg_width, avg_height))
+                scaled_images.append(scaled_img)
+            images = scaled_images
+
+            # 设置列宽和行高为统一大小
+            col_widths = [avg_width] * cols
+            row_heights = [avg_height] * rows
+        else:
+            # 计算每一行和每一列的最大宽度和高度
+            # 为每行每列创建列表存储宽高
+            row_heights = [0] * rows
+            col_widths = [0] * cols
+
+            # 计算每行每列的最大宽高
+            for i, img in enumerate(images):
+                r = i // cols
+                c = i % cols
+                row_heights[r] = max(row_heights[r], img.height)
+                col_widths[c] = max(col_widths[c], img.width)
+
+        # 计算结果图片的总宽度和总高度
+        total_width = sum(col_widths)
+        total_height = sum(row_heights)
+
+        # 创建结果图片，背景色为指定颜色
+        result = Image.new('RGB', (total_width, total_height), color=bg_color)
+
+        # 拼接图片，保持原始尺寸，并在需要时填充空白
+        current_y = 0
+        for r in range(rows):
+            current_x = 0
+            for c in range(cols):
+                img_index = r * cols + c
+                if img_index < len(images):
+                    img = images[img_index]
+                    # 计算居中位置（可选，如果需要居中的话）
+                    # x_offset = current_x + (col_widths[c] - img.width) // 2
+                    # y_offset = current_y + (row_heights[r] - img.height) // 2
+                    # 使用左上角对齐（不居中）
+                    x_offset = current_x
+                    y_offset = current_y
+                    result.paste(img, (x_offset, y_offset))
+                current_x += col_widths[c]
+            current_y += row_heights[r]
+        return result
+
+    @staticmethod
+    def save_img(output_path, image: Image = None) -> bool:
+        """
+        保存处理后的图像
+
+        Args:
+            output_path (str): 输出文件路径
+            image (Image, optional): 要保存的图像对象，如果未提供则保存当前图像
+
+        Returns:
+            bool: 保存成功返回True，失败返回False
+        """
+        if not image:
+            CommonUtil.printLog("save fail:未加载图像")
+            return False
+
+        try:
+            # 确保输出目录存在
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            image.save(output_path)
+            CommonUtil.printLog(f"save success,path={output_path}")
+            return True
+        except Exception as e:
+            CommonUtil.printLog(f"save fail:{e}")
+            return False
 
 
 # 使用示例

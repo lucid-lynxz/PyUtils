@@ -170,7 +170,7 @@ class BaseStrategy(object):
         # 创建图形
         fig, ax = plt.subplots()
         self.backtest_result.portfolio.equity.plot(ax=ax)
-        ax.set_title('Portfolio Equity')
+        ax.set_title(f'{self.strategy_name} Equity {self.backtest_info.profit_rate * 100:.2f}%')
         ax.set_xlabel('Date')
         ax.set_ylabel('Equity')
 
