@@ -1,6 +1,7 @@
 import sys
 import time
 from datetime import datetime
+from util.log_handler import DefaultCustomLog
 
 
 class TimedStdout:
@@ -36,11 +37,11 @@ class TimedStdout:
         self.original_stdout.flush()  # 确保输出及时刷新
 
     @staticmethod
-    def setup_third_party_logger(logger_name="pybroker", time_format="%Y-%m-%d %H:%M:%S"):
+    def setup_third_party_logger(logger_name=DefaultCustomLog.default_log_name, time_format="%Y-%m-%d %H:%M:%S"):
         """
         若三方库使用功能了logging进行日志输出, 则可以通过本方法使输出的日志带有时间戳
 
-        :param logger_name: 第三方库的日志器名称，默认为 "pybroker"
+        :param logger_name: 第三方库的日志器名称
         :param time_format: 时间格式，默认为 "%Y-%m-%d %H:%M:%S"
         """
         import logging

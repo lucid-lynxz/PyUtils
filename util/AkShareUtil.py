@@ -389,20 +389,23 @@ class AkShareUtil:
                              "（目前支持沪市、深市、北交所，其他市场需手动处理）")
 
     @staticmethod
-    def is_today_can_trade(refresh_days=7) -> bool:
+    def is_today_can_trade(refresh_days=7, target_date: str = None, fmt: str = '%Y-%m-%d') -> bool:
         """
-        判断今天是否可以交易
+        判断指定日期(默认是今天)是否可以交易
         接口: tool_trade_date_hist_sina
         目标地址: https://finance.sina.com.cn
         文档: https://akshare.akfamily.xyz/data/tool/tool.html#id1
         描述: 新浪财经-股票交易日历数据
         限量: 单次返回从 1990-12-19 到 2024-12-31 之间的股票交易日历数据, 这里补充 1992-05-04 进入交易日
         :param refresh_days: 缓存刷新间隔（天）
+        :param target_date: 目标日期, 默认为None, 表示使用当前日期
+        :param fmt: 日期格式,  %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
         """
         df: pd.DataFrame = AkShareUtil.trade_days_df
         file_path = f'{AkShareUtil.cache_dir}/stock_zh_a_trade_days.csv'
         file_path = FileUtil.recookPath(file_path)
-        today = datetime.date.today()  # 今日日期
+        today: datetime = TimeUtil.getTimeObj(fmt=fmt, n=0, target_date=target_date).date()  # datetime.date.today()  # 今日日期
+
         need_refresh: bool = False  # 是否需要刷新本地数据, 从网络上获取
         if df is None:
             if FileUtil.isFileExist(file_path):
@@ -429,12 +432,47 @@ class AkShareUtil:
             return False
 
     @staticmethod
+    def get_latest_trade_date(fmt: str = '%Y-%m-%d') -> str:
+        """
+        获取最近一个交易日的日期
+        :param fmt: 返回日期格式, %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
+        :return: 最近一个交易日的日期，格式由fmt参数指定
+        """
+        # 确保 AkShareUtil.trade_days_df 有值
+        if AkShareUtil.is_today_can_trade():
+            return TimeUtil.getTimeStr(fmt, 0)
+
+        df = AkShareUtil.trade_days_df
+        today = TimeUtil.getTimeObj(fmt, 0).date()
+
+        # 获取最近一个交易日日期（小于等于今天）
+        latest_trade_date = df[df['trade_date'] <= today]['trade_date'].max()
+
+        # 如果没有找到交易日期（理论上不应该发生），则尝试获取最后一个交易日
+        if pd.isna(latest_trade_date):
+            latest_trade_date = df['trade_date'].max()
+
+        return latest_trade_date.strftime(fmt)
+
+    @staticmethod
+    def get_cache_path(file_name: str, file_ext: str = '.csv'):
+        """
+        获取指定缓存文件的路径
+        """
+        file_path = f'{AkShareUtil.cache_dir}/{file_name}{file_ext}'
+        file_path = FileUtil.recookPath(file_path)
+        return file_path
+
+    @staticmethod
     def save_cache(df: pd.DataFrame, file_name: str) -> str:
         """
         缓存数据到本地
+        :param df: 数据
+        :param file_name: 文件名, 不包含扩展名, 完整的文件路径
         """
-        file_path = f'{AkShareUtil.cache_dir}/{file_name}.csv'
-        file_path = FileUtil.recookPath(file_path)
+        file_name = FileUtil.recookPath(file_name)
+        file_path = file_name if FileUtil.is_absolute_path(file_name) else AkShareUtil.get_cache_path(file_name)
+        FileUtil.createFile(FileUtil.getParentPath(file_path, 1))
         df.to_csv(file_path)
         return file_path
 
@@ -445,8 +483,7 @@ class AkShareUtil:
         """
         从本地缓存中读取数据,若缓存文件不存在,则返回None
         """
-        file_path = f'{AkShareUtil.cache_dir}/{file_name}.csv'
-        file_path = FileUtil.recookPath(file_path)
+        file_path = AkShareUtil.get_cache_path(file_name)
         if FileUtil.isFileExist(file_path):
             return pd.read_csv(file_path, dtype=dtype, parse_dates=parse_dates)
         return None
@@ -1062,6 +1099,26 @@ class AkShareUtil:
             print(f"保存股票 {code} - {name} 的历史数据失败: {e}")
             return {'code': code, 'name': name, 'status': 'failed', 'error': str(e)}
 
+    @staticmethod
+    def stock_zh_a_spot_em(force: bool = False) -> pd.DataFrame:
+        """
+        描述: 东方财富网-沪深京 A 股-实时行情数据 并存储到本地文件中, 建议每天收盘后再获取
+        接口: stock_zh_a_spot_em
+        目标地址: https://quote.eastmoney.com/center/gridlist.html#hs_a_board
+        描述: 东方财富网-沪深京 A 股-实时行情数据
+        限量: 单次返回所有沪深京 A 股上市公司的实时行情数据
+        文档:https://akshare.akfamily.xyz/data/stock/stock.html
+        :param force: 是否强制从网络获取数据, 默认为False, 表示从缓存中读取数据, 当为True时, 从网络获取数据
+        """
+        latest_trade_day = AkShareUtil.get_latest_trade_date(fmt='%Y%m%d')
+        cache_file_path = AkShareUtil.get_cache_path(f'zh_a_hist/{latest_trade_day}')
+        if not force and FileUtil.isFileExist(cache_file_path):
+            return pd.read_csv(cache_file_path)
+
+        df = ak.stock_zh_a_spot_em()
+        AkShareUtil.save_cache(df, cache_file_path)
+        return df
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -1115,6 +1172,18 @@ if __name__ == '__main__':
 
     # 遍历所有A股股票并获取指定期间内的数据,自动存储到数据库中
     # results = asyncio.run(AkShareUtil.process_all_stocks_async(AkShareUtil.save_stock_history,
-    #                                                            limit=None, delay=30, max_concurrent=1,
+    #                                                            limit=None, delay=60, max_concurrent=1,
     #                                                            start_date='20230101', end_date='20250930'))
-    print(AkShareUtil.query_stock_daily_history_to_db('000001', False, '20230101', '20250930'))
+
+    # 单独下载某只股票历史数据并缓存到数据库中
+    # print(AkShareUtil.query_stock_daily_history_to_db('000001', False, '20230101', '20250930'))
+
+    # 判断是否是交易日
+    fmt = '%Y%m%d'
+    # print(f'20251006-false: {AkShareUtil.is_today_can_trade()}')
+    # print(f'20251006-false: {AkShareUtil.is_today_can_trade(target_date="20251006", fmt=fmt)}')
+    # print(f'20250930-true: {AkShareUtil.is_today_can_trade(target_date="20250930", fmt=fmt)}')
+    # print(f'20250929-true: {AkShareUtil.is_today_can_trade(target_date="20250929", fmt=fmt)}')
+
+    # 下载今日A股全部数据,并存储到本地文件中
+    print(AkShareUtil.stock_zh_a_spot_em())

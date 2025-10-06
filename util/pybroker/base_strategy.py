@@ -139,7 +139,7 @@ class BaseStrategy(object):
     @abstractmethod
     def buy_func(self, ctx: ExecContext) -> None:
         """
-        回测买卖函数, 之类必须要实现
+        回测买卖函数, 子类必须要实现
         """
         pass
 

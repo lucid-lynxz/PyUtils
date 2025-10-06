@@ -91,6 +91,7 @@ class THSTrader(BaseAir4Windows):
                     file.write(f"{attr_name}:{','.join(map(str, attr_value))}\n")
 
     @catch_exceptions(max_retries=1, retry_interval=1)
+    # @log_time_consume()
     def set_foreground(self):
         """
         将窗口切换到前台
@@ -388,14 +389,15 @@ class THSTrader(BaseAir4Windows):
         if amount == 0:
             return False
 
-        CommonUtil.printLog(f'deal({code},{price},{amount})')
-        # self.set_foreground()  # 切换到前台
+        CommonUtil.printLog(f'deal({code},{price},{amount}) start')
+        self.set_foreground()  # 切换到前台
         buy = amount > 0  # true-买入 false-卖出
         amount = abs(amount)
         if CommonUtil.isNoneOrBlank(self.position_dict):
             self.get_all_stock_position()
 
         position: Optional[StockPosition] = self.position_dict.get(code, None)
+        CommonUtil.printLog(f'deal {code} position:{position}')
         if position is None:
             stock_name = AkShareUtil.get_stock_name(code)
         else:
@@ -423,9 +425,10 @@ class THSTrader(BaseAir4Windows):
                 CommonUtil.printLog(f'交易:{stock_name}({code}) 可卖数量为0,卖出失败')
                 return False
 
+        # CommonUtil.printLog(f'deal 进入买卖界面')
         # self.touch(self.bs_rest_btn, "重填")  # 重填按钮
         self.touch(self.bs_code_pos, "证券代码输入框")  # 证券代码输入框
-        self.key_press('BACKSPACE', 8)  # 通过回退键来清除
+        self.key_press('BACKSPACE', 8, interval=0.05)  # 通过回退键来清除
         self.text(code, '股票代码')  # 输入股票代码
         self.touch(self.bs_spinner_pos, '股票代码下拉候选框')  # 下拉提示框第一个元素位置, 主要是港股会显示下拉提示框, 需要点击进行取消,也可以按esc取消
         # self.text("{ESC}")  # touch(0self.bs_code_pos)  #避免提示弹框挡住下方的输入框
@@ -434,7 +437,7 @@ class THSTrader(BaseAir4Windows):
         if price > 0:
             self.touch(self.bs_price_pos)  # 买入/卖出价格输入框 会选择小数部分
             #  self.keyevent("A", modifiers=["CTRL"])  # 全选无效
-            self.key_press('BACKSPACE', 6)  # 通过回退键来清除
+            self.key_press('BACKSPACE', 6, interval=0.05)  # 通过回退键来清除
             self.text(str(price), '卖出价格')  # 输入卖出价格
 
         self.touch(self.bs_amount_pos, '买卖数量输入框')  # 买入/卖出数量输入框
@@ -446,26 +449,32 @@ class THSTrader(BaseAir4Windows):
         # win.find_element("窗口标题", "Button", "按钮名称").click()
         # win.find_element(None, "Button", None, "btn_id").click()
 
-        CommonUtil.printLog(f'交易股票:{stock_name}({code}) 价格:{price} 数量:{amount}')
+        CommonUtil.printLog(f'deal 完成交易股票按钮点击:{stock_name}({code}) 价格:{price} 数量:{amount}')
         img_name = f'{"买入" if buy else "卖出"}_{stock_name}_{amount}股_{price}'
 
         # startTs = TimeUtil.currentTimeMillis()
         # self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
+        start_ts = TimeUtil.currentTimeMillis()
         img = self.crop_img(self.snapshot(), 800, 500, 1600, 1000)
         self.last_deal_img_path = self.saveImage(img, img_name, dirPath=f'{self.cacheDir}/deal/')
+        delta_ms = TimeUtil.currentTimeMillis() - start_ts
+        CommonUtil.printLog(f'deal 交易股票保存裁剪后的截图耗时: {delta_ms / 1000:.1f} 秒, 图片路径: {self.last_deal_img_path}')
 
         # delta = (TimeUtil.currentTimeMillis() - startTs) / 1000
         # CommonUtil.printLog(f'交易股票保存裁剪后的截图耗时: {delta} 秒, 图片路径: {self.last_deal_img_path}')
 
+        start_ts = TimeUtil.currentTimeMillis()
         pos, ocrResStr, ocrResList = self.findTextByOCR('失败|超出涨跌停限制', img=img, prefixText='提示')
         success = CommonUtil.isNoneOrBlank(pos) and not CommonUtil.isNoneOrBlank(ocrResStr)
+        delta_ms = TimeUtil.currentTimeMillis() - start_ts
+        CommonUtil.printLog(f'deal ocr交易结果:{success},耗时: {delta_ms / 1000:.1f}秒, ocrResStr:{ocrResStr}')
 
         # delta = (TimeUtil.currentTimeMillis() - startTs) / 1000
         # CommonUtil.printLog(f'交易结果:{success},耗时: {delta}秒, img_name={img_name},ocrResStr:{ocrResStr}')
 
         self.text("{ESC}")  # 按下esc键,部分弹框可被取消
         self.text("{ENTER}")  # 按下回车键, 避免弹框干扰
-        CommonUtil.printLog(f'交易结果:{success},img_name={img_name},ocrResStr:{ocrResStr}')
+        CommonUtil.printLog(f'deal 交易结果:{success},img_name={img_name},ocrResStr:{ocrResStr}')
         return success
 
     def cancel_order(self, code: str):
@@ -493,12 +502,14 @@ class THSTrader(BaseAir4Windows):
 if __name__ == '__main__':
     THSTrader.create_cache_dir()
     ths_trader = THSTrader()
-    ths_trader.deal('600980', 22.05, -200)
-    time.sleep(3)
+    ths_trader.get_all_stock_position()  # 获取持仓
 
-    ths_trader.deal('002731', 0, -200)
-    time.sleep(3)
-    # ths_trader.deal('000903', 3.55, 200)
+    # ths_trader.deal('600980', 22.05, -200)
+    # time.sleep(3)
 
+    # ths_trader.deal('002731', 0, -200)
+    # time.sleep(3)
+    # # ths_trader.deal('000903', 3.55, 200)
+    #
     ths_trader.deal('600980', 22.05, 200)
     time.sleep(3)

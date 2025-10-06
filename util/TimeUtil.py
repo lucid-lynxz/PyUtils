@@ -75,8 +75,8 @@ def log_time_consume(exclude_params=None, separate: bool = False, only_log_resul
 
 
 class TimeUtil(object):
-    @classmethod
-    def getTimeStr(cls, fmt="%Y-%m-%d %H:%M:%S", n: int = 0) -> str:
+    @staticmethod
+    def getTimeStr(fmt="%Y-%m-%d %H:%M:%S", n: int = 0) -> str:
         """
         获取N天前的时间,并按给定的格式返回字符串结果
         :param fmt: 日期格式,  %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
@@ -87,17 +87,19 @@ class TimeUtil(object):
         return n_days_ago.strftime(fmt)  # 将日期转换为指定格式的字符串
         # return time.strftime(format, time.localtime(time.time()))
 
-    @classmethod
-    def getTimeObj(cls, fmt="%Y-%m-%d %H:%M:%S", n: int = 0) -> datetime:
+    @staticmethod
+    def getTimeObj(fmt="%Y-%m-%d %H:%M:%S", n: int = 0, target_date: str = None) -> datetime:
         """
         获取N天前的时间,并按给定的格式返回 datetime 对象
         :param fmt: 日期格式,  %Y 代表四位数的年份，%m 代表两位数的月份，%d 代表两位数的日期
         :param n: 天数, 0表示当天, 正数表示N天前, 负数表示N天后
+        :param target_date: 目标日期, 默认为None, 表示使用当前日期 n 参数计算得到的日期
         """
-        return datetime.strptime(TimeUtil.getTimeStr(fmt, n), fmt)
+        target_date = target_date if target_date else TimeUtil.getTimeStr(fmt, n)
+        return datetime.strptime(target_date, fmt)
 
-    @classmethod
-    def convertFormat(cls, dateStr: str, oldFormat: str, newFormat: str = '%Y-%m-%d') -> str:
+    @staticmethod
+    def convertFormat(dateStr: str, oldFormat: str, newFormat: str = '%Y-%m-%d') -> str:
         """
         转换日期格式
         """
@@ -121,13 +123,13 @@ class TimeUtil(object):
         result = '%s小时%s分%s秒' % (hour, minutes, secs)
         return result.replace('分0秒', '分').replace('时0分', '时').replace('0小时', '')
 
-    @classmethod
-    def currentTimeMillis(cls) -> int:
+    @staticmethod
+    def currentTimeMillis() -> int:
         """获取当前时间戳,单位:ms"""
         return int(round(time.time() * 1000))
 
-    @classmethod
-    def getDurationStr(cls, durationInMills: int) -> str:
+    @staticmethod
+    def getDurationStr(durationInMills: int) -> str:
         """将毫秒耗时转换更可读的 x时x分x秒的形式"""
         mills = durationInMills % 1000
         restSeconds = durationInMills // 1000
@@ -137,8 +139,8 @@ class TimeUtil(object):
         hours = restSeconds // 3600
         return "%s时%s分%s秒" % (hours, minutes, seconds)
 
-    @classmethod
-    def sleep(cls, sec: float, minSec: float = 1, maxSec: float = 10) -> float:
+    @staticmethod
+    def sleep(sec: float, minSec: float = 1, maxSec: float = 10) -> float:
         """
         等待一会
         :param sec: 等待指定的秒数，大于0有效，若小于0，则会在 [minSec,maxSec) 中随机算一个

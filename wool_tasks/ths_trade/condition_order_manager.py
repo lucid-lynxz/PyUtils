@@ -268,5 +268,6 @@ if __name__ == '__main__':
              )
 
             NetUtil.push_to_robot(f'condition_order_manager 已退出', printLog=True)
+            AkShareUtil.stock_zh_a_spot_em()  # 获取A股今日行情并存储到缓存文件
             if configParser.getSecionValue('setting', 'auto_sleep', True):
                 CommonUtil.windows_sleep()  # 休眠

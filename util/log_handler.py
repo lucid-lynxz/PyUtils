@@ -17,8 +17,10 @@ class DefaultCustomLog(object):
     """
     default_log_path: str = None  # 默认的日志路径
 
-    @classmethod
-    def get_log(cls, name, log_path=default_log_path, level=logging.DEBUG, use_stream_handler=True,
+    default_log_name: str = 'pyUtils'
+
+    @staticmethod
+    def get_log(name=default_log_name, log_path=default_log_path, level=logging.DEBUG, use_stream_handler=True,
                 use_file_handler=False):
         """
         使用默认配置获取日志实例
@@ -31,13 +33,13 @@ class DefaultCustomLog(object):
         """
         print(f'get_log name={name}, log_path={log_path}')
         log = logging.getLogger(name)
-        log.setLevel(level)
         # 若同时添加streamHandler 和 fileHandler, 则默认控制台会输出两次日志
         # 处理方案: 1. 只添加其中一种handler  2. propagate设置为false,这样fileHandler就不会写入控制台了
         # log.propagate = False  # 防止日志重复打印
-        
+
         # log已经存在handler时不再绑定handler，防止日志重复打印
         if not log.handlers:
+            log.setLevel(level)
             if use_stream_handler:
                 log.addHandler(LogHandlerSetting.get_stream_handler())
             if use_file_handler:

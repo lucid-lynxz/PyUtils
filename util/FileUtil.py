@@ -615,6 +615,15 @@ class FileUtil(object):
 
         return objects
 
+    @staticmethod
+    def is_absolute_path(path: str) -> bool:
+        """
+        判断给定路径字符串是否为绝对路径
+        :param path: 路径字符串
+        :return: 如果是绝对路径返回True，相对路径返回False
+        """
+        return os.path.isabs(path)
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"
@@ -640,4 +649,5 @@ if __name__ == '__main__':
     CommonUtil.printLog('file size=%s,size1=%s' % (b, info))
     # b, info = FileUtil.getDirSize('H:/Workspace/Python/wool/temp.air/')
     b, info = FileUtil.getDirSize('D:/Downloads/Tencent/斗破苍穹666')
+
     CommonUtil.printLog('dir size=%s,size1=%s' % (b, info))

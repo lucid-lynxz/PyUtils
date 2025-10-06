@@ -494,7 +494,8 @@ def catch_exceptions(max_retries=0, retry_interval=1, logger=None):
         logger: 日志记录器
     """
     if logger is None:
-        logger = logging.getLogger()
+        from util.log_handler import DefaultCustomLog
+        logger = DefaultCustomLog.get_log()
 
     def decorator(func):
         @functools.wraps(func)
