@@ -211,6 +211,9 @@ class MailUtil(object):
         :param toNames: 收件人名称列表 要求与 toMails 长度一致, 若为None,这使用 toMails 替代
         :return: 是否发送成功
         """
+        # 检查SMTP连接
+        self._check_smtp_connection()
+
         if CommonUtil.isNoneOrBlank(toMails):
             toMails = [self.default_receiver]
         toMails = list(map(self._recookMailAddresss, toMails))
@@ -298,6 +301,9 @@ class MailUtil(object):
         """
         _result = []
         try:
+            # 检查IMAP连接
+            self._check_imap_connection()
+
             if not self.select_folder(folder_name):
                 return _result
 
@@ -482,6 +488,29 @@ class MailUtil(object):
             return decoded.decode('utf-16be')
 
         return re.sub(r'&([^&-]*?)-', decode_part, s)
+
+    def _check_smtp_connection(self):
+        """检查SMTP连接是否有效，如果无效则重新连接"""
+        try:
+            # 尝试发送NOOP命令检查连接
+            self.smtpServer.noop()
+        except:
+            # 连接已断开，重新连接
+            CommonUtil.printLog("SMTP连接已断开，重新连接中...")
+            self.smtpServer = smtplib.SMTP_SSL(self.mailConfig["smtpServer"])
+            self.smtpServer.set_debuglevel(int(self.mailConfig["debugLevel"]))
+            self.smtpServer.login(self.mailConfig['senderEmail'], self.mailConfig['senderPwd'])
+
+    def _check_imap_connection(self):
+        """检查IMAP连接是否有效，如果无效则重新连接"""
+        try:
+            # 尝试检查连接状态
+            self.imapServer.check()
+        except:
+            # 连接已断开，重新连接
+            CommonUtil.printLog("IMAP连接已断开，重新连接中...")
+            self.imapServer = imaplib.IMAP4_SSL(self.mailConfig["imapServer"], self.mailConfig["imapPort"])
+            self.imapServer.login(self.mailConfig['senderEmail'], self.mailConfig['senderPwd'])
 
 
 if __name__ == "__main__":
