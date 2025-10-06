@@ -1,5 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
+import asyncio
 import datetime
 import os
 import traceback
@@ -59,6 +60,157 @@ class AkShareUtil:
         AkShareUtil.stock_zh_a_code_name_df = df
         return stock_name
 
+    # @staticmethod
+    # def process_all_stocks(operation_func, limit=None, start_index=0, **kwargs):
+    #     """
+    #     遍历所有A股股票代码并执行指定操作
+    #
+    #     :param operation_func: 要对每个股票执行的操作函数，接受参数(code, name, **kwargs)
+    #     :param limit: 限制处理的股票数量，None表示处理所有股票
+    #     :param start_index: 开始处理的索引位置，用于从特定位置继续处理
+    #     :param kwargs: 传递给操作函数的额外参数
+    #     :return: 处理结果的列表
+    #     """
+    #     # 确保股票代码和名称数据已加载
+    #     AkShareUtil.get_stock_name('000001')  # 平安银行,确保 stock_zh_a_code_name_df 有值
+    #
+    #     # 获取股票代码和名称数据
+    #     df = AkShareUtil.stock_zh_a_code_name_df
+    #
+    #     # 确定处理的范围
+    #     end_index = len(df) if limit is None else min(start_index + limit, len(df))
+    #
+    #     # 存储处理结果
+    #     results = []
+    #
+    #     # 遍历股票代码和名称
+    #     row: pd.Series = pd.Series()
+    #     for i in range(start_index, end_index):
+    #         try:
+    #             row = df.iloc[i]
+    #             code = row['code']
+    #             name = row['name']
+    #
+    #             # 执行指定操作
+    #             result = operation_func(code, name, **kwargs)
+    #             results.append(result)
+    #
+    #             # 打印进度
+    #             if (i - start_index + 1) % 100 == 0:
+    #                 print(f"已处理 {i - start_index + 1} 只股票，当前: {code} - {name}")
+    #
+    #         except Exception as e:
+    #
+    #             print(f"处理股票 {row.get('code', 'unknown')} 时出错: {e}")
+    #             # 继续处理下一只股票
+    #             continue
+    #
+    #     print(f"完成处理 {end_index - start_index} 只股票")
+    #     return results
+
+    @staticmethod
+    async def process_all_stocks_async(operation_func, limit=None, start_index=0,
+                                       delay=0.1, max_concurrent=5, **kwargs):
+        """
+        异步遍历所有A股股票代码并执行指定操作
+        使用示例, 获取所有A股数据指定日期的日K线数据并存储到sqlite数据库中:
+        asyncio.run(AkShareUtil.process_all_stocks_async(AkShareUtil.save_stock_history, limit=None, delay=10, max_concurrent=1))
+
+        :param operation_func: 要对每个股票执行的操作函数，接受参数(code, name, **kwargs)
+        :param limit: 限制处理的股票数量，None表示处理所有股票
+        :param start_index: 开始处理的索引位置，用于从特定位置继续处理
+        :param delay: 每次处理后的延迟时间（秒），避免被限流
+        :param max_concurrent: 最大并发数，控制同时进行的协程数量
+        :param kwargs: 传递给操作函数的额外参数
+        :return: 处理结果的列表
+        """
+        # 确保股票代码和名称数据已加载
+        if CommonUtil.isNoneOrBlank(AkShareUtil.stock_zh_a_code_name_df):
+            AkShareUtil.get_stock_name('000001')  # 平安银行,确保 stock_zh_a_code_name_df 有值
+
+        # 获取股票代码和名称数据
+        df = AkShareUtil.stock_zh_a_code_name_df
+
+        # 确定处理的范围
+        end_index = len(df) if limit is None else min(start_index + limit, len(df))
+
+        # 存储处理结果
+        async_results = []
+
+        # 创建信号量控制并发数
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        # 定义处理单个股票的协程函数
+        async def process_stock(i):
+            async with semaphore:  # 控制并发数量
+                try:
+                    row = df.iloc[i]
+                    code = row['code']
+                    name = row['name']
+
+                    # 执行指定操作
+                    # 如果操作函数是协程函数，则使用await；否则直接调用
+                    if asyncio.iscoroutinefunction(operation_func):
+                        ope_result = await operation_func(code, name, **kwargs)
+                    else:
+                        ope_result = operation_func(code, name, **kwargs)
+
+                    # 打印进度
+                    if (i - start_index + 1) % 100 == 0:
+                        print(f"已处理 {i - start_index + 1} 只股票，当前: {code} - {name}")
+                    return ope_result
+
+                except Exception as e:
+                    print(f"处理股票 {df.iloc[i].get('code', 'unknown')} 时出错: {e}")
+                    return None
+                finally:
+                    # 添加延迟，避免被限流
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+
+        # 创建所有任务
+        tasks = [process_stock(i) for i in range(start_index, end_index)]
+
+        # 执行所有任务并收集结果
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 处理结果，过滤掉异常和None值
+        for result in task_results:
+            if isinstance(result, Exception):
+                print(f"任务执行出错: {result}")
+            elif result is not None:
+                async_results.append(result)
+
+        print(f"完成处理 {end_index - start_index} 只股票")
+        return async_results
+
+    # 添加一个同步版本的包装函数，方便调用
+    @staticmethod
+    def process_all_stocks(operation_func, limit=None, start_index=0,
+                           delay=0.1, max_concurrent=5, **kwargs):
+        """
+        同步版本的process_all_stocks，内部调用异步版本
+
+        :param operation_func: 要对每个股票执行的操作函数，接受参数(code, name, **kwargs)
+        :param limit: 限制处理的股票数量，None表示处理所有股票
+        :param start_index: 开始处理的索引位置，用于从特定位置继续处理
+        :param delay: 每次处理后的延迟时间（秒），避免被限流
+        :param max_concurrent: 最大并发数，控制同时进行的协程数量
+        :param kwargs: 传递给操作函数的额外参数
+        :return: 处理结果的列表
+        """
+        # 如果操作函数是协程函数，则使用asyncio.run运行
+        if asyncio.iscoroutinefunction(operation_func):
+            return asyncio.run(AkShareUtil.process_all_stocks_async(
+                operation_func, limit, start_index, delay, max_concurrent, **kwargs))
+        else:
+            # 如果是普通函数，则使用asyncio.run运行，但在内部同步调用
+            async def wrapper(code, name, **kwargs):
+                return operation_func(code, name, **kwargs)
+
+            return asyncio.run(AkShareUtil.process_all_stocks_async(
+                wrapper, limit, start_index, delay, max_concurrent, **kwargs))
+
     @staticmethod
     @log_time_consume()
     def get_stock_summary(code: str) -> pd.DataFrame:
@@ -84,7 +236,7 @@ class AkShareUtil:
         :param hk: 是否为港股, 默认False表示A股
         :param n_day_ago: 获取往前推多少天的数据, 0表示当天  1表示前一天  -1 表示后一天
         :param period: 分时间隔, 默认为1分钟, 支持 1, 5, 15, 30, 60 分钟的数据频率
-        :return: 最新价格, 若指定日期吴交易数据, 则返回0
+        :return: 最新价格, 若指定日期无交易数据, 则返回0
         """
         if hk:
             stock_min_df = AkShareUtil.query_stock_min_history_hk(code, n_day_ago, period)
@@ -386,7 +538,7 @@ class AkShareUtil:
         today = TimeUtil.getTimeStr(fmt, 0)
         start_date = start_date if start_date is not None else TimeUtil.getTimeStr(fmt, n_day_ago)
         end_date = end_date if end_date is not None else today
-        CommonUtil.printLog(f'query_stock_daily_history {code} {start_date} {end_date}')
+        CommonUtil.printLog(f'query_stock_daily_history({code}, {hk}, {n_day_ago}, {period}, {start_date}, {end_date}), final date:{start_date} {end_date}')
         try:
             if hk:
                 return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=end_date)
@@ -690,7 +842,7 @@ class AkShareUtil:
                 db_df[date_col] = pd.to_datetime(db_df[date_col], errors='coerce')
                 # 按照指定格式转换为字符串
                 db_df[date_col] = db_df[date_col].dt.strftime(db_date_format)
-                CommonUtil.printLog(f"已将日期列按照格式 '{db_date_format}' 转换为字符串")
+                # CommonUtil.printLog(f"已将日期列按照格式 '{db_date_format}' 转换为字符串")
 
             # 创建临时表存储新数据
             db_df.to_sql(temp_table, conn, if_exists='replace', index=False)
@@ -890,6 +1042,26 @@ class AkShareUtil:
             return filtered_df
         return cache_df
 
+    @staticmethod
+    def save_stock_history(code, name, **kwargs):
+        """
+        保存股票历史数据到数据库
+        :param code: 股票代码
+        :param name: 股票名称
+        :param kwargs: 其他参数, 如:
+            start_date: 开始日期, 格式: '20250101'
+            end_date: 结束日期, 格式: '20251006'
+        """
+        try:
+            start_date = kwargs.get('start_date', '20250101')
+            end_date = kwargs.get('end_date', '20250930')
+            # 保存到数据库
+            df = AkShareUtil.query_stock_daily_history_to_db(code, False, start_date, end_date)
+            return {'code': code, 'name': name, 'status': 'success', 'records': len(df)}
+        except Exception as e:
+            print(f"保存股票 {code} - {name} 的历史数据失败: {e}")
+            return {'code': code, 'name': name, 'status': 'failed', 'error': str(e)}
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -939,4 +1111,10 @@ if __name__ == '__main__':
     # print(AkShareUtil.index_zh_a_hist('000300'))
     # print(AkShareUtil.stock_zh_index_daily('sh000300', '2025-04-01', '2025-09-30'))
 
-    print(AkShareUtil.query_stock_daily_history_to_db('01810', True, '20250701', '20250930'))  # 小米集团
+    # AkShareUtil.get_stock_name('000001')
+
+    # 遍历所有A股股票并获取指定期间内的数据,自动存储到数据库中
+    # results = asyncio.run(AkShareUtil.process_all_stocks_async(AkShareUtil.save_stock_history,
+    #                                                            limit=None, delay=30, max_concurrent=1,
+    #                                                            start_date='20230101', end_date='20250930'))
+    print(AkShareUtil.query_stock_daily_history_to_db('000001', False, '20230101', '20250930'))

@@ -28,11 +28,11 @@ if __name__ == '__main__':
     # 支持从条件单缓存文件中读取配置信息,优先使用 cache/ 目录下的配置文件, 若无,再从当前目录下寻找
     parser = argparse.ArgumentParser(description='处理CSV条件单文件')  # 创建参数解析器
     parser.add_argument('--condition_order_path', required=False,
-                        default=f'{AkShareUtil.cache_dir}/condition_order.ini',
+                        default=f'{_cache_dir}/condition_order.ini',
                         help='条件单文件')
 
     parser.add_argument('--config', required=False,
-                        default=f'{AkShareUtil.cache_dir}/config.ini',
+                        default=f'{_cache_dir}/config.ini',
                         help='配置文件')
 
     args = parser.parse_args()  # 解析命令行参数
@@ -42,6 +42,8 @@ if __name__ == '__main__':
     # 配置文件解析器
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = f'{cur_dir}/config.ini' if CommonUtil.isNoneOrBlank(config_path) else config_path
+    configParser = FileUtil.recookPath(config_path)
+
     condition_order_path = f'{cur_dir}/condition_order.ini' if CommonUtil.isNoneOrBlank(
         condition_order_path) else condition_order_path
     configParser = NewConfigParser(allow_no_value=True).initPath(config_path)
@@ -55,7 +57,6 @@ if __name__ == '__main__':
     ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
     ConditionOrder.ths_trader = ths_trader
-
 
     def redirect_log(msg):
         try:

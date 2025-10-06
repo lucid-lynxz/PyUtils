@@ -106,6 +106,7 @@ class MailUtil(object):
         }
         # 合并配置（用户提供的配置优先于默认配置）
         merged_config = {**default_config, **config}
+        CommonUtil.printLog(f'merged_config={merged_config}')
 
         self.mailConfig = merged_config
         self.fromMail = merged_config['senderEmail']
