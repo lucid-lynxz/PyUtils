@@ -176,8 +176,8 @@ class TimeUtil(object):
             print(f'calc_sec_diff exception {e}')
             return def_value
 
-    @classmethod
-    def dateDiff(cls, date1: str, date2: str, dateFormat: str = '%Y-%m-%d', valueOnError: int = 0) -> int:
+    @staticmethod
+    def dateDiff(date1: str, date2: str, dateFormat: str = '%Y-%m-%d', valueOnError: int = 0) -> int:
         """
         比较两个日期相差的天数
         :param date1: 第一个日期字符串,如: 2022-06-27 也支持时间或者日期+时间格式,具体根据 dateFormat 来决定
@@ -197,17 +197,9 @@ class TimeUtil(object):
         :param include_equal: 是否包含等于的情况, 默认为False, 即当前时间大于目标时间时才返回True
         """
         target_str = target_str.strip().replace("  ", " ")
+        time_format = TimeUtil.get_time_format(target_str)
         try:
-            # 尝试解析为日期时间格式
-            if ' ' in target_str:
-                time_format = "%Y-%m-%d %H:%M:%S"
-            # 尝试解析为日期格式
-            elif '-' in target_str:
-                time_format = "%Y-%m-%d"
-            # 尝试解析为时间格式
-            elif ':' in target_str:
-                time_format = "%H:%M:%S"
-            else:
+            if time_format is None:
                 raise ValueError(f"无法解析时间格式: {target_str}")
 
             cur_time = TimeUtil.getTimeStr(time_format)
@@ -217,6 +209,26 @@ class TimeUtil(object):
         except ValueError as e:
             print(f"时间解析错误: {e}")
             return False
+
+    @staticmethod
+    def get_time_format(target_str: str) -> str:
+        """
+        尝试解析为日期时间格式
+        支持格式: "YYYY-MM-DD", "YYYYMMDD", "HH:MM:SS", "YYYY-MM-DD HH:MM:SS", "YYYYMMDD HH:MM:SS"
+        """
+        time_format = None
+        if ' ' in target_str:
+            if '-' in time_format:
+                time_format = "%Y-%m-%d %H:%M:%S"
+            else:
+                time_format = "%Y%m%d %H:%M:%S"
+        # 尝试解析为日期格式
+        elif '-' in target_str:
+            time_format = "%Y-%m-%d"
+        # 尝试解析为时间格式
+        elif ':' in target_str:
+            time_format = "%H:%M:%S"
+        return time_format
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@
 pip install pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 使用 pybroker 进行回测需要安装以下库
-pip install lib-pybroker TA-Lib akshare matplotlib yfinance
+pip install lib-pybroker TA-Lib akshare matplotlib yfinance riskfolio-lib
 ```
 
 ## 注意事项：

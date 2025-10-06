@@ -2,6 +2,7 @@ import concurrent.futures
 import os
 import subprocess
 import sys
+import pandas as pd
 from typing import Dict, List, Tuple, Type, Any, Optional
 
 import matplotlib.pyplot as plt
@@ -23,14 +24,16 @@ class StrategyManager:
     """
 
     def __init__(self, init_cash: int = 100000,  # 初始资金
-                 buy_shares: float = -1,  # 每只股票妈单次买入股数, 默认-1会根据传入的股票数均分, 比如共2只股票回测,则每只份额0.5, 表示50%  >=1 时表示股数
+                 buy_shares: float = -1,  # 每只股票妈单次买入股数, 默认-1会根据传入的股票数均分, 比如共2只股票回测,则每只份额0.5, 表示50%
                  stop_loss_pct: float = 0,  # 止损百分比, 10 表示 10%,大于0有效
                  stop_profit_pct: float = 0,  # 止盈百分比,大于0有效
                  stop_trailing_pct: float = 0,  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
                  warmup: int = 15,
                  enable_plot: bool = True,  # 是否允许绘制回测结果
+                 base_symbol: str = None,  # 基准指数代码,默认使用沪深300: sh000300 作为基准
                  start_date: str = '20250101',  # 回测的起始日期
-                 end_date: str = '20251230'  # 回测的结束日期
+                 end_date: str = '20251230',  # 回测的结束日期
+                 fmt: str = '%Y%m%d'  # 时间格式
                  ):
         """
         初始化策略管理器
@@ -38,6 +41,7 @@ class StrategyManager:
         :param warmup: 预热期
         :param start_date: 回测开始日期
         :param end_date: 回测结束日期
+        :param fmt: 时间格式, 默认为: '%Y%m%d'
         """
         TimedStdout.activate(True)
         self.init_cash = init_cash
@@ -62,6 +66,17 @@ class StrategyManager:
         self._plot_figures = []  # 保存所有图形对象
         # 设置非交互式后端
         plt.switch_backend('Agg')
+
+        self.base_index_scale = None  # 基准行情基于收盘价的归一化结果
+        if base_symbol is not None:
+            from util.AkShareUtil import AkShareUtil
+            base_df = AkShareUtil.stock_zh_index_daily(base_symbol, start_date=start_date, end_date=end_date, fmt=fmt)
+            if base_df is not None:
+                # 转换为datetime类型,并设置为index列
+                base_df['date'] = pd.to_datetime(base_df['date'])
+                base_df.set_index('date', inplace=True)
+                base_df['close'] = base_df['close'] / base_df['close'].iloc[0]
+                self.base_index_scale = base_df
 
     def _show_plot(self, fig):
         """在主线程中显示图形"""
@@ -99,7 +114,7 @@ class StrategyManager:
         result = (strategy_instance
                   .backtest(warmup=self.warmup)
                   .print_backtest_profit_info()
-                  .plot_portfolio(condition=self.enable_plot)
+                  .plot_portfolio(condition=self.enable_plot, base_index_scale=self.base_index_scale)
                   .backtest_info)
 
         # 保存图形文件路径
@@ -180,7 +195,8 @@ if __name__ == '__main__':
     init_cash: int = 100000  # 初始资金, 10w
     warmup: int = 15
     start_date = '20250101'
-    end_date = '20251230'
+    end_date = '20250930'
+    fmt = '%Y%m%d'
 
     symbol1 = '000001.SZ'  # 平安银行  或者 000001.SZ
     symbol2 = '600000.SH'  # 浦发银行  或者 600000.SH
@@ -189,8 +205,7 @@ if __name__ == '__main__':
     symbol = symbol3
 
     # 创建策略管理器实例
-    manager = StrategyManager(init_cash=100000, warmup=15,
-                              start_date=start_date, end_date=end_date)
+    manager = StrategyManager(init_cash=100000, warmup=15, start_date=start_date, end_date=end_date, base_symbol='sh000300', fmt=fmt)
 
     # 添加策略
     manager.add_strategy(StrategyBreakout, symbols=symbol, days=11, stop_loss_pct=8, stop_profit_pct=25)

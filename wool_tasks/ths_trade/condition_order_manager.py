@@ -23,7 +23,7 @@ from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
 # python your_script.py --condition_order_path /path/to/orders.csv
 if __name__ == '__main__':
     _cache_dir = THSTrader.create_cache_dir()  # 缓存目录
-    AkShareUtil.cache_dir = _cache_dir
+    # AkShareUtil.cache_dir = _cache_dir
 
     # 支持从条件单缓存文件中读取配置信息,优先使用 cache/ 目录下的配置文件, 若无,再从当前目录下寻找
     parser = argparse.ArgumentParser(description='处理CSV条件单文件')  # 创建参数解析器

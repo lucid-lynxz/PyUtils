@@ -73,7 +73,7 @@ class BaseStrategy(object):
     * self.backtest_result: 回测后的额完整结果
     * self.backtest_info: 获取回测结果信息,比如资金变化,收益率和订单信息等
     *
-    * self.buy_shares: 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
+    * self.buy_shares: 买入股数, 默认为0.5, 表示50%
     * self.stop_loss_pct: 止损百分比, 10 表示 10%,大于0有效
     * self.stop_profit_pct: 止盈百分比,大于0有效
     * self.stop_trailing_pct: 移动止损, 最高市场价格下降N%时触发止损,大于0有效
@@ -108,6 +108,9 @@ class BaseStrategy(object):
         self.strategy_name: str = self.__class__.__name__  # 获取子类类名
         self.description: str = ''  # 策略描述, 子类可以按需重写
         self.symbols: Union[str, Iterable[str]] = symbols  # 策略对应的股票代码
+        self.initial_cash: float = initial_cash  # 初始资金
+        self.start_date: str = start_date  # 回测开始日期
+        self.end_date: str = end_date  # 回测结束日期
 
         self.config = StrategyConfig(initial_cash=initial_cash)
         self.strategy = Strategy(data_source=data_source, start_date=start_date, end_date=end_date, config=self.config)
@@ -117,7 +120,7 @@ class BaseStrategy(object):
         self.backtest_info: Optional[BackTestInfo] = None  # 从回测结果中提取的部分信息,比如收益率等
 
         # 以下参数可通过在子类的 buy_func() 中调用 update_stop_info() 和 update_buy_shares() 来生效
-        self.buy_shares = buy_shares  # 买入股数, 默认为0.5, 表示50%  >=1 时表示股数
+        self.buy_shares = buy_shares  # 买入股数, 默认为0.5, 表示50%
         self.stop_loss_pct: float = stop_loss_pct  # 止损百分比, 10 表示 10%,大于0有效
         self.stop_profit_pct: float = stop_profit_pct  # 止盈百分比,大于0有效
         self.stop_trailing_pct: float = stop_trailing_pct  # 移动止损, 最高市场价格下降N%时触发止损,大于0有效
@@ -151,28 +154,39 @@ class BaseStrategy(object):
         self.backtest_info = BackTestInfo(self.strategy_name, self.symbols, self.backtest_result)
         return self
 
-    def plot_portfolio(self, condition: bool = True) -> Self:
+    def plot_portfolio(self, condition: bool = True, base_index_scale: pd.DataFrame = None) -> Self:
         """
         绘制回测的资金的变化情况
         :param condition: 是否绘制, 默认为True
+        :param base_index_scale: 作为对比的基准行情数据,包含日期和收盘价信息,请自行进行归一化处理
         """
         if not condition:
             return self
         if self.backtest_result is None:
             return self
 
+        cash = self.initial_cash * self.buy_shares  # 用于当前股票的金额
         # 若是在主线程调用,则可直接显示:
         if threading.current_thread() is threading.main_thread():
-            self.backtest_result.portfolio.equity.plot()
+            if base_index_scale is not None:
+                base_index_scale['close'].plot()
+            (self.backtest_result.portfolio.equity / cash).plot()  # 进行归一化
             plt.show()  # 启动 matplotlib 的事件循环，使图形窗口保持显示
             return self
 
+        # 设置中文字体支持
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']  # 支持中文显示
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
         # 创建图形
         fig, ax = plt.subplots()
-        self.backtest_result.portfolio.equity.plot(ax=ax)
+        if base_index_scale is not None:
+            base_index_scale['close'].plot(ax=ax, label='基准收益')
+        (self.backtest_result.portfolio.equity / cash).plot(ax=ax, label='策略净值')
         ax.set_title(f'{self.strategy_name} Equity {self.backtest_info.profit_rate * 100:.2f}%')
         ax.set_xlabel('Date')
         ax.set_ylabel('Equity')
+        ax.legend()  # 显示图例
 
         # 创建输出目录
         output_dir = Path('plots')
@@ -201,7 +215,8 @@ class BaseStrategy(object):
         if ctx.long_pos():
             return
 
-        ctx.buy_shares = self.buy_shares if self.buy_shares > 1 else ctx.calc_target_shares(self.buy_shares)
+        # ctx.buy_shares = self.buy_shares if self.buy_shares > 1 else ctx.calc_target_shares(self.buy_shares)
+        ctx.buy_shares = ctx.calc_target_shares(self.buy_shares)
 
     def update_stop_info(self, ctx: ExecContext) -> None:
         """

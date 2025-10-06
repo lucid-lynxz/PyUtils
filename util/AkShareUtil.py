@@ -2,7 +2,8 @@
 # -*- coding:utf-8 -*-
 import datetime
 import os
-from typing import Union
+import traceback
+from typing import Union, Optional
 
 import akshare as ak
 import pandas as pd
@@ -22,7 +23,7 @@ pip install akshare pandas openpyxl --upgrade
 class AkShareUtil:
     stock_zh_a_code_name_df: pd.DataFrame = None  # A股股票代码和名称的缓存
     trade_days_df: pd.DataFrame = None  # 交易日历数据, 包含所有交易日信息, 用于判断是否交易日
-    cache_dir: str = '.'  # 缓存目录, 默认为当前目录, 会存储请求的都得所有股票名称和代码数据信息
+    cache_dir: str = FileUtil.create_cache_dir(None, __file__, clear=False)  # 缓存目录, 默认为当前目录, 会存储请求的都得所有股票名称和代码数据信息
     stock_summary_dict: dict = {}  # 获取过的股票摘要信息, 接口: get_stock_summary()
     _has_update_name_by_net: bool = False  # 是否已经从网络更新了股票名称
 
@@ -434,6 +435,114 @@ class AkShareUtil:
             return float(_prev_data['收盘'].iloc[0])
         return 0.0
 
+    @staticmethod
+    def get_industry_constituent_stock(symbol: str, order_by: str = '市盈率-动态', asc: bool = False, top_n: int = 10) -> Optional[pd.DataFrame]:
+        """
+        获取行业成分股
+        :param symbol: 行业名称, 可通过 ak.stock_board_industry_name_em() 获取, 如:
+                        '农牧饲渔', '银行', '酿酒行业', '食品饮料', '旅游酒店', '电力行业', '农药兽药', '铁路公路',
+                       '航空机场', '贵金属', '小金属', '商业百货', '物流行业', '煤炭行业', '中药', '航运港口', '公用事业',
+                       '燃气', '水泥建材', '珠宝首饰', '保险', '化肥行业', '电子化学品', '航天航空', '化纤行业',
+                       '钢铁行业', '美容护理', '石油行业', '装修建材', '工程建设', '生物制品', '房地产开发', '医药商业',
+                       '证券', '造纸印刷', '综合行业', '汽车整车', '化学制品', '玻璃玻纤', '化学原料', '非金属材料',
+                       '装修装饰', '多元金融', '专业服务', '化学制药', '有色金属', '医疗器械', '纺织服装', '工程机械',
+                       '房地产服务', '贸易行业', '包装材料', '文化传媒', '半导体', '汽车服务', '能源金属', '教育',
+                       '家电行业', '环保行业', '采掘行业', '橡胶制品', '交运设备', '电源设备', '电网设备', '通信服务',
+                       '船舶制造', '风电设备', '家用轻工', '计算机设备', '工程咨询服务', '游戏', '医疗服务', '塑料制品',
+                       '仪器仪表', '通信设备', '专用设备', '软件开发', '通用设备', '汽车零部件', '光伏设备', '电子元件',
+                       '电机', '光学光电子', '互联网服务', '电池', '消费电子'
+        :param order_by: 排序字段,支持: '序号', '代码', '名称', '最新价', '涨跌幅', '涨跌额', '成交量', '成交额', '振幅', '最高', '最低','今开', '昨收', '换手率', '市盈率-动态', '市净率'
+        :param asc: 是否升序,默认false表示降序
+        :param top_n: 前N只股票
+        :return: 行业成分股信息, 包括两列: '代码', '名称'
+        """
+        # 获取A股指定行业板块成分股数据
+        # stock_board_industry_cons_em_df.columns 获取包含的字段:
+        # ['序号', '代码', '名称', '最新价', '涨跌幅', '涨跌额', '成交量', '成交额', '振幅', '最高', '最低','今开', '昨收', '换手率', '市盈率-动态', '市净率'
+        try:
+            df = ak.stock_board_industry_cons_em(symbol=symbol)
+            # print(df)
+
+            # 根据指定指标排列,获取前N只股票
+            # stock_qiche.columns 获取包含的字段:
+            # stock_qiche["代码"].values
+            top_n_stocks = df.sort_values(by=order_by, ascending=asc).iloc[0:top_n, :]
+            # print(top_n_stocks.columns)  # 获取包含的字段
+            # print(top_n_stocks)  # 打印前N只股票信息
+            return top_n_stocks[["代码", "名称"]]
+        except Exception as e:
+            CommonUtil.printLog(f'获取{symbol}行业成分股失败: {e}')
+            return None
+
+    @staticmethod
+    def index_zh_a_hist(symbol: str, period: str = 'daily', start_date: str = '20250101', end_date: str = '20251006') -> Optional[pd.DataFrame]:
+        """
+        接口: index_zh_a_hist
+        目标地址: http://quote.eastmoney.com/center/hszs.html
+        描述: 东方财富网-中国股票指数-行情数据
+        限量: 单次返回具体指数指定 period 从 start_date 到 end_date 的之间的近期数据
+        文档: https://akshare.akfamily.xyz/data/index/index.html#id7
+        :param symbol: 指数名称,不用加市场, 比如沪深300, 传入:000300
+        :param period: 可取值: 'daily', 'weekly','monthly'
+        :param start_date: 开始日期, 格式: '20250101'
+        :param end_date: 结束日期, 格式: '20301230'
+        :return: 指数行情数据, 包含以下字段:
+            日期	开盘	收盘	最高	最低	成交量	成交额	振幅	涨跌幅	涨跌额	换手率
+            其中日期默认时object对象,成交量单位是手, 成交额单位是元, 振幅/涨跌幅/涨跌额/换手率 单位是%, 数据类型都是float64
+        """
+        try:
+            df = ak.index_zh_a_hist(symbol=symbol, period=period, start_date=start_date, end_date=end_date)
+            # 转换为datetime类型,并设置为index列
+            # df['日期'] = pd.to_datetime(df['日期'])
+            # df.set_index('日期', inplace=True)
+            return df
+        except Exception as e:
+            CommonUtil.printLog(f'index_zh_a_hist 获取指数{symbol}历史数据失败: {e}')
+            # traceback.print_exc()
+            return None
+
+    @staticmethod
+    def stock_zh_index_daily(symbol: str, start_date: str = '2025-01-01', end_date: str = '2029-12-30', fmt: str = '%Y-%m-%d') -> Optional[pd.DataFrame]:
+        """
+        接口: stock_zh_index_daily
+        目标地址: https://finance.sina.com.cn/realstock/company/sz399552/nc.shtml(示例)
+        描述: 股票指数的历史数据按日频率更新
+        限量: 单次返回指定 symbol 的所有历史行情数据
+        文档: https://akshare.akfamily.xyz/data/index/index.html#id13
+        :param symbol: 指数名称,需要包含市场名称,比如沪深300, 传入:sh000300
+        :param start_date: 待获取数据的开始日期, 格式: '2025-01-01'
+        :param end_date: 待获取数据的结束日期, 格式: '2030-12-30'
+        :param fmt: 日期格式, 默认为: '%Y-%m-%d'
+        :return: 指数行情数据, 包含以下字段:
+            date open high low close volume volume
+        """
+        target_fmt = '%Y-%m-%d'
+        start_date = TimeUtil.convertFormat(start_date, fmt, target_fmt)
+        end_date = TimeUtil.convertFormat(end_date, fmt, target_fmt)
+        cur_day = TimeUtil.getTimeStr(target_fmt, 0)
+        end_date = end_date if TimeUtil.dateDiff(end_date, cur_day, target_fmt) <= 0 else cur_day
+
+        _cache_name = f'stock_zh_index_daily_{symbol}'
+        cache_df = AkShareUtil.read_cache(_cache_name)
+        if cache_df is None or TimeUtil.dateDiff(end_date, cache_df['date'].iloc[-1], target_fmt) > 0:
+            print(f'invoke stock_zh_index_daily from net for symbol:{symbol}')
+            try:
+                df = ak.stock_zh_index_daily(symbol=symbol)
+                # # 转换为datetime类型,并设置为index列
+                # df['date'] = pd.to_datetime(df['date'])
+                # df.set_index('date', inplace=True)
+                AkShareUtil.save_cache(df, _cache_name)
+                cache_df = df
+            except Exception as e:
+                CommonUtil.printLog(f'stock_zh_index_daily 获取指数{symbol}历史数据失败: {e}')
+                traceback.print_exc()
+
+        if cache_df is not None:
+            # 确保比较的日期类型一致，将日期转换为字符串进行比较
+            filtered_df = cache_df[(cache_df['date'].astype(str) >= start_date) & (cache_df['date'].astype(str) <= end_date)]
+            return filtered_df
+        return cache_df
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -442,29 +551,43 @@ if __name__ == '__main__':
     # _df_hist = AkShareUtil.query_stock_daily_history('002651', 3)
     # _df_hist = AkShareUtil.query_stock_daily_history('01810', True, 3)  # 小米集团
 
-    # 获取开盘收盘等信息
-    from TimeUtil import TimeUtil
+    # # 获取开盘收盘等信息
+    # from TimeUtil import TimeUtil
+    #
+    # # _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 20)  # 九号公司
+    # _df_hist = AkShareUtil.query_stock_daily_history('09868', True, 20)  # 小鹏汽车-W
+    # print(_df_hist)
+    # if not _df_hist.empty:
+    #     _latest_data = _df_hist.iloc[-1:]
+    #     _yesterday_data = _df_hist.iloc[-2:-1]
+    #
+    #     print(f'\n最近一个交易日信息:{_latest_data}')
+    #     print(f'开盘:{_latest_data["开盘"].iloc[0]}')
+    #     print(f'收盘:{_latest_data["收盘"].iloc[0]}')
+    #
+    #     print(f'\n前一个交易日信息:{_yesterday_data}')
+    #     print(f'开盘:{_yesterday_data["开盘"].iloc[0]}')
+    #     print(f'收盘:{_yesterday_data["收盘"].iloc[0]}')
+    #
+    #     _target_date = TimeUtil.getTimeObj("%Y%m%d", 2)  # 字符串转为date对象
+    #     _target_data = _df_hist[_df_hist['日期'] == _target_date.date()]
+    #     print(f'\n{_target_date} 的信息:{_latest_data}')
+    #     if not _target_data.empty:
+    #         print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
+    #         print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
+    #
+    # print(f'小鹏汽车昨收价:{AkShareUtil.get_prev_close("09868", True)}')
+    #
+    # print(AkShareUtil.get_industry_constituent_stock("汽车整车"))
 
-    # _df_hist = AkShareUtil.query_stock_daily_history('689009', False, 20)  # 九号公司
-    _df_hist = AkShareUtil.query_stock_daily_history('09868', True, 20)  # 小鹏汽车-W
-    print(_df_hist)
-    if not _df_hist.empty:
-        _latest_data = _df_hist.iloc[-1:]
-        _yesterday_data = _df_hist.iloc[-2:-1]
+    # df = akshare.query(
+    #     symbols=stock_qiche["代码"].values,
+    #     start_date='3/2/2021',
+    #     end_date='3/1/2023',
+    #     adjust="hfq",
+    #     timeframe="1d",
+    # )
+    # df
 
-        print(f'\n最近一个交易日信息:{_latest_data}')
-        print(f'开盘:{_latest_data["开盘"].iloc[0]}')
-        print(f'收盘:{_latest_data["收盘"].iloc[0]}')
-
-        print(f'\n前一个交易日信息:{_yesterday_data}')
-        print(f'开盘:{_yesterday_data["开盘"].iloc[0]}')
-        print(f'收盘:{_yesterday_data["收盘"].iloc[0]}')
-
-        _target_date = TimeUtil.getTimeObj("%Y%m%d", 2)  # 字符串转为date对象
-        _target_data = _df_hist[_df_hist['日期'] == _target_date.date()]
-        print(f'\n{_target_date} 的信息:{_latest_data}')
-        if not _target_data.empty:
-            print(f' 开盘:{_target_data["开盘"].iloc[0]}')  # float 开盘价
-            print(f' 收盘:{_target_data["收盘"].iloc[0]}')  # float 收盘价
-
-    print(f'小鹏汽车昨收价:{AkShareUtil.get_prev_close("09868", True)}')
+    # print(AkShareUtil.index_zh_a_hist('000300'))
+    print(AkShareUtil.stock_zh_index_daily('sh000300', '2025-04-01', '2025-09-30'))

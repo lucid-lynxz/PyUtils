@@ -42,7 +42,7 @@ class THSTrader(BaseAir4Windows):
         """
         cacheDir = THSTrader.create_cache_dir() if CommonUtil.isNoneOrBlank(cacheDir) else cacheDir
         FileUtil.delete_files(cacheDir, [r'.*\.png', r'.*.\.jpg'])
-        AkShareUtil.cache_dir = cacheDir  # akShare的缓存目录
+        # AkShareUtil.cache_dir = cacheDir  # akShare的缓存目录
         super().__init__(window_title='网上股票交易系统', cacheDir=cacheDir)
 
         # 持仓信息字典, key值是股票代码, value值是 StockPosition 对象, 通过 get_stock_position() 方法获取
