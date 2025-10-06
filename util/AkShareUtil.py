@@ -351,8 +351,8 @@ class AkShareUtil:
         TimeUtil.sleep(diff)
 
     @staticmethod
-    def query_stock_daily_history(code: str, hk: bool = False, n_day_ago: int = 0,
-                                  period: str = 'daily') -> pd.DataFrame:
+    def query_stock_daily_history(code: str, hk: bool = False, n_day_ago: int = 0, period: str = 'daily',
+                                  start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
         获取A股/港股股票历史数据
         文档: https://akshare.akfamily.xyz/data_tips.html
@@ -378,18 +378,365 @@ class AkShareUtil:
         :param code: 股票代码
         :param hk: 是否是港股
         :param n_day_ago: 获取往前推多少天的数据, 0表示当天  1表示前一天  -1 表示后一天
+        :param start_date: 开始日期, 若传空,则使用n_day_ago进行计算, 格式: YYYYMMDD
+        :param end_date: 结束日期, 默认为今天, 格式: YYYYMMDD
         :param period: 可取值: 'daily', 'weekly', 'monthly'
         """
-        start_date = TimeUtil.getTimeStr('%Y%m%d', n_day_ago)
-        today = TimeUtil.getTimeStr('%Y%m%d', 0)
+        fmt = '%Y%m%d'
+        today = TimeUtil.getTimeStr(fmt, 0)
+        start_date = start_date if start_date is not None else TimeUtil.getTimeStr(fmt, n_day_ago)
+        end_date = end_date if end_date is not None else today
+        CommonUtil.printLog(f'query_stock_daily_history {code} {start_date} {end_date}')
         try:
             if hk:
-                return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+                return ak.stock_hk_hist(symbol=code, period=period, start_date=start_date, end_date=end_date)
             else:
-                return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=today)
+                return ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=end_date)
         except Exception as e:
             CommonUtil.printLog(f'获取股票{code}历史数据失败: {e}')
             return pd.DataFrame()
+
+    @staticmethod
+    def query_stock_daily_history_to_db(code: str, hk: bool, start_date: str, end_date: str,
+                                        period: str = 'daily', db_path: str = None,
+                                        db_date_format: str = '%Y-%m-%d') -> pd.DataFrame:
+        """
+        获取股票历史数据并缓存到SQLite数据库，只获取数据库中不存在的日期区间的数据
+
+        :param code: 股票代码
+        :param hk: 是否是港股
+        :param period: 可取值: 'daily', 'weekly', 'monthly'
+        :param start_date: 开始日期, 格式: YYYYMMDD
+        :param end_date: 结束日期, 格式: YYYYMMDD
+        :param db_path: SQLite数据库路径或者名称，默认为None，则使用缓存目录下的stock_data.db
+        :param db_date_format: 存储到数据库时日期列的格式，默认为 '%Y-%m-%d'
+        :return: 股票历史数据DataFrame
+        """
+        # 设置默认数据库路径
+        if db_path is None:
+            db_path = f"{AkShareUtil.cache_dir}/stock_data.db"
+        elif "/" not in db_path and '\\' not in db_path:
+            db_path = f"{AkShareUtil.cache_dir}/{db_path}"
+        db_path = FileUtil.recookPath(db_path)
+
+        # 确保数据目录存在
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+        # 表名：股票代码 + _ + 数据类型
+        table_name = f"{code}_{'hk' if hk else 'a'}_{period}"
+        # 清理表名中的特殊字符
+        table_name = ''.join(c for c in table_name if c.isalnum() or c in ['_', '-'])
+
+        # 为了避免表名以数字开头导致的问题，添加前缀
+        safe_table_name = f"stock_{table_name}"
+        temp_table = f"{safe_table_name}_temp"
+
+        # 初始化一个空的DataFrame用于存储结果
+        result_df = pd.DataFrame()
+
+        # 尝试从数据库中读取已有数据
+        existing_df = None
+        import sqlite3
+        try:
+            conn = sqlite3.connect(db_path)
+
+            # 检查表是否存在
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{safe_table_name}'")
+            table_exists = cursor.fetchone() is not None
+
+            if table_exists:
+                # 读取已有数据
+                existing_df = pd.read_sql(f"SELECT * FROM {safe_table_name}", conn)
+
+                # 确定日期列名
+                date_col = None
+                possible_date_cols = ['日期', 'date', 'trade_date', 'timestamp']
+                for col in possible_date_cols:
+                    if col in existing_df.columns:
+                        date_col = col
+                        break
+
+                if date_col and not existing_df.empty:
+                    # 在转换前先检查日期列的格式
+                    # CommonUtil.printLog(f"股票{code}的日期列前5个样本值: {existing_df[date_col].head().tolist()}")
+
+                    # 创建一个副本用于处理，避免修改原始数据
+                    temp_df = existing_df.copy()
+
+                    # 首先尝试自动推断格式
+                    temp_df[date_col] = pd.to_datetime(temp_df[date_col], errors='coerce')
+
+                    # 检查转换后的日期列是否包含NaT值（表示转换失败）
+                    nat_count = temp_df[date_col].isna().sum()
+                    if nat_count > 0:
+                        CommonUtil.printLog(f"股票{code}的日期列有{nat_count}个值无法使用默认格式转换")
+
+                        # 获取无法转换的值
+                        invalid_dates = existing_df[temp_df[date_col].isna()][date_col]
+                        CommonUtil.printLog(f"股票{code}无法转换的日期样本: {invalid_dates.head().tolist()}")
+
+                        # 尝试其他格式
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y%m%d', '%m/%d/%Y', '%d/%m/%Y']:
+                            temp_df = existing_df.copy()
+                            temp_df[date_col] = pd.to_datetime(temp_df[date_col], format=fmt, errors='coerce')
+                            new_nat_count = temp_df[date_col].isna().sum()
+                            if new_nat_count < nat_count:
+                                CommonUtil.printLog(f"使用格式'{fmt}'成功转换了{nat_count - new_nat_count}个日期值")
+                                nat_count = new_nat_count
+                                existing_df = temp_df
+                                break
+
+                        # 如果仍有无法转换的值，尝试使用混合格式
+                        if nat_count > 0:
+                            temp_df = existing_df.copy()
+                            temp_df[date_col] = pd.to_datetime(temp_df[date_col], format='mixed', errors='coerce')
+                            new_nat_count = temp_df[date_col].isna().sum()
+                            if new_nat_count < nat_count:
+                                CommonUtil.printLog(f"使用混合格式成功转换了{nat_count - new_nat_count}个日期值")
+                                existing_df = temp_df
+                                nat_count = new_nat_count
+
+                    # 如果仍有无法转换的值，可以考虑删除这些行或使用默认值
+                    if nat_count > 0:
+                        CommonUtil.printLog(f"警告：股票{code}的日期列仍有{nat_count}个值无法转换，将删除这些行")
+                        existing_df = existing_df[~temp_df[date_col].isna()]
+
+                    # 获取已有数据的日期范围
+                    if not existing_df.empty:
+                        # 确保日期列是datetime类型
+                        existing_df[date_col] = pd.to_datetime(existing_df[date_col])
+                        min_existing_date = existing_df[date_col].min()
+                        max_existing_date = existing_df[date_col].max()
+
+                        # 将输入日期转换为datetime格式
+                        start_date_dt = pd.to_datetime(start_date, format='%Y%m%d')
+                        end_date_dt = pd.to_datetime(end_date, format='%Y%m%d')
+
+                        # 确定需要获取的新数据日期范围
+                        new_start_date = None
+                        new_end_date = None
+
+                        # 情况1: 请求的数据完全在已有数据之前
+                        if end_date_dt < min_existing_date:
+                            new_start_date = start_date
+                            new_end_date = end_date
+
+                        # 情况2: 请求的数据完全在已有数据之后
+                        elif start_date_dt > max_existing_date:
+                            new_start_date = start_date
+                            new_end_date = end_date
+
+                        # 情况3: 请求的数据与已有数据有重叠或间隔
+                        else:
+                            # 需要获取前面缺失的部分
+                            if start_date_dt < min_existing_date:
+                                new_start_date = start_date
+                                new_end_date = min_existing_date.strftime('%Y%m%d')
+                                # 获取前面缺失的数据
+                                new_df = AkShareUtil.query_stock_daily_history(
+                                    code, hk, period=period,
+                                    start_date=new_start_date,
+                                    end_date=new_end_date
+                                )
+                                if not new_df.empty:
+                                    result_df = pd.concat([result_df, new_df])
+
+                            # 需要获取后面缺失的部分
+                            if end_date_dt > max_existing_date:
+                                new_start_date = max_existing_date.strftime('%Y%m%d')
+                                new_end_date = end_date
+                                # 获取后面缺失的数据
+                                new_df = AkShareUtil.query_stock_daily_history(
+                                    code, hk, period=period,
+                                    start_date=new_start_date,
+                                    end_date=new_end_date
+                                )
+                                if not new_df.empty:
+                                    result_df = pd.concat([result_df, new_df])
+
+                        # 如果有需要获取的新数据
+                        if new_start_date is not None and new_end_date is not None and result_df.empty:
+                            new_df = AkShareUtil.query_stock_daily_history(
+                                code, hk, period=period,
+                                start_date=new_start_date,
+                                end_date=new_end_date
+                            )
+                            if not new_df.empty:
+                                result_df = new_df
+
+                        # 合并已有数据和新数据
+                        if not result_df.empty:
+                            # 添加股票代码列（如果不存在）
+                            if '股票代码' not in result_df.columns:
+                                result_df['股票代码'] = code
+
+                            # 确保日期列名一致
+                            if date_col != '日期' and '日期' in result_df.columns:
+                                result_df[date_col] = result_df['日期']
+
+                            # 将日期列转换为datetime格式
+                            try:
+                                result_df[date_col] = pd.to_datetime(result_df[date_col], errors='coerce')
+                            except:
+                                try:
+                                    result_df[date_col] = pd.to_datetime(result_df[date_col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                                except:
+                                    try:
+                                        result_df[date_col] = pd.to_datetime(result_df[date_col], format='%Y-%m-%d', errors='coerce')
+                                    except:
+                                        result_df[date_col] = pd.to_datetime(result_df[date_col], format='mixed', errors='coerce')
+
+                            # 检查并处理新数据中的无效日期
+                            nat_count_new = result_df[date_col].isna().sum()
+                            if nat_count_new > 0:
+                                CommonUtil.printLog(f"警告：新获取的股票{code}数据中有{nat_count_new}个日期值无法转换，将删除这些行")
+                                result_df = result_df[~result_df[date_col].isna()]
+
+                            # 确保日期列是datetime类型
+                            result_df[date_col] = pd.to_datetime(result_df[date_col])
+
+                            # 合并数据
+                            combined_df = pd.concat([existing_df, result_df])
+
+                            # 按日期排序
+                            combined_df = combined_df.sort_values(date_col)
+
+                            # 去重（保留最新数据）
+                            combined_df = combined_df.drop_duplicates(subset=[date_col, '股票代码'], keep='last')
+
+                            # 更新结果
+                            result_df = combined_df
+                        else:
+                            # 没有新数据，直接使用已有数据
+                            result_df = existing_df
+                    else:
+                        # 所有日期都无效，获取全部数据
+                        new_df = AkShareUtil.query_stock_daily_history(
+                            code, hk, period=period,
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                        if not new_df.empty:
+                            result_df = new_df
+                else:
+                    # 表存在但没有数据或日期列，获取全部数据
+                    new_df = AkShareUtil.query_stock_daily_history(
+                        code, hk, period=period,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    if not new_df.empty:
+                        result_df = new_df
+            else:
+                # 表不存在，获取全部数据
+                new_df = AkShareUtil.query_stock_daily_history(
+                    code, hk, period=period,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                if not new_df.empty:
+                    result_df = new_df
+
+            # 关闭数据库连接
+            conn.close()
+        except Exception as e:
+            CommonUtil.printLog(f"从数据库读取股票{code}数据失败: {e}")
+            # 如果从数据库读取失败，则直接获取数据
+            new_df = AkShareUtil.query_stock_daily_history(
+                code, hk, period=period,
+                start_date=start_date,
+                end_date=end_date
+            )
+            if not new_df.empty:
+                result_df = new_df
+
+        # 如果没有获取到数据，直接返回空DataFrame
+        if result_df.empty:
+            CommonUtil.printLog(f'股票{code}没有获取到数据')
+            return result_df
+
+        try:
+            # 重新连接数据库以保存数据
+            conn = sqlite3.connect(db_path)
+
+            # 确保日期列存在
+            date_col = None
+            possible_date_cols = ['日期', 'date', 'trade_date', 'timestamp']
+            for col in possible_date_cols:
+                if col in result_df.columns:
+                    date_col = col
+                    break
+
+            # 获取股票名称（如果可能）
+            stock_name = ''
+            if '股票名称' in result_df.columns:
+                stock_name = result_df['股票名称'].iloc[0]
+            elif 'name' in result_df.columns:
+                stock_name = result_df['name'].iloc[0]
+
+            # 添加股票代码和名称列（如果不存在）
+            if '股票代码' not in result_df.columns:
+                result_df['股票代码'] = code
+            if '股票名称' not in result_df.columns and stock_name:
+                result_df['股票名称'] = stock_name
+
+            # 创建一个副本用于存储到数据库
+            db_df = result_df.copy()
+
+            # 将日期列按照指定格式转换为字符串
+            if date_col and date_col in db_df.columns:
+                # 确保日期列是datetime类型
+                db_df[date_col] = pd.to_datetime(db_df[date_col], errors='coerce')
+                # 按照指定格式转换为字符串
+                db_df[date_col] = db_df[date_col].dt.strftime(db_date_format)
+                CommonUtil.printLog(f"已将日期列按照格式 '{db_date_format}' 转换为字符串")
+
+            # 创建临时表存储新数据
+            db_df.to_sql(temp_table, conn, if_exists='replace', index=False)
+
+            # 检查目标表是否存在，如果不存在则创建
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{safe_table_name}'")
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                # 如果表不存在，直接将临时表重命名为目标表
+                # 使用引号将表名括起来，以支持以数字开头的表名
+                cursor.execute(f'ALTER TABLE "{temp_table}" RENAME TO "{safe_table_name}"')
+                conn.commit()
+                CommonUtil.printLog(f"已创建新表 {safe_table_name} 并存储股票{code}的历史数据")
+            else:
+                # 如果表已存在，使用合并操作更新数据
+                # 合并数据：如果日期已存在则更新，否则插入
+                # 使用引号将表名括起来，以支持以数字开头的表名
+                merge_sql = f"""
+                INSERT OR REPLACE INTO "{safe_table_name}" ({', '.join(db_df.columns)})
+                SELECT {', '.join(db_df.columns)} FROM "{temp_table}"
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM "{safe_table_name}" 
+                    WHERE "{safe_table_name}"."{date_col}" = "{temp_table}"."{date_col}"
+                    AND "{safe_table_name}".股票代码 = '{code}'
+                )
+                """
+
+                # 执行合并操作
+                conn.execute(merge_sql)
+                conn.commit()
+
+                # 删除临时表
+                cursor.execute(f'DROP TABLE IF EXISTS "{temp_table}"')
+                conn.commit()
+
+                CommonUtil.printLog(f"已将股票{code}的历史数据按需更新到SQLite数据库: {db_path}, 表名: {safe_table_name}")
+
+            # 关闭连接
+            conn.close()
+
+            return result_df
+        except Exception as e:
+            CommonUtil.printLog(f"将股票{code}数据缓存到SQLite数据库失败: {e}")
+            return result_df
 
     @staticmethod
     def get_stock_zh_index(symbol: str = '上证系列指数') -> pd.DataFrame:
@@ -590,4 +937,6 @@ if __name__ == '__main__':
     # df
 
     # print(AkShareUtil.index_zh_a_hist('000300'))
-    print(AkShareUtil.stock_zh_index_daily('sh000300', '2025-04-01', '2025-09-30'))
+    # print(AkShareUtil.stock_zh_index_daily('sh000300', '2025-04-01', '2025-09-30'))
+
+    print(AkShareUtil.query_stock_daily_history_to_db('01810', True, '20250701', '20250930'))  # 小米集团
