@@ -236,8 +236,9 @@ class ConditionOrder(Runnable):
                 return
 
         # 卖出股票时, 若可用余额不足,则调整为可用余额
-        if self.deal_count < 0 and int(self.position.available_balance) < abs(self.deal_count):
-            self.deal_count = int(self.position.available_balance) * -1
+        # 列模式识别存在误差,可能提取不到导致无法卖出,此处不做限制
+        # if self.deal_count < 0 and int(self.position.available_balance) < abs(self.deal_count):
+        #     self.deal_count = int(self.position.available_balance) * -1
 
         self.position.cur_price = latest_price  # 当前价格
 

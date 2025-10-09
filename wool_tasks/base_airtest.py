@@ -4,6 +4,7 @@
 import os
 import sys
 import traceback
+from typing import Optional
 
 # 把项目根目录路径加入到 sys.path ,否则在shell中运行可能会提示找不到包
 # 参考: https://www.cnblogs.com/hi3254014978/p/15202910.html
@@ -742,7 +743,10 @@ class BaseAir(AbsWoolProject):
         return self.cnocrImpl.ocr(target_img)
 
     @log_time_consume(exclude_params=['full_img', 'title_key_dict'])
-    def ocr_grid_view(self, full_img, title_key_dict: dict, vertical_mode: bool = False, expand: int = 18, save_column_img: bool = False) -> list:
+    def ocr_grid_view(self, full_img, title_key_dict: dict, vertical_mode: bool = False,
+                      expand_left: int = 18, expand_right: int = 18,
+                      expand_lr_dict: Optional[dict] = None,
+                      save_column_img: bool = False) -> list:
         """
         对于带标题行的表格区域进行识别
         支持按行识别或者按列识别
@@ -752,10 +756,17 @@ class BaseAir(AbsWoolProject):
         :param title_key_dict: 列标题映射, 格式: {列标题名: 标题key}, 请保证包含所有列信息, 且顺序与表格列顺序一致
                                 其中 '列标题名' 是表格中列标题的文本, '标题key' 是该列的唯一标识, 最终会作为结果字典的key
         :param vertical_mode: 是否是列识别模式
-        :param expand: 列识别模式时, 对每列进行区域截图时, 额外增加的宽度, 默认为18
+        :param expand_left: 列识别模式时, 对每列进行区域截图时, 默认的左侧额外增加的宽度, 默认为18
+        :param expand_right: 列识别模式时, 对每列进行区域截图时, 默认的右侧额外增加的宽度, 默认为18
+        :param expand_lr_dict: 列识别模式时, 对每列进行区域截图时, 每列的做优偏移量信息,
+                                格式: { '列标题key': {'left': 10, 'right': 10}}  若 left / right 不存在,则使用 expand_left / expand_right
+                                其中 '列标题key'  是 title_key_dict 的 value
         :param save_column_img: 列识别模式时, 保存每列的截图, 用于调试, 默认为False
         :return: 除标题行外的表格内容, 每个元素是一个dict, 格式为: [{'标题key1': '列1内容', '标题key2': '列2内容', ...}, ...]
         """
+
+        if expand_lr_dict is None:
+            expand_lr_dict = {}
 
         # 请使用python3.7以上的版本,此时dict是按插入顺序存储的
         keys = list(title_key_dict.keys())  # 获取所有键的列表, 比如: ['证券代码' ,'证券名称']
@@ -806,8 +817,10 @@ class BaseAir(AbsWoolProject):
                 CommonUtil.printLog(f'列模式定位成功: {key},pre={prefixText},sub={subfixText},pos={self.calcCenterPos(pos)}')
 
                 # 根据标题列的坐标, 偏移获取到内容区域的返回
-                pos_left = pos[0][0] - expand  # 左边界往左偏移一点
-                pos_right = pos[1][0] + expand  # 右边界往右偏移一点
+                e_left = expand_lr_dict.get(value, expand_left)
+                e_right = expand_lr_dict.get(value, expand_right)
+                pos_left = pos[0][0] - e_left  # 左边界往左偏移一点
+                pos_right = pos[1][0] + e_right  # 右边界往右偏移一点
                 pos_top = pos[3][1]  # 左下角y值,向下偏移一点
                 w, h, d = full_img.shape
                 pos_bottom = h - 10  # 截图底部向上偏移一点
@@ -879,7 +892,7 @@ class BaseAir(AbsWoolProject):
                 if item_value is None:
                     CommonUtil.printLog(f'缺少属性 {value}, 原数据:{item} ')
                     item[value] = ""
-        # CommonUtil.printLog(f'ocr_grid_view 最终结果: {result}')
+        CommonUtil.printLog(f'ocr_grid_view 最终结果: {result}')
         return result
 
     def getWH(self) -> tuple:

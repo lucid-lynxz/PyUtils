@@ -57,6 +57,37 @@ class StockPosition:
         '交易市场': "market"
     }
 
+    # 列模式识别时,各列的做优偏移量,具体请根据 wool_tasks\ths_trade\cache\*_ocr_grid_view_{列名}.png 效果进行微调
+    title_expend_dict = {
+        'code': {
+            'right': 0
+        },
+        'name': {
+            'left': 8,
+            'right': 0
+        },
+        'balance': {
+            'left': 0,
+            'right': 4
+        },
+        'available_balance': {
+            'left': 0,
+            'right': 4
+        },
+        # 'cost_price': {
+        #     'left': 0,
+        #     'right': 0
+        # },
+        'market_price': {
+            'left': 12,
+            'right': 22
+        },
+        'market': {
+            'left': 12,
+            'right': 10
+        }
+    }
+
     def has_balance(self) -> bool:
         """是否有持仓"""
         return self.balance > 0

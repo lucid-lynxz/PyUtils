@@ -183,7 +183,7 @@ class THSTrader(BaseAir4Windows):
         """
         # 持仓信息列表头目前从左到右, 依次是: 证券代码 证券名称 股票余额 可用余额 冻结数量 成本价 市价 盈亏盈亏比(%) 当日盈亏 当日盈亏比(%) 市值 仓位占比(%) 当日买入 当日卖出 交易市场
         # 因此此处通过 '证券代码' 和 '仓位参比'  两个字符串的位置, 来确定持仓信息(含标题含)的左/上/右边界, 然后根据坐标, 按行提取股票持仓信息
-        # 另外比如港股股票代码签名可能有其他表示信息, 因此左边界适当往左便宜一点
+        # 另外比如港股股票代码签名可能有其他表示信息, 因此左边界适当往左偏移一点
         CommonUtil.printLog(f'get_all_stock_position')
         self.toggle_window_mode(3)  # 最大化窗口
         self.text("{ESC}")
@@ -215,7 +215,7 @@ class THSTrader(BaseAir4Windows):
 
         full_img = self.crop_img(self.snapshot_img, fromX=self.position_rect[0], fromY=self.position_rect[1],
                                  toX=self.position_rect[2], toY=self.position_rect[3])
-        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, save_column_img=False)
+        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, expand_left=8, expand_right=18, save_column_img=True)
         # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
@@ -386,10 +386,10 @@ class THSTrader(BaseAir4Windows):
         :param price: 价格, 大于0有效, 若传入 <=0 的值, 则表示使用软件提供的买卖价进行交易, 一般卖操作时, 会使用买一价, 买入操作时,使用卖一价
         :param amount: 数量,单位:股,  正数表示买入, 负数表示卖出 0表示只做监控, 发出通知,不触发交易
         """
+        CommonUtil.printLog(f'deal({code},{price},{amount}) start')
         if amount == 0:
             return False
 
-        CommonUtil.printLog(f'deal({code},{price},{amount}) start')
         self.set_foreground()  # 切换到前台
         buy = amount > 0  # true-买入 false-卖出
         amount = abs(amount)
