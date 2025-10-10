@@ -98,6 +98,38 @@ class ImageUtil:
             CommonUtil.printLog(f"resize fail:{e}")
             return self
 
+    def resize_rect(self, rect: list, width: float, height: float) -> list:
+        """
+        根据图像的实际大小和目标大小缩放矩形框, 使得 rect 坐标满足实际图像大小
+
+        :param rect: 矩形框坐标, 支持两种含义: (left, top, right, bottom) 或者 (left,top,width,height)
+        :param width: 目标宽度, 正数有效
+        :param height: 目标高度, 正数有效
+        """
+        if not self.image:
+            CommonUtil.printLog("resize_rect fail:未加载图像")
+            return rect
+
+        if width <= 0 or height <= 0:
+            return rect
+
+        img_width = self.image.width
+        img_height = self.image.height
+        scale_x = img_width / width
+        scale_y = img_height / height
+        left = rect[0] * scale_x
+        top = rect[1] * scale_y
+
+        right_or_width = rect[2] * scale_x  # 若为ltrb模式, 则rect[2]表示right 否则表示width
+        bottom_or_height = rect[3] * scale_y  # 若为ltrb模式, 则rect[3]表示bottom 否则表示height
+
+        result_rect = [left, top, right_or_width, bottom_or_height]
+        CommonUtil.printLog(
+            f'resize_rect image_w,h={img_width},{img_height}, target_w,h={width},{height}'
+            f',scale_x,y={scale_x:.2f},{scale_y:.2f}'
+            f',rect={rect} -> {result_rect}')
+        return result_rect
+
     def crop(self, left, top, right, bottom) -> Self:
         """
         裁剪图像
@@ -208,7 +240,23 @@ class ImageUtil:
         self._font = font
         return font
 
-    def draw_rectangle(self, position: list, ltrb: bool = True, outline_color=(255, 0, 0), fill_color=None, width=3) -> Self:
+    def draw_multi_rectangle(self, multi_rect: list, ltrb: bool = True,
+                             width: float = 0, height: float = 0,
+                             outline_color=(255, 0, 0),
+                             fill_color=None,
+                             border_width=3) -> Self:
+        """
+        一次性绘制多个矩形框
+        :param multi_rect: 多个矩形框坐标, 每个元素也是个列表, 支持两种含义: (left, top, right, bottom) 或者 (left,top,width,height), 但所有元素必须是同一种含义
+        :param ltrb:  元素是否表示左上右下坐标  若为false,则表示: left,top,width,height
+        :pram width: 目标宽度, 正数有效. 会根据实际图像大小对矩形框坐标进行缩放
+        :param height: 目标高度, 正数有效
+        """
+        for rect in multi_rect:
+            self.draw_rectangle(self.resize_rect(rect, width, height), ltrb, outline_color, fill_color, border_width)
+        return self
+
+    def draw_rectangle(self, position: list, ltrb: bool = True, outline_color=(255, 0, 0), fill_color=None, border_width=3) -> Self:
         """
         在图像上绘制矩形框
 
@@ -217,7 +265,7 @@ class ImageUtil:
             ltrb(bool): position是否表示左上右下坐标  若为false,则表示: left,top,width,height
             outline_color (tuple, optional): 边框颜色，默认红色
             fill_color (tuple, optional): 填充颜色，默认无填充
-            width (int, optional): 边框宽度，默认2
+            border_width (int, optional): 边框宽度，默认2
 
         Returns:
             self: 返回实例本身以支持链式调用
@@ -233,7 +281,7 @@ class ImageUtil:
 
         try:
             draw = ImageDraw.Draw(self.image)
-            draw.rectangle(pos, outline=outline_color, fill=fill_color, width=width)
+            draw.rectangle(pos, outline=outline_color, fill=fill_color, width=border_width)
             return self
         except Exception as e:
             CommonUtil.printLog(f"draw_rectangle fail:{e}")
@@ -435,14 +483,19 @@ if __name__ == "__main__":
     # 创建处理器实例
     img_path = r"H:\Pictures\拯救姬.jpg"
     processor = ImageUtil()
+    width = 800
+    height = 600
 
     # 示例操作：打开图像、缩放、裁剪、绘制内容、保存和显示
     (processor.open_image(img_path)
-     .resize(800, 600)
+     .resize(width, height)
      .crop(100, 100, 700, 500)
      .draw_text("示例文字", (50, 50), font_size=30, color=(255, 0, 0))
-     .draw_rectangle((150, 150, 450, 350), outline_color=(0, 255, 0), width=3)
+     .draw_rectangle([150, 150, 450, 350], outline_color=(0, 255, 0), border_width=3)
+     # .draw_multi_rectangle([[300, 300, 380, 380], [400, 400, 450, 450]],
+     #                       ltrb=True, width=width, height=height, outline_color=(255, 0, 0))
      .draw_circle((400, 200), 50, outline_color=(0, 0, 255), width=2)
+     # .crop(100, 100, 700, 500)
      .show()
      .save(f'H:\Pictures\拯救姬_1111.jpg')
      )
