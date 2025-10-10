@@ -63,8 +63,8 @@ class StockPosition:
             'right': 0
         },
         'name': {
-            'left': 8,
-            'right': 0
+            'left': 18,
+            'right': 8
         },
         'balance': {
             'left': 0,
@@ -72,7 +72,7 @@ class StockPosition:
         },
         'available_balance': {
             'left': 0,
-            'right': 4
+            'right': 6
         },
         # 'cost_price': {
         #     'left': 0,
@@ -80,11 +80,11 @@ class StockPosition:
         # },
         'market_price': {
             'left': 12,
-            'right': 22
+            'right': 24
         },
         'market': {
-            'left': 12,
-            'right': 10
+            'left': 9,
+            'right': 9
         }
     }
 

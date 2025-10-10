@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from base.Interfaces import Runnable
 from util.AkShareUtil import AkShareUtil
@@ -121,6 +121,11 @@ class ConditionOrder(Runnable):
 
         self.summary_info = f"""{self.position.code} {self.position.name}({self.position.market})\n基准:{self.base}, 幅度:{self.bounce}, 方向:{'向上' if self.break_upward else '向下'},数量:{self.deal_count}"""
         self.summary_info_1line = self.summary_info.replace('\n', ' ').strip()
+
+        # 本条件单所在的配置文件路径和行号信息, 用于触发后将对应条件单置为无效
+        self.config_path: Optional[str] = None  # 配置文件路径
+        self.row_number: int = -1  # 行号
+        self.row_str: Optional[str] = None  # 原始内容
 
     def use_long_bridge(self) -> bool:
         """
@@ -312,11 +317,13 @@ class ConditionOrder(Runnable):
                 else:  # 卖出
                     self.position.balance = str(self.position.balance + self.deal_count)
                     self.position.available_balance = str(self.position.available_balance + self.deal_count)
+
             msg = f'{self.summary_info}\n极值:{self.extreme_value},{price_tip}:{latest_price}\n进行deal操作:{success} by {app_name}'
             NetUtil.push_to_robot(msg, printLog=True)
 
             # 将交易结果发送到指定邮箱
             if not CommonUtil.isNoneOrBlank(deal_img_path) and self.mailUtil is not None:
+                self.mailUtil.obtainMailMsg(True)  # 清空邮件内容
                 # 正文中插入图片, 测试后,该文件不会再显示再附件中(qq邮箱)
                 # 1. 添加图片附件
                 cid = self.mailUtil.addAttachFile(deal_img_path, "image")
@@ -326,3 +333,13 @@ class ConditionOrder(Runnable):
                 # 发送到指定邮箱
                 senderrs = self.mailUtil.sendTo()
                 NetUtil.push_to_robot(f'发送邮件结果:{senderrs}\ndeal_img_path={deal_img_path}', printLog=True)
+
+            # 将条件单配置文件中的对应项置为无效
+            if success and not CommonUtil.isNoneOrBlank(self.config_path) and self.row_number >= 0:
+                lines = FileUtil.readFile(self.config_path)
+                if self.row_number < len(lines):
+                    line_str = lines[self.row_number]
+                    lines[self.row_number] = f'# {line_str}'
+                    write_success = FileUtil.write2File(self.config_path, ''.join(lines))
+                    msg = f'将条件单配置文件中的对应项置为无效,写入结果:{write_success},行号:{self.row_number},内容:"{self.row_str}",文件路径:{self.config_path}'
+                    NetUtil.push_to_robot(msg, printLog=True)

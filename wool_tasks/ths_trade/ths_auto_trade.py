@@ -202,7 +202,7 @@ class THSTrader(BaseAir4Windows):
             pos_top = pos[0][1]  # 左上角y值,向下偏移一点
 
             pos, _, _ = self.findTextByCnOCRResult(ocrResList, '交易市场', prefixText='成本价')
-            pos_right = pos[1][0] + 5  # 右边界往右偏移N个像素, 首次运行时, 偏移量请根据实际同花顺布局微调, 具体见 'cache/{时间}_ocr_grid_view_{类名信息}.png' 截图效果
+            pos_right = pos[1][0] + 20  # 右边界往右偏移N个像素, 首次运行时, 偏移量请根据实际同花顺布局微调, 具体见 'cache/{时间}_ocr_grid_view_{类名信息}.png' 截图效果
             w, h = self.getWH()
             pos_bottom = h - 70
             self.position_rect = pos_left, pos_top, pos_right, pos_bottom
@@ -215,7 +215,9 @@ class THSTrader(BaseAir4Windows):
 
         full_img = self.crop_img(self.snapshot_img, fromX=self.position_rect[0], fromY=self.position_rect[1],
                                  toX=self.position_rect[2], toY=self.position_rect[3])
-        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, expand_left=8, expand_right=18, save_column_img=True)
+        dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, expand_left=8, expand_right=18,
+                                      expand_lr_dict=StockPosition.title_expend_dict,
+                                      save_column_img=True)
         # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除
@@ -455,8 +457,10 @@ class THSTrader(BaseAir4Windows):
         # startTs = TimeUtil.currentTimeMillis()
         # self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
         start_ts = TimeUtil.currentTimeMillis()
-        img = self.crop_img(self.snapshot(), 800, 500, 1600, 1000)
+        img = self.snapshot()
         self.last_deal_img_path = self.saveImage(img, img_name, dirPath=f'{self.cacheDir}/deal/')
+
+        img = self.crop_img(img, 800, 500, 1600, 1000)
         delta_ms = TimeUtil.currentTimeMillis() - start_ts
         CommonUtil.printLog(f'deal 交易股票保存裁剪后的截图耗时: {delta_ms / 1000:.1f} 秒, 图片路径: {self.last_deal_img_path}')
 

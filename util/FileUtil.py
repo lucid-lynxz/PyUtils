@@ -34,12 +34,13 @@ class FileUtil(object):
             return False
 
     @staticmethod
-    def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = None) -> str:
+    def recookPath(path: str, forceEnableLongPath: bool = False, replaceBlank: str = None, replaceBackSlash: bool = True) -> str:
         """
         路径字符串处理: 替换 反斜杠 为 斜杠
         :param path: 路径字符串, 支持绝对路径和部分相对路径等特殊格式, 比如: './a.txt'  '../b.txt'  '~/c.txt'
         :param forceEnableLongPath: win下是否强制启用长目录路径格式
         :param replaceBlank: 回车空格字符要替换为指定的值, None表示不处理
+        :param replaceBackSlash: 是否将反斜杠替换为斜杠
         :return: 处理后的路径,为避免空指针,返回值均为非None
         """
         if CommonUtil.isNoneOrBlank(path):
@@ -52,7 +53,10 @@ class FileUtil(object):
         if path.startswith('.'):
             path = os.path.abspath(path)
 
-        path = path.replace("\\", "/").replace("//", "/")
+        if replaceBackSlash:
+            path = path.replace('\\', '/')
+        path = path.replace("//", "/")
+
         if replaceBlank is not None:
             path = path.replace(' ', replaceBlank).replace('\n', replaceBlank)
 
@@ -603,11 +607,17 @@ class FileUtil(object):
 
                 # 去除等号和空格, 将等号转为逗号,避免原内容中包含冒号时, 冒号会被识别为 key-value 的分隔符
                 row_str = delimiter.join(row)
+                ori_row_str = row_str
                 row_str = row_str.replace('=', ',').replace(' ', '')
                 row = row_str.split(delimiter)
 
                 try:
                     obj = object_class.from_csv_row(row)
+
+                    obj.config_path = file_path
+                    obj.row_number = row_num
+                    obj.row_str = ori_row_str
+
                     objects.append(obj)
                 except Exception as e:
                     print(f"警告: 第{row_num}行解析失败 - {e}. 行内容: {row}")

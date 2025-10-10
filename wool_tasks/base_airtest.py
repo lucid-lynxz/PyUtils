@@ -768,6 +768,11 @@ class BaseAir(AbsWoolProject):
         if expand_lr_dict is None:
             expand_lr_dict = {}
 
+        default_lr_dict = {
+            'left': expand_left,
+            'right': expand_right
+        }
+
         # 请使用python3.7以上的版本,此时dict是按插入顺序存储的
         keys = list(title_key_dict.keys())  # 获取所有键的列表, 比如: ['证券代码' ,'证券名称']
         values = list(title_key_dict.values())  # 获取所有值的列表, 比如: ['code','name']
@@ -817,8 +822,8 @@ class BaseAir(AbsWoolProject):
                 CommonUtil.printLog(f'列模式定位成功: {key},pre={prefixText},sub={subfixText},pos={self.calcCenterPos(pos)}')
 
                 # 根据标题列的坐标, 偏移获取到内容区域的返回
-                e_left = expand_lr_dict.get(value, expand_left)
-                e_right = expand_lr_dict.get(value, expand_right)
+                e_left = expand_lr_dict.get(value, default_lr_dict).get('left', expand_left)
+                e_right = expand_lr_dict.get(value, default_lr_dict).get('right', expand_right)
                 pos_left = pos[0][0] - e_left  # 左边界往左偏移一点
                 pos_right = pos[1][0] + e_right  # 右边界往右偏移一点
                 pos_top = pos[3][1]  # 左下角y值,向下偏移一点
