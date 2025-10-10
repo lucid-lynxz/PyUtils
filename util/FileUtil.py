@@ -603,11 +603,17 @@ class FileUtil(object):
 
                 # 去除等号和空格, 将等号转为逗号,避免原内容中包含冒号时, 冒号会被识别为 key-value 的分隔符
                 row_str = delimiter.join(row)
+                ori_row_str = row_str
                 row_str = row_str.replace('=', ',').replace(' ', '')
                 row = row_str.split(delimiter)
 
                 try:
                     obj = object_class.from_csv_row(row)
+
+                    obj.config_path = file_path
+                    obj.row_number = row_num
+                    obj.row_str = ori_row_str
+
                     objects.append(obj)
                 except Exception as e:
                     print(f"警告: 第{row_num}行解析失败 - {e}. 行内容: {row}")

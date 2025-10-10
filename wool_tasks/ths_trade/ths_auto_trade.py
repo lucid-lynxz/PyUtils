@@ -455,8 +455,10 @@ class THSTrader(BaseAir4Windows):
         # startTs = TimeUtil.currentTimeMillis()
         # self.last_deal_img_path = self.saveImage(self.snapshot(), img_name, dirPath=f'{self.cacheDir}/deal/')
         start_ts = TimeUtil.currentTimeMillis()
-        img = self.crop_img(self.snapshot(), 800, 500, 1600, 1000)
+        img = self.snapshot()
         self.last_deal_img_path = self.saveImage(img, img_name, dirPath=f'{self.cacheDir}/deal/')
+
+        img = self.crop_img(img, 800, 500, 1600, 1000)
         delta_ms = TimeUtil.currentTimeMillis() - start_ts
         CommonUtil.printLog(f'deal 交易股票保存裁剪后的截图耗时: {delta_ms / 1000:.1f} 秒, 图片路径: {self.last_deal_img_path}')
 
