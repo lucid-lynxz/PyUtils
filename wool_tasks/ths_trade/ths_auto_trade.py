@@ -217,7 +217,7 @@ class THSTrader(BaseAir4Windows):
                                  toX=self.position_rect[2], toY=self.position_rect[3])
         dictList = self.ocr_grid_view(full_img, StockPosition.title_key_dict, True, expand_left=8, expand_right=18,
                                       expand_lr_dict=StockPosition.title_expend_dict,
-                                      save_column_img=True)
+                                      save_column_img=False)
         # self.saveImage(full_img, '持仓截图')
 
         # 同花顺港股代码前面会有个图形,可能会被识别为:  营/雪 等字体, 需要删除

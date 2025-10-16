@@ -1,7 +1,8 @@
 import concurrent.futures
 import os
-import subprocess
 import sys
+import sqlite3
+import subprocess
 import pandas as pd
 from typing import Dict, List, Tuple, Type, Any, Optional
 
@@ -11,11 +12,12 @@ from typing_extensions import Self
 from util.FileUtil import FileUtil
 from util.ImageUtil import ImageUtil
 from util.TimedStdout import TimedStdout
+from util.pybroker.base_strategy import BackTestInfo
 from util.pybroker.StrategyBrakout import StrategyBreakout
 from util.pybroker.StrategyDMA import StrategyDMA
 from util.pybroker.StrategyMACD import StrategyMACD
 from util.pybroker.StrategyReversal import StrategyReversal
-from util.pybroker.base_strategy import BackTestInfo
+from util.pybroker.StrategyScore import StrategyScore
 
 
 class StrategyManager:
@@ -43,6 +45,7 @@ class StrategyManager:
         :param end_date: 回测结束日期
         :param fmt: 时间格式, 默认为: '%Y%m%d'
         """
+        self.cache_dir_path = FileUtil.create_cache_dir(None, __file__)
         TimedStdout.activate(True)
         self.init_cash = init_cash
         self.warmup = warmup
@@ -90,7 +93,7 @@ class StrategyManager:
         :param kwargs: 策略参数, 其中必传 'symbols' 表示要回测的股票代码, 支持列表或者单个字符串
         """
         symbols = kwargs.get('symbols')
-        if not symbols:
+        if symbols is None:
             raise ValueError("Symbols must be provided for the strategy.")
         if isinstance(symbols, str):
             symbols = [symbols]
@@ -194,14 +197,15 @@ if __name__ == '__main__':
 
     init_cash: int = 100000  # 初始资金, 10w
     warmup: int = 15
-    start_date = '20250101'
-    end_date = '20250930'
+    start_date = '20250401'
+    end_date = '20251016'
     fmt = '%Y%m%d'
 
     symbol1 = '000001.SZ'  # 平安银行  或者 000001.SZ
     symbol2 = '600000.SH'  # 浦发银行  或者 600000.SH
     symbol3 = '600580.SH'  # 卧龙电驱
     # symbol4 = '01024.HK'  # 快手-W 港股
+    symbol5 = '600536.SH'  # 中国软件
     symbol = symbol3
 
     # 创建策略管理器实例
@@ -212,6 +216,18 @@ if __name__ == '__main__':
     manager.add_strategy(StrategyReversal, symbols=symbol, days=5, bounce_low=1.05, bounce_high=0.97, stop_loss_pct=8, stop_profit_pct=13)
     manager.add_strategy(StrategyMACD, symbols=symbol, fastperiod=12, slowperiod=26, signalperiod=9)
     manager.add_strategy(StrategyDMA, symbols=symbol, short_period=5, long_period=20)
+
+    # # 从本地数据库中获取数据, 进行因子回测
+    # # stock_2018.db 5年股票行情与财务数据下载链接：https://pan.baidu.com/s/1m7EgZXK1ecTJlHzah-b-Xg 提取码:23s0
+    # # 下载后放到 util/pybroker/cache/ 目录下
+    # manager = StrategyManager(init_cash=100000, warmup=15, start_date='20180102', end_date='20230217', base_symbol='sh000300', fmt=fmt)
+    # conn = sqlite3.connect(f'{manager.cache_dir_path}/stock_2018.db')
+    # stock_daily0 = pd.read_sql("select * from stock_daily where 股票代码>'003000.SZ'", con=conn)
+    # stock_daily0["交易日期"] = pd.to_datetime(stock_daily0["交易日期"].astype(str))
+    # pyb_data_pe = stock_daily0[["交易日期", "股票代码", "开盘价", "最高价", "最低价", "收盘价", "成交量(手)", "市盈率(静态)"]]
+    # pyb_data_pe.columns = ["date", "symbol", "open", "high", "low", "close", "volume", "pe"]
+    # print(f'stock_2018.db的数据范围: {stock_daily0["交易日期"].min()} --> {stock_daily0["交易日期"].max()}')  # 2018-01-02 --> 2023-02-17
+    # manager.add_strategy(StrategyScore, data_source=pyb_data_pe, symbols=pyb_data_pe.symbol.unique()[100:120], score_property='pe', score_threshold=100, larger=True)
 
     # 执行所有策略
     manager.run_all_strategies()

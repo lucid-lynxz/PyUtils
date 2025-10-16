@@ -193,7 +193,11 @@ class BaseStrategy(object):
         output_dir.mkdir(exist_ok=True)
 
         # 保存图形文件
-        plot_file = output_dir / f'{self.strategy_name}_{self.symbols}_equity.png'
+        if isinstance(self.symbols, str):
+            symbol_names = self.symbols
+        else:
+            symbol_names = f'{self.symbols[0]}_more'
+        plot_file = output_dir / f'{self.strategy_name}_{symbol_names}_equity.png'
         fig.savefig(plot_file)
         plt.close(fig)  # 关闭图形以释放内存
 
