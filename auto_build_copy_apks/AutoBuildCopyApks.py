@@ -155,5 +155,5 @@ class AutoBuildCopyApkImpl(BaseConfig):
         NetUtil.push_to_robot(f'AutoBuildCopyApkImpl 已全部完成\n耗时:{total_time}{fail_project_info}{cmd_after_all_info}')
 
         if not CommonUtil.isNoneOrBlank(cmd_after_all):
-            result = CommonUtil.exeCmd(cmd_after_all, timeout=600)
+            result = CommonUtil.exeCmdBySubprocess(cmd_after_all, timeout=600)
             NetUtil.push_to_robot(f'AutoBuildCopyApkImpl 执行命令:{cmd_after_all}\n结果:{result}')

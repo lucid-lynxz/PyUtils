@@ -64,7 +64,35 @@ class CommonUtil(object):
                 print(f"printLog exception {e}", flush=True)
 
     @classmethod
-    def exeCmd(cls, cmd: str, printCmdInfo: bool = True, timeout: int = 30) -> str:
+    def exeCmd(cls, cmd: str, printCmdInfo: bool = True) -> str:
+        """
+        执行shell命令, 可得到返回值
+        :param cmd: 待执行的命令
+        :param printCmdInfo: 是否打印命令内容
+        """
+        # CommonUtil.printLog("execute cmd: %s" % cmd, printCmdInfo)
+        # readlines = os.popen(cmd).readlines()
+        # result = "".join(readlines)
+        # CommonUtil.printLog("result=%s" % result)
+        # return result
+
+        try:
+            with os.popen(cmd) as fp:
+                bf = fp._stream.buffer.read()
+        except Exception as e:
+            CommonUtil.printLog(f"exeCmd exception:{cmd}\n{e}".strip())
+            return ""
+
+        try:
+            cmd_result = bf.decode('utf8', 'ignore').strip()
+        except UnicodeDecodeError:
+            cmd_result = bf.decode('gbk', 'ignore').strip()
+
+        CommonUtil.printLog(f"exeCmd:{cmd}\n{cmd_result}".strip(), printCmdInfo)
+        return cmd_result
+
+    @classmethod
+    def exeCmdBySubprocess(cls, cmd: str, printCmdInfo: bool = True, timeout: int = 30) -> str:
         """
         执行shell命令, 可得到返回值
         :param cmd: 待执行的命令
