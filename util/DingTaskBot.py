@@ -1,7 +1,4 @@
 from typing import Optional, Dict, Any
-
-import requests
-
 from util.CommonUtil import CommonUtil
 
 
@@ -127,6 +124,7 @@ class DingTalkBot:
         :return: 响应结果
         """
 
+        import requests
         try:
             url = self._generate_url()
             response = requests.post(url, json=data, headers=self.headers)

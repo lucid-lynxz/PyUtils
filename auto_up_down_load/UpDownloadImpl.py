@@ -29,9 +29,9 @@ class UpDownloadImpl(BaseConfig):
     def onRun(self):
         self.update_delimiters('=')
         settings = self.configParser.getSectionItems('settings')
-        enable_upload: bool = settings.get('enable_upload', True)
-        enable_download: bool = settings.get('enable_download', True)
-        overwrite: bool = settings.get('overwrite', True)
+        enable_upload: bool = settings.get('enable_upload', 'True') == 'True'
+        enable_download: bool = settings.get('enable_download', 'True') == 'True'
+        overwrite: bool = settings.get('overwrite', 'True') == 'True'
         upload_info_name: bool = settings.get('upload_info_name', '')
 
         upload_items: dict = self.configParser.getSectionItems('upload')

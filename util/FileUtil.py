@@ -50,8 +50,12 @@ class FileUtil(object):
             path = '%s%s' % (os.path.expanduser("~"), path[1:])
             return FileUtil.recookPath(path)
 
+        # 以点开头的路径,扩展为实际路径,并恢复结尾可能存在的斜杠符号
         if path.startswith('.'):
+            last_ele = path[-1]
             path = os.path.abspath(path)
+            if not path.endswith('/') and last_ele in ['/', '\\']:
+                path = path + last_ele
 
         if replaceBackSlash:
             path = path.replace('\\', '/')
