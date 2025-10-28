@@ -1110,14 +1110,18 @@ class AkShareUtil:
         文档:https://akshare.akfamily.xyz/data/stock/stock.html
         :param force: 是否强制从网络获取数据, 默认为False, 表示从缓存中读取数据, 当为True时, 从网络获取数据
         """
-        latest_trade_day = AkShareUtil.get_latest_trade_date(fmt='%Y%m%d')
-        cache_file_path = AkShareUtil.get_cache_path(f'zh_a_hist/{latest_trade_day}')
-        if not force and FileUtil.isFileExist(cache_file_path):
-            return pd.read_csv(cache_file_path)
+        try:
+            latest_trade_day = AkShareUtil.get_latest_trade_date(fmt='%Y%m%d')
+            cache_file_path = AkShareUtil.get_cache_path(f'zh_a_hist/{latest_trade_day}')
+            if not force and FileUtil.isFileExist(cache_file_path):
+                return pd.read_csv(cache_file_path)
 
-        df = ak.stock_zh_a_spot_em()
-        AkShareUtil.save_cache(df, cache_file_path)
-        return df
+            df = ak.stock_zh_a_spot_em()
+            AkShareUtil.save_cache(df, cache_file_path)
+            return df
+        except Exception as e:
+            print(f'stock_zh_a_spot_em: {e}')
+        return pd.DataFrame()
 
 
 if __name__ == '__main__':

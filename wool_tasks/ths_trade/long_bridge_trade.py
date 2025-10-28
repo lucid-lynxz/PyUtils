@@ -9,6 +9,7 @@ from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
+from util.NetUtil import NetUtil
 
 
 class LBTrader(object):
@@ -41,6 +42,16 @@ class LBTrader(object):
         self.app_key = lb_settings.get('app_key')
         self.app_secret = lb_settings.get('app_secret')
         self.access_token = lb_settings.get('access_token')
+        self.expire_day = lb_settings.get('expire_day')
+
+        # token过期提醒: https://open.longportapp.com/zh-CN/account
+        fmt = '%Y-%m-%d'
+        today = TimeUtil.getTimeStr(fmt)
+        dif_day = TimeUtil.dateDiff(today, self.expire_day, fmt)
+        # print(f'dif_day={dif_day}')
+        if dif_day >= -3:
+            NetUtil.push_to_robot(f'长桥证券api参数将于 {self.expire_day} 过期, 请及时更新')
+
         self.active = (not CommonUtil.isNoneOrBlank(self.app_key)
                        and not CommonUtil.isNoneOrBlank(self.app_secret)
                        and not CommonUtil.isNoneOrBlank(self.access_token))
@@ -67,7 +78,7 @@ class LBTrader(object):
             # 订阅行情
             self.quoteCtx = QuoteContext(config)
         except Exception as e:
-            CommonUtil.printLog(f'长桥证券初始化失败, 请检查配置文件, 错误信息: {e}')
+            NetUtil.push_to_robot(f'长桥证券初始化失败, 请检查配置文件, 错误信息: {e}')
             self.active = False
 
     def set_on_subscribe(self, listener):
