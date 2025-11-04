@@ -123,7 +123,6 @@ class DingTalkBot:
         :param data: 构建好的消息数据
         :return: 响应结果
         """
-
         import requests
         try:
             url = self._generate_url()

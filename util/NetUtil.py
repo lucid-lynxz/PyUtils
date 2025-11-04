@@ -8,7 +8,7 @@ import urllib.request as urllib2
 from urllib.error import URLError, HTTPError
 
 from util.CommonUtil import CommonUtil
-from util.DingTaskBot import DingTalkBot
+from util.DingTalkBot import DingTalkBot
 from util.TimeUtil import TimeUtil
 from util.FileUtil import FileUtil
 
