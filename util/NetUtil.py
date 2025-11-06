@@ -192,9 +192,23 @@ class NetUtil(object):
                     b64_credentials = base64.b64encode(credentials).decode('utf-8')
                     headers['Authorization'] = f'Basic {b64_credentials}'
 
+                # 创建支持重定向的opener
+                opener = urllib2.build_opener(urllib2.HTTPRedirectHandler(), urllib2.HTTPSHandler())
+                urllib2.install_opener(opener)
+
                 req = urllib2.Request(url, headers=headers)
                 timeout = kwargs.get('timeout', 10)
                 response = urllib2.urlopen(req, timeout=timeout)
+
+                # 获取重定向后的最终URL文件名（如果需要）
+                final_url = response.geturl()
+                if final_url != url:
+                    final_filename = final_url.split("/")[-1]
+                    # 如果原始URL没有文件名或者最终URL的文件名不同，则更新文件名
+                    if (not filename or '?' in filename or filename == final_url.split('/')[-2] + '/'):
+                        if CommonUtil.isNoneOrBlank(save_path) or save_path.endswith('/') or save_path.endswith(filename):
+                            save_path = save_path.rsplit('/', 1)[0] + '/' + final_filename if '/' in save_path else final_filename
+                        CommonUtil.printLog(f'Redirected to {final_url}, using filename: {final_filename}')
 
                 # 获取文件总大小
                 total_size = int(response.headers.get('Content-Length', 0))
@@ -217,7 +231,7 @@ class NetUtil(object):
                                 duration_sec = (TimeUtil.currentTimeMillis() - start_ms) / 1000
                                 file_size = FileUtil.format_size(total_size)
                                 avg_speed = FileUtil.format_speed(total_size / duration_sec) if duration_sec > 0 else "0 B/s"
-                                CommonUtil.printLog(f'文件大小:{file_size},耗时:{duration_sec:.2f}s,平均下载速度:{avg_speed}', prefix='\n')
+                                CommonUtil.printLog(f'file size:{file_size},consume:{duration_sec:.2f}s,avg speed:{avg_speed}', prefix='\n')
                 CommonUtil.printLog(f'download finish,save_path={save_path}')
                 return save_path
             except HTTPError as e:
@@ -234,4 +248,4 @@ class NetUtil(object):
 
 if __name__ == '__main__':
     _url = "https://tac.gientech.com/tac/download/mobile/software/SecID.apk"
-    NetUtil.download(_url, './')
+    NetUtil.download(_url, './cache/')

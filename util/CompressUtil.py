@@ -39,12 +39,12 @@ class CompressUtil(object):
         :param printCmdInfo:执行命令时是否打印命令内容
         :return: 最终压缩文件路径, 若压缩失败,则返回 ""
         """
-        if CommonUtil.isNoneOrBlank(src):
-            print("压缩失败:参数异常,请确认源文件路径正确")
+        if CommonUtil.isNoneOrBlank(src): # 参数异常:源文件路径
+            CommonUtil.printLog("Compression failed: Parameter exception, please confirm the source file path is correct")
             return ""
 
-        if not os.path.exists(src):
-            print("压缩失败:源文件不存在,请检查后再试")
+        if not os.path.exists(src): # 源文件不存在
+            CommonUtil.printLog("Compression failed: Source file does not exist, please check and try again")
             return ""
 
         if CommonUtil.isNoneOrBlank(dst):
@@ -88,8 +88,8 @@ class CompressUtil(object):
         :param printCmdInfo:是否打印日志
         :return: (bool,str) 前者表示是否解压成功, 后者表示解压目录路径,若失败,则返回 None
         """
-        if not os.path.exists(src7zFile):
-            print("压缩文件不存在,请检查后重试: ", src7zFile)
+        if not os.path.exists(src7zFile): # 压缩文件不存在
+            CommonUtil.printLog(f"Compressed file does not exist, please check and try again: {src7zFile}")
             return False, dest
 
         src7zFile = src7zFile.replace("\\", "/")
@@ -110,7 +110,7 @@ class CompressUtil(object):
         # 注意 -o 与后面的解压目录之间不要有空格
         result = CommonUtil.exeCmd(
             "echo %s | %s x %s -y -aos -o%s %s" % (pCmd, self.sevenZipPath, src7zFile, dest, pCmd), printCmdInfo)
-        print('result=%s' % result)
+        CommonUtil.printLog('result=%s' % result)
         success = "Can't open as archive" not in result and 'Archives with Errors: ' not in result
         return success, dest
 
@@ -136,19 +136,19 @@ class CompressUtil(object):
                         # 按行分割生成一个列表
                         result = [line.rstrip('\n') for line in content.splitlines()]
                 else:
-                    print(f'ZIP包中未找到该文件:{target_file_path}')
+                    CommonUtil.printLog(f'File not found in ZIP package: {target_file_path}')
         except FileNotFoundError:
-            print(f'ZIP不存在:{zip_path}')
+            CommonUtil.printLog(f'ZIP file does not exist: {zip_path}')
         except zipfile.BadZipFile:
-            print(f'不是有效的ZIP文件:{zip_path}')
+            CommonUtil.printLog(f'Not a valid ZIP file: {zip_path}')
         except UnicodeDecodeError:
-            print(f'文件不是{charset}编码:{target_file_path}')
+            CommonUtil.printLog(f'File is not in {charset} encoding: {target_file_path}')
         except Exception as e:
-            print(f'发生了未知问题:{e}')
+            CommonUtil.printLog(f'An unknown error occurred: {e}')
         return result
 
 
 if __name__ == '__main__':
     p = 'D:/temp/log_123456.7z'
     dest = CompressUtil().unzip(p, pwd='123')
-    print('dest=%s' % dest)
+    CommonUtil.printLog('dest=%s' % dest)
