@@ -94,6 +94,8 @@ class BathUncompressImpl(BaseConfig):
         minRatio: float = float(self.configParser.get('config', 'minRatio'))  # 解压后的文件总大小至少得是源压缩包的几倍大才算解压成功
         supportExtType = self.configParser.get('config', 'supportExtType')  # 压缩文件后缀
         supportExtTypeList = list() if CommonUtil.isNoneOrBlank(supportExtType) else supportExtType.split(',')
+        relaceDict = self.configParser.getSectionItems('replace')
+        CommonUtil.printLog(f'pending replaceItems: {relaceDict}')
 
         # 提取待剔除的路径信息
         excludePathList: list = list()
@@ -111,6 +113,14 @@ class BathUncompressImpl(BaseConfig):
         def filterExt(path: str) -> bool:
             if CommonUtil.isNoneOrBlank(path):
                 return False
+
+            # 删除文件名中无用字符
+            if not CommonUtil.isNoneOrBlank(relaceDict):
+                for key in relaceDict:
+                    value = relaceDict.get(key, '')
+                    value = '' if CommonUtil.isNoneOrBlank(value) else value
+                    path = path.replace(key, value)
+
             hit = False
             for item in supportExtTypeList:
                 if path.endswith(item.strip()):
