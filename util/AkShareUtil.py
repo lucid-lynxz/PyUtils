@@ -352,15 +352,17 @@ class AkShareUtil:
         return stock_min_df
 
     @staticmethod
-    def get_full_stock_code(stock_code: str) -> str:
+    def get_full_stock_code(stock_code: str, market_info: str = '', add_head: bool = True) -> str:
         """
         根据股票代码生成带交易所前缀的完整代码（如 SZ000001、SH600519、BJ8开头）
 
         参数:
             stock_code (str): 6位数字股票代码（如 '000001'）
+            market_info (str): 市场信息（如 '沪港通' '深圳交易所' ），如果为空则根据代码自动判断
+            add_head (bool): 是否在代码前添加交易所前缀（如 'SZ'、'SH'、'BJ'），默认为 True
 
         返回:
-            str: 带前缀的完整代码（如 'SZ000001'）
+            str: 带前缀的完整代码（如 'SZ000001' 或者 000001.SZ）
 
         异常:
             ValueError: 代码格式错误或类型未知时抛出
@@ -370,23 +372,33 @@ class AkShareUtil:
             return stock_code
 
         # 1. 校验代码格式（必须为6位纯数字）
+        is_hk = '港股' in market_info or 'HK' in market_info
         if len(stock_code) != 6 or not stock_code.isdigit():
-            raise ValueError("股票代码必须为6位纯数字！例如：'000001'")
+            if not is_hk:
+                raise ValueError(f"股票代码{stock_code}必须为6位纯数字！例如：'000001', 当前market_info={market_info}")
 
         # 2. 提取代码前缀（前两位或第一位，针对北交所）
         first_two = stock_code[:2]
         first_char = stock_code[0]
 
         # 3. 判断交易所并拼接前缀
+        tip = ''
         if first_two in ['60', '68']:  # 沪市主板（60开头）、科创板（68开头）
-            return f"SH{stock_code}"
+            tip = 'SH'
         elif first_two in ['00', '30']:  # 深市主板（00开头）、创业板（30开头）
-            return f"SZ{stock_code}"
+            tip = 'SZ'
         elif first_char == '8' or first_two in ['92']:  # 北交所（8开头）
-            return f"BJ{stock_code}"
+            tip = 'BJ'
+        elif is_hk:
+            tip = 'HK'
         else:
             raise ValueError(f"未知的股票代码类型：{stock_code} "
                              "（目前支持沪市、深市、北交所，其他市场需手动处理）")
+
+        if add_head:
+            return f'{tip}{stock_code}'
+        else:
+            return f'{stock_code}.{tip}'
 
     @staticmethod
     def is_today_can_trade(refresh_days=7, target_date: str = None, fmt: str = '%Y-%m-%d') -> bool:

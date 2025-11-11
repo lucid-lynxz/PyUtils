@@ -11,6 +11,8 @@ from wool_tasks.ths_trade.bean.stock_position import StockPosition
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 from wool_tasks.ths_trade.long_bridge_trade import LBTrader
 from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
+from util.QMTUtil import QmtUtil
+from util.qmt.market_bean import StockData, MarketData
 
 
 class ConditionOrder(Runnable):
@@ -126,6 +128,27 @@ class ConditionOrder(Runnable):
         self.config_path: Optional[str] = None  # 配置文件路径
         self.row_number: int = -1  # 行号
         self.row_str: Optional[str] = None  # 原始内容
+
+        symbol = AkShareUtil.get_full_stock_code(self.position.code, self.position.market, False)
+
+        def on_data(datas: dict):
+            if not self.active:
+                return
+
+            if self.hit:
+                QmtUtil().unsubscribe_quote(symbol)
+                return
+            if symbol in datas.keys():
+                symbol_data = datas[symbol]
+                last_data = symbol_data[-1] if isinstance(symbol_data, List) else symbol_data
+                data = MarketData.from_dict(last_data)
+                # print(f'on_data: {symbol} 最新开盘价close={data.open},收盘价close={data.close},最高价high={data.high},最低价low={data.low},last_data={last_data}')
+
+        try:
+            QmtUtil().register_callback(on_data).register_pending_subscribe_stock(symbol)
+            # QmtUtil.subscribe_quote(symbol, period='1m')
+        except Exception as e:
+            NetUtil.push_to_robot(f'QmtUtil.subscribe_quote error for {self.position.code}: {e}')
 
     def use_long_bridge(self) -> bool:
         """

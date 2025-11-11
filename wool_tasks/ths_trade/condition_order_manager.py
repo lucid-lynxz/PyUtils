@@ -19,6 +19,7 @@ from wool_tasks.ths_trade.bean.condition_order import ConditionOrder
 from wool_tasks.ths_trade.ths_auto_trade import THSTrader
 from wool_tasks.ths_trade.long_bridge_trade import LBTrader
 from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
+from util.QMTUtil import QmtUtil
 
 # python your_script.py --condition_order_path /path/to/orders.csv
 if __name__ == '__main__':
@@ -52,11 +53,14 @@ if __name__ == '__main__':
     NetUtil.push_to_robot(f'condition_order_manager 开始工作', printLog=True)
     ConditionOrder.mailUtil = MailUtil(configParser.getSectionItems('mail'))  # 邮箱工具
 
+    QmtUtil.activate = configParser.getSecionValue('QMT', 'activate', 'False') == 'True'  # 是否启用QMT
+
     # 创建同花顺工具类
     ths_trader = THSTrader(cacheDir=_cache_dir)
     ths_trader.setNotificationRobotDict(NetUtil.robot_dict)
     stock_position_list = ths_trader.get_all_stock_position()  # 获取持仓信息
     ConditionOrder.ths_trader = ths_trader
+
 
     def redirect_log(msg):
         try:
@@ -262,8 +266,9 @@ if __name__ == '__main__':
              # .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
              .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
              # .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
+             .start(start_time, lambda: QmtUtil().toggle_activate().start_subscribe())  # 启动调度器
              # .start(start_time, task_condition_orders_hk)  # 启动调度器
-             .start(start_time)  # 启动调度器
+             # .start(start_time)  # 启动调度器
              .wait_exit_event()  # 等待按下q推出
              )
 

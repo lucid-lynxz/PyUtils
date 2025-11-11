@@ -9,6 +9,7 @@ import functools
 import importlib.util
 import logging
 import platform
+import threading
 from typing import Type, Union, Optional
 
 Number = Union[int, float]
@@ -549,3 +550,20 @@ def catch_exceptions(max_retries=0, retry_interval=1, logger=None):
         return wrapper
 
     return decorator
+
+
+def singleton(cls):
+    """
+    单例装饰器,线程安全
+    """
+    instances = {}
+    lock = threading.Lock()
+
+    def get_instance(*args, **kwargs):
+        if cls not in instances:
+            with lock:
+                if cls not in instances:  # 双重检查
+                    instances[cls] = cls(*args, **kwargs)
+        return instances[cls]
+
+    return get_instance
