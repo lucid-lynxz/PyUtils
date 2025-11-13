@@ -57,7 +57,8 @@ def merge_images(image_dir, rows=1, cols=None, single_column=False, bg_color="wh
     total_height = sum(row_heights)
 
     # 创建结果图片，背景色为指定颜色
-    result = Image.new('RGB', (total_width, total_height), color=bg_color)
+    # 使用 RGBA 模式来正确处理透明度
+    result = Image.new('RGBA', (total_width, total_height), color=bg_color)
 
     # 拼接图片，保持原始尺寸，并在需要时填充空白
     current_y = 0
@@ -73,11 +74,16 @@ def merge_images(image_dir, rows=1, cols=None, single_column=False, bg_color="wh
                 # 使用左上角对齐（不居中）
                 x_offset = current_x
                 y_offset = current_y
-                result.paste(img, (x_offset, y_offset))
+                # 正确处理透明度：如果图片有透明度信息则使用 alpha 通道
+                if img.mode == 'RGBA' or 'transparency' in img.info:
+                    result.paste(img, (x_offset, y_offset), img)
+                else:
+                    result.paste(img, (x_offset, y_offset))
             current_x += col_widths[c]
         current_y += row_heights[r]
 
-    return result
+    # 转换为 RGB 模式（如果需要的话）并返回
+    return result.convert('RGB')
 
 
 if __name__ == '__main__':
@@ -106,7 +112,7 @@ if __name__ == '__main__':
 
     if merged_image:
         try:
-            merged_image.save(f'{image_dir}/merged_image.jpg')
+            merged_image.save(f'{image_dir}/merged_image.png')
             print('Image merging completed. The merged image has been saved as merged_image.jpg.')
         except Exception as e:
             print(f'An error occurred while saving the image: {e}')
