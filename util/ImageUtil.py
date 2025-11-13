@@ -427,7 +427,8 @@ class ImageUtil:
         total_height = sum(row_heights)
 
         # 创建结果图片，背景色为指定颜色
-        result = Image.new('RGB', (total_width, total_height), color=bg_color)
+        # 使用 RGBA 模式来正确处理透明度
+        result = Image.new('RGBA', (total_width, total_height), color=bg_color)
 
         # 拼接图片，保持原始尺寸，并在需要时填充空白
         current_y = 0
@@ -443,10 +444,16 @@ class ImageUtil:
                     # 使用左上角对齐（不居中）
                     x_offset = current_x
                     y_offset = current_y
-                    result.paste(img, (x_offset, y_offset))
+                    # 正确处理透明度：如果图片有透明度信息则使用 alpha 通道
+                    if img.mode == 'RGBA' or 'transparency' in img.info:
+                        result.paste(img, (x_offset, y_offset), img)
+                    else:
+                        result.paste(img, (x_offset, y_offset))
                 current_x += col_widths[c]
             current_y += row_heights[r]
-        return result
+
+        # 转换为 RGB 模式（如果需要的话）并返回
+        return result.convert('RGB')
 
     @staticmethod
     def save_img(output_path, image: Image = None) -> bool:
