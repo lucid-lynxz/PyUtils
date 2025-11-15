@@ -1,15 +1,28 @@
+import dataclasses
 import os
 import traceback
 from decimal import Decimal
-from typing import List, Type
+from typing import List, Type, Optional, Union
 
-from longport.openapi import TradeContext, QuoteContext, Config, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote
+import longport
+from longport.openapi import Config, QuoteContext, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote, TradeContext
 
 from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
+
+
+@dataclasses.dataclass
+class LBPosition(object):
+    """
+    长桥证券持仓信息数据类
+    """
+    code: str  # 股票代码
+    name: str  # 股票名称
+    balance: float  # 表示多少股
+    cost_price: float  # 成本价
 
 
 class LBTrader(object):
@@ -77,6 +90,11 @@ class LBTrader(object):
 
             # 订阅行情
             self.quoteCtx = QuoteContext(config)
+
+            # 获取持仓信息
+            self.stock_positions: Union[dict[str, LBPosition], None] = None
+            self.get_stock_position()
+
         except Exception as e:
             NetUtil.push_to_robot(f'长桥证券初始化失败, 请检查配置文件, 错误信息: {e}')
             self.active = False
@@ -158,6 +176,40 @@ class LBTrader(object):
             traceback.print_exc()
             return None
 
+    def get_stock_position(self, symbols: Optional[List[str]] = None, force: bool = True) -> dict[str, LBPosition]:
+        """
+        获取取股票持仓
+        https://open.longportapp.com/zh-CN/docs/trade/asset/stock
+        StockPositionsResponse { channels: [StockPositionChannel { account_channel: "lb", positions: [StockPosition { symbol: "TSM.US", symbol_name: "Taiwan Semiconductor", quantity: 4, available_quantity: 4, currency: "USD", cost_price: 284.610, market: US, init_quantity: Some(4) }, StockPosition { symbol: "CRCL.US", symbol_name: "Circle", quantity: 2, available_quantity: 2, currency: "USD", cost_price: 125.280, market: US, init_quantity: Some(2) }, StockPosition { symbol: "BIDU.US", symbol_name: "Baidu", quantity: 8, available_quantity: 8, currency: "USD", cost_price: 131.769, market: US, init_quantity: Some(8) }, StockPosition { symbol: "2050.HK", symbol_name: "SANHUA", quantity: 400, available_quantity: 400, currency: "HKD", cost_price: 34.795, market: HK, init_quantity: Some(400) }, StockPosition { symbol: "1211.HK", symbol_name: "BYD COMPANY", quantity: 200, available_quantity: 200, currency: "HKD", cost_price: 101.100, market: HK, init_quantity: Some(400) }, StockPosition { symbol: "1024.HK", symbol_name: "KUAISHOU-W", quantity: 200, available_quantity: 200, currency: "HKD", cost_price: 67.100, market: HK, init_quantity: Some(0) }] }] }
+        Name	Type	Required	Description
+        list	object[]	false	股票持仓信息
+        ∟ account_channel	string	true	账户类型
+        ∟ stock_info	object[]	false	股票列表
+        ∟∟ symbol	string	true	股票代码
+        ∟∟ symbol_name	string	true	股票名称
+        ∟∟ quantity	string	true	持仓股数
+        ∟∟ available_quantity	string	false	可用股数
+        ∟∟ currency	string	true	币种
+        ∟∟ market	string	true	市场
+        ∟∟ cost_price	string	true	成本价格 (具体根据客户端选择平均买入还是摊薄成本)
+        ∟∟ init_quantity	string	false	开盘前初始持仓
+        """
+        if not force and self.stock_positions is not None:
+            return self.stock_positions
+
+        resp = self.tradeCtx.stock_positions(symbols)
+        # CommonUtil.printLog(f'ori get_stock_position{symbols})={resp}')
+        result = {}
+        for channel in resp.channels:
+            for position in channel.positions:
+                code = position.symbol
+                name = position.symbol_name
+                balance = position.quantity
+                cost_price = position.cost_price
+                result[code] = LBPosition(code, name, float(balance), float(cost_price))
+        self.stock_positions = result
+        return result
+
 
 if __name__ == '__main__':
     trader = LBTrader()
@@ -188,3 +240,5 @@ if __name__ == '__main__':
 
     # resp = trader.deal('1810.HK', 56.25, 200)
     # CommonUtil.printLog(resp)
+
+    CommonUtil.printLog(f'trader.get_stock_position()={trader.get_stock_position()}')
