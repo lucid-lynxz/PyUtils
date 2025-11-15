@@ -18,6 +18,7 @@ class QmtUtil:
     添加待订阅的股票: qmt_util.register_pending_subscribe_stock(stock_code)
     开始订阅所有待订阅的股票: qmt_util.start_subscribe()
     """
+    _TAG = "QmtUtil"
 
     # 创建交易回调类对象，并声明接收回调
     class MyXtQuantTraderCallback(XtQuantTraderCallback):
@@ -54,7 +55,7 @@ class QmtUtil:
             return
 
         if self.print_log:
-            CommonUtil.printLog(f'_default_on_data: {datas}')
+            CommonUtil.printLog(f'{QmtUtil._TAG} _default_on_data: {datas}')
 
         for callback in self.on_data_callback_list:
             callback(datas)
@@ -85,14 +86,14 @@ class QmtUtil:
         """
         开始订阅所有待订阅的股票代码
         """
-        CommonUtil.printLog(f'start_subscribe: {self._pending_subscribe_stock_set}')
+        CommonUtil.printLog(f'{QmtUtil._TAG} start_subscribe: {self._pending_subscribe_stock_set}')
         if len(self._pending_subscribe_stock_set) > 0:
             self.subscribe_whole_quote(list(self._pending_subscribe_stock_set))
         return self
 
     def unsubscribe_quote(self, stock_code: Union[str, List]) -> Self:
         """反订阅"""
-        CommonUtil.printLog(f'unsubscribe_quote({stock_code})')
+        CommonUtil.printLog(f'{QmtUtil._TAG} unsubscribe_quote({stock_code})')
         r_list = [stock_code] if isinstance(stock_code, str) else stock_code
         xtdata.unsubscribe_quote(r_list)
         for code in r_list:
@@ -129,7 +130,7 @@ class QmtUtil:
 
         self._monitor_code_set.add(stock_code)
         req_id = xtdata.subscribe_quote(stock_code, period=period, start_time=start_time, end_time=end_time, count=-1, callback=self._default_on_data)
-        CommonUtil.printLog(f'subscribe_quote({stock_code}, {period}) req_id={req_id}')
+        CommonUtil.printLog(f'{QmtUtil._TAG} subscribe_quote({stock_code}, {period}) req_id={req_id}')
         return req_id
 
     def subscribe_whole_quote(self, code_list: List[str]) -> int:
@@ -148,18 +149,18 @@ class QmtUtil:
                 print(f'on_data: 最新开盘价close={data.open},收盘价close={data.close},最高价high={data.high},最低价low={data.low},last_data={last_data}')
         """
         if not self.activate:
-            CommonUtil.printLog(f'subscribe_whole_quote({code_list}) fail: self.activate is False')
+            CommonUtil.printLog(f'{QmtUtil._TAG} subscribe_whole_quote({code_list}) fail: self.activate is False')
             return -1
 
         # 保留不在 _monitor_code_set 中的元素
         result_code_list = [x for x in code_list if x not in self._monitor_code_set]
         if len(result_code_list) == 0:
-            CommonUtil.printLog(f'subscribe_whole_quote fail:{code_list} has subscribed')
+            CommonUtil.printLog(f'{QmtUtil._TAG} subscribe_whole_quote fail:{code_list} has subscribed')
             return -1
 
         self._monitor_code_set.update(result_code_list)
         req_id = xtdata.subscribe_whole_quote(result_code_list, callback=self._default_on_data)
-        CommonUtil.printLog(f'subscribe_whole_quote({result_code_list}) req_id={req_id}')
+        CommonUtil.printLog(f'{QmtUtil._TAG} subscribe_whole_quote({result_code_list}) req_id={req_id}')
         return req_id
 
 

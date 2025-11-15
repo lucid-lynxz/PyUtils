@@ -37,7 +37,7 @@ class ConditionOrder(Runnable):
         return data[index]
 
     @classmethod
-    def from_csv_row(cls, row: List[str]):
+    def by_csv_row(cls, row: List[str]):
         """
         从csv文件中读取一行数据, 并创建ConditionOrder对象
         :param row: csv文件中的行数据,
@@ -62,10 +62,49 @@ class ConditionOrder(Runnable):
             end_date=ConditionOrder.get_or_default(row, 9, "2099-12-1"),  # 结束监测日期
         )
 
+    @staticmethod
+    def by_stop_loss(position: StockPosition, stop_loss_pct: float = 5):
+        """
+        止损条件单
+        :param position: 持仓股票信息, 至少包含 code, name, market 和 cost_price 字段
+        :param stop_loss_pct: 止损百分比, 如: 5, 表示当价格低于成本价的5%时触发止损
+        :return: ConditionOrder对象
+        """
+        return ConditionOrder(
+            position,
+            base=f'{position.cost_price * (1 - stop_loss_pct / 100)}',  # 基准价 支持两种写法, 如:0.5%~1.5%  和 0.5, 前者表示比昨收价突破0.5%以上且1.5%以下, 后者表示0.5元
+            break_up=False,  # 是否是向上突破基准价, 支持的格式: true/up/false/down ,忽略大小写
+            bounce_info='0',  # 反弹幅度, 止损时不做反弹判断, 达到就止损
+            deal_count=-position.available_balance,  # 交易数量
+            start_time="09:30:00",  # 每日开始监测时间
+            end_time="23:30:00",  # 每日结束监测时间
+            end_date="2099-12-1",  # 结束监测日期
+        )
+
+    @staticmethod
+    def by_stop_profit(position: StockPosition, stop_profit_pct: float = 10, bounce_pct: float = 0.5):
+        """
+        从止盈/止损/止盈止损单中读取数据, 并创建ConditionOrder对象
+        :param position: 持仓股票信息, 至少包含 code, name, market 和 cost_price 字段
+        :param stop_profit_pct: 止盈百分比, 如: 10, 表示当价格高于成本价的10%时触发止盈并回落bounce_pct时进行止盈
+        :param bounce_pct: 止盈回落幅度百分比
+        :return: ConditionOrder对象
+        """
+        return ConditionOrder(
+            position,
+            base=f'{position.cost_price * (1 + stop_profit_pct / 100)}',  # 基准价 支持两种写法, 如:0.5%~1.5%  和 0.5, 前者表示比昨收价突破0.5%以上且1.5%以下, 后者表示0.5元
+            break_up=True,  # 是否是向上突破基准价, 支持的格式: true/up/false/down ,忽略大小写
+            bounce_info=f'{bounce_pct}%',  # 反弹幅度, 止损时不做反弹判断, 达到就止损
+            deal_count=-position.available_balance,  # 交易数量
+            start_time="09:30:00",  # 每日开始监测时间
+            end_time="23:30:00",  # 每日结束监测时间
+            end_date="2099-12-1",  # 结束监测日期
+        )
+
     def __init__(self, position: StockPosition,
                  base: str,
                  bounce_info: str,
-                 deal_count: int,
+                 deal_count: float,
                  break_up: bool,
                  start_time: str = '09:30:00',
                  end_time: str = '16:30:00',
@@ -126,10 +165,12 @@ class ConditionOrder(Runnable):
 
         # 本条件单所在的配置文件路径和行号信息, 用于触发后将对应条件单置为无效
         self.config_path: Optional[str] = None  # 配置文件路径
-        self.row_number: int = -1  # 行号
+        self.row_number: int = -1  # 行号, 从0开始, 0表示第一行
         self.row_str: Optional[str] = None  # 原始内容
 
         symbol = AkShareUtil.get_full_stock_code(self.position.code, self.position.market, False)
+
+        # CommonUtil.printLog(f'--> get_full_stock_code code={self.position.code},symbol={symbol},market={self.position.market}')
 
         def on_data(datas: dict):
             if not self.active:
@@ -170,7 +211,7 @@ class ConditionOrder(Runnable):
             market_info (pd.DataFrame):其他信息, 与code不能同时为空
         """
         # 若今天不是交易日,则不做检测
-        if not self.active:
+        if not self.active or self.position.code.endswith('.US'):
             return
 
         # 先使用昨收价判断下是否已触发基准价
@@ -362,7 +403,9 @@ class ConditionOrder(Runnable):
                 lines = FileUtil.readFile(self.config_path)
                 if self.row_number < len(lines):
                     line_str = lines[self.row_number]
-                    lines[self.row_number] = f'# {line_str}'
+                    cur_line_str = f'# {line_str}'
+                    lines[self.row_number] = cur_line_str
+
                     write_success = FileUtil.write2File(self.config_path, ''.join(lines))
-                    msg = f'将条件单配置文件中的对应项置为无效,写入结果:{write_success},行号:{self.row_number},内容:"{self.row_str}",文件路径:{self.config_path}'
+                    msg = f'将条件单配置文件中的对应项置为无效,写入结果:{write_success},行号:{self.row_number},内容:"{self.row_str}",文件路径:{self.config_path}\noriLine={line_str}'
                     NetUtil.push_to_robot(msg, printLog=True)

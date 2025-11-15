@@ -6,6 +6,7 @@ import socket
 import traceback
 import urllib.request as urllib2
 from urllib.error import URLError, HTTPError
+from collections import OrderedDict
 
 from util.CommonUtil import CommonUtil
 from util.DingTalkBot import DingTalkBot
@@ -15,6 +16,10 @@ from util.FileUtil import FileUtil
 
 class NetUtil(object):
     robot_dict: dict = dict()  # 默认的机器人配置信息, 用于发送通知,具体字段见 push_to_robot 方法
+    # 消息限流相关配置
+    _message_cache = OrderedDict()  # 用于存储消息内容和时间戳的有序字典
+    _MESSAGE_CACHE_SIZE = 10  # 最大缓存消息数量
+    _RATE_LIMIT_SECONDS = 60  # 限流时间（秒）
 
     @staticmethod
     def push_to_robot(content: str, configDict: dict = None, printLog: bool = True,
@@ -38,6 +43,28 @@ class NetUtil(object):
         """
         if CommonUtil.isNoneOrBlank(content):
             return False
+        
+        # 限流逻辑实现
+        current_time = TimeUtil.currentTimeMillis() / 1000  # 转换为秒
+        
+        # 检查是否在限流时间内
+        if content in NetUtil._message_cache:
+            last_send_time = NetUtil._message_cache[content]
+            if current_time - last_send_time < NetUtil._RATE_LIMIT_SECONDS:
+                if printLog:
+                    CommonUtil.printLog(f'Message rate limited: "{content}" (sent {current_time - last_send_time:.1f}s ago)')
+                return False
+        
+        # 更新或添加消息记录
+        NetUtil._message_cache[content] = current_time
+        
+        # 如果超过最大缓存数量，删除最早的记录
+        if len(NetUtil._message_cache) > NetUtil._MESSAGE_CACHE_SIZE:
+            # OrderedDict在Python 3.7+中保持插入顺序，popitem(last=False)删除第一个元素
+            oldest_content, _ = NetUtil._message_cache.popitem(last=False)
+            if printLog:
+                CommonUtil.printLog(f'Message cache full, removed oldest: "{oldest_content}"')
+        
         if printLog:
             CommonUtil.printLog(f'push_to_robot content={content}')
 
@@ -85,29 +112,6 @@ class NetUtil(object):
         ddResult = json.dumps(result, default=str)
         CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
         return ddResult
-        # headers = {"Content-type": "application/json"}
-        # json_data_obj = {
-        #     "at": {
-        #         "atMobiles": at_mobiles,
-        #         "atUserIds": [],
-        #         "isAtAll": is_at_all
-        #     },
-        #     "text": {
-        #         "content": content
-        #     },
-        #     "msgtype": "text"
-        # }
-        # CommonUtil.printLog(f'data_obj:{json_data_obj}')
-        # # 将str类型转换为bytes类型
-        # json_data_obj = json.dumps(json_data_obj).encode('utf-8')
-        # # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
-        # request = urllib2.Request(url='https://oapi.dingtalk.com/robot/send?access_token=%s' % access_token,
-        #                           data=json_data_obj,
-        #                           headers=headers, method="POST")
-        # response = urllib2.urlopen(request)
-        # ddResult = response.read().decode('utf-8')
-        # CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
-        # return ddResult
 
     @staticmethod
     def push_feishu_robot(content: str,
@@ -118,7 +122,7 @@ class NetUtil(object):
         官方文档: https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN
         """
         headers = {"Content-type": "application/json"}
-        atAllOpt = '\n<at user_id=\"all\">所有人</at>' if is_at_all else ''
+        atAllOpt = '\n<at user_id="all">所有人</at>' if is_at_all else ''
         json_data_obj = {
             "content": {
                 "text": "%s%s" % (content, atAllOpt)

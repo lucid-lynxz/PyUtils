@@ -577,12 +577,12 @@ class FileUtil(object):
         泛型对象T中必须包含有一个函数:
 
         @classmethod
-        def from_csv_row(cls, row: List[str]):
+        def by_csv_row(cls, row: List[str]):
             pass
 
         参数:
         - file_path: CSV文件路径
-        - object_class: 目标对象类（需实现from_csv_row方法）
+        - object_class: 目标对象类（需实现 by_csv_row 方法）
         - skip_rows: 跳过的行数（默认为1，跳过标题行）
         - delimiter: 分隔符（默认为逗号）
         - encoding: 文件编码（默认为utf-8）
@@ -591,6 +591,7 @@ class FileUtil(object):
         - 对象列表
         """
         objects = []
+        file_path = FileUtil.recookPath(file_path)
         if not FileUtil.isFileExist(file_path):
             return objects
 
@@ -602,7 +603,7 @@ class FileUtil(object):
                 next(reader, None)
 
             # 逐行解析并转换为对象
-            for row_num, row in enumerate(reader, start=skip_rows + 1):
+            for row_num, row in enumerate(reader, start=skip_rows):
                 if not row or all(not cell.strip() for cell in row):  # 跳过空行
                     continue
 
@@ -616,7 +617,7 @@ class FileUtil(object):
                 row = row_str.split(delimiter)
 
                 try:
-                    obj = object_class.from_csv_row(row)
+                    obj = object_class.by_csv_row(row)
 
                     obj.config_path = file_path
                     obj.row_number = row_num
@@ -624,7 +625,7 @@ class FileUtil(object):
 
                     objects.append(obj)
                 except Exception as e:
-                    print(f"警告: 第{row_num}行解析失败 - {e}. 行内容: {row}")
+                    print(f"警告: 第{row_num}行解析失败 - {e}. 行内容: {row},oriRowStr={row_str}")
                     # 可选择记录错误或跳过该行，此处选择跳过
 
         return objects

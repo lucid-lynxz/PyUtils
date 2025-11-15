@@ -13,6 +13,7 @@ from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 from util.NetUtil import NetUtil
 from util.TimeUtil import log_time_consume, TimeUtil
+from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
 """
 akshare 工具类
@@ -238,6 +239,9 @@ class AkShareUtil:
         :param period: 分时间隔, 默认为1分钟, 支持 1, 5, 15, 30, 60 分钟的数据频率
         :return: 最新价格, 若指定日期无交易数据, 则返回0
         """
+        if code.endswith('.US'):  # 暂不支持美股
+            return pd.DataFrame()
+
         if hk:
             stock_min_df = AkShareUtil.query_stock_min_history_hk(code, n_day_ago, period)
         else:
@@ -254,6 +258,8 @@ class AkShareUtil:
         :param period: 分时间隔, 默认为1分钟, 支持 1, 5, 15, 30, 60 分钟的数据频率
         :return: 最新价格, 若指定日期吴交易数据, 则返回0
         """
+        if code.endswith('.US'):  # 咱不支持美股
+            return 0.0
         try:
             stock_min_df = AkShareUtil.get_market_data(code, hk, n_day_ago, period)
             if not stock_min_df.empty:
@@ -367,6 +373,11 @@ class AkShareUtil:
         异常:
             ValueError: 代码格式错误或类型未知时抛出
         """
+        if StockPosition.has_valid_suffix(stock_code):
+            if 'HK' in stock_code:
+                return stock_code.zfill(8)
+            return stock_code
+
         if len(stock_code) == 8:
             CommonUtil.printLog(f'generate_full_stock_code(${stock_code}) 已是8位,无需处理')
             return stock_code
@@ -374,7 +385,7 @@ class AkShareUtil:
         # 1. 校验代码格式（必须为6位纯数字）
         is_hk = '港股' in market_info or 'HK' in market_info
         if len(stock_code) != 6 or not stock_code.isdigit():
-            if not is_hk:
+            if not is_hk and 'US' not in market_info:
                 raise ValueError(f"股票代码{stock_code}必须为6位纯数字！例如：'000001', 当前market_info={market_info}")
 
         # 2. 提取代码前缀（前两位或第一位，针对北交所）
@@ -392,8 +403,8 @@ class AkShareUtil:
         elif is_hk:
             tip = 'HK'
         else:
-            raise ValueError(f"未知的股票代码类型：{stock_code} "
-                             "（目前支持沪市、深市、北交所，其他市场需手动处理）")
+            CommonUtil.printLog(f"未知的股票代码类型：{stock_code} （目前支持沪市、深市、北交所，其他市场需手动处理）")
+            return stock_code
 
         if add_head:
             return f'{tip}{stock_code}'
