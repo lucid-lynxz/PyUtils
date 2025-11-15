@@ -93,6 +93,20 @@ if __name__ == '__main__':
 
     # 读取CSV文件并转换为条件单对象列表
     conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
+
+    # 加入长桥证券的持仓股票信息, 进行止盈止损操作
+    if enable_long_bridge and lb_trader.auto_stop:
+        lb_positions = lb_trader.get_stock_position(force=False)
+        for code, position in lb_positions.items():
+            # CommonUtil.printLog(f'lb add conditionOrderList: {position.symbol}')
+
+            if lb_trader.stop_loss_pct > 0:
+                conditionOrderList.append(ConditionOrder.by_stop_loss(position, lb_trader.stop_loss_pct))
+            if lb_trader.stop_profit_pct > 0:
+                conditionOrderList.append(ConditionOrder.by_stop_profit(position, lb_trader.stop_profit_pct, lb_trader.bounce_pct))
+            if code not in ths_trader.position_dict:
+                ths_trader.position_dict[code] = position
+
     for order in conditionOrderList:
         code = order.position.code  # 股票代码
         stock_position = ths_trader.get_stock_position(code)  # 该股票的持仓数据
@@ -123,8 +137,12 @@ if __name__ == '__main__':
         # 批量获取港股的最新价,若逐个获取,会触发长桥的接口调用次数限制
         _resp: List[SecurityStaticInfo] = lb_trader.static_info(hk_code_list)
         for index, _item in enumerate(_resp):
-            code = _item.symbol.replace('.HK', '')
-            position = ths_trader.position_dict[code]
+            symbol = _item.symbol
+            code = symbol.replace('.HK', '')
+            # CommonUtil.printLog(f'--> {symbol}   code={code}')
+            position = ths_trader.position_dict.get(code) or ths_trader.position_dict.get(symbol)
+            if position is None:
+                continue
             position.name = _item.name_cn  # 中文简体标的名称
             position.lot_size = _item.lot_size
 
@@ -185,11 +203,12 @@ if __name__ == '__main__':
 
             for _order in hk_order_list:
                 symbol = _order.position.symbol
-                symbols.add(symbol)
+                symbol_fill = symbol.zfill(8)
+                symbols.add(symbol_fill)
                 # 可能一个股票代码对应多个条件单
-                order_list = order_dict.get(symbol, list())
+                order_list = order_dict.get(symbol_fill, list())
                 order_list.append(_order)
-                order_dict[symbol] = order_list
+                order_dict[symbol_fill] = order_list
 
             if len(symbols) == 0:
                 return
@@ -200,7 +219,9 @@ if __name__ == '__main__':
             _resp = lb_trader.quote(symbols_list)
             for item in _resp:
                 symbol = item.symbol
-                order_list = order_dict.get(symbol)
+                symbol_fill = symbol.zfill(8)
+                CommonUtil.printLog(f'order hk quote:{symbol} {symbol_fill}, {item}')
+                order_list = order_dict.get(symbol_fill)
                 for order_item in order_list:
                     order_position = order_item.position
                     if order_position is not None:

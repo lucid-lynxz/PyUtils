@@ -4,25 +4,14 @@ import traceback
 from decimal import Decimal
 from typing import List, Type, Optional, Union
 
-import longport
 from longport.openapi import Config, QuoteContext, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote, TradeContext
+from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
 from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
 from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
-
-
-@dataclasses.dataclass
-class LBPosition(object):
-    """
-    长桥证券持仓信息数据类
-    """
-    code: str  # 股票代码
-    name: str  # 股票名称
-    balance: float  # 表示多少股
-    cost_price: float  # 成本价
 
 
 class LBTrader(object):
@@ -56,6 +45,11 @@ class LBTrader(object):
         self.app_secret = lb_settings.get('app_secret')
         self.access_token = lb_settings.get('access_token')
         self.expire_day = lb_settings.get('expire_day')
+
+        self.auto_stop: bool = lb_settings.get('auto_stop', 'True') == 'True'  # 是否允许自动止盈止损
+        self.stop_loss_pct: float = float(lb_settings.get('stop_loss_pct', '5'))  # 止损比例, 默认5, 表示5%, >0 有效
+        self.stop_profit_pct: float = float(lb_settings.get('stop_profit_pct', '8'))  # 止盈比例, 默认8, 表示8%, >0 有效
+        self.bounce_pct: float = float(lb_settings.get('bounce_pct', '0.5'))  # 止盈回落比例,默认0.5%, 当止盈触发后, 若价格回落超过此比例, 则会触发止损
 
         # token过期提醒: https://open.longportapp.com/zh-CN/account
         fmt = '%Y-%m-%d'
@@ -92,7 +86,7 @@ class LBTrader(object):
             self.quoteCtx = QuoteContext(config)
 
             # 获取持仓信息
-            self.stock_positions: Union[dict[str, LBPosition], None] = None
+            self.stock_positions: Union[dict[str, StockPosition], None] = None
             self.get_stock_position()
 
         except Exception as e:
@@ -170,13 +164,14 @@ class LBTrader(object):
             submitted_price = None if price <= 0 else Decimal(price)
             _resp = self.tradeCtx.submit_order(symbol, order_type, order_side, Decimal(abs(amount)),
                                                TimeInForceType.Day, submitted_price, remark='deal from python sdk')
+            NetUtil.push_to_robot(f'长桥 deal({symbol},{price},{amount})={_resp}')
             return _resp
         except Exception as e:
-            CommonUtil.printLog(f'deal({symbol},{price},{amount}) fail: {e}')
+            NetUtil.push_to_robot(f'长桥 deal({symbol},{price},{amount}) fail: {e}')
             traceback.print_exc()
             return None
 
-    def get_stock_position(self, symbols: Optional[List[str]] = None, force: bool = True) -> dict[str, LBPosition]:
+    def get_stock_position(self, symbols: Optional[List[str]] = None, force: bool = True) -> dict[str, StockPosition]:
         """
         获取取股票持仓
         https://open.longportapp.com/zh-CN/docs/trade/asset/stock
@@ -202,11 +197,14 @@ class LBTrader(object):
         result = {}
         for channel in resp.channels:
             for position in channel.positions:
-                code = position.symbol
-                name = position.symbol_name
-                balance = position.quantity
-                cost_price = position.cost_price
-                result[code] = LBPosition(code, name, float(balance), float(cost_price))
+                s_position = StockPosition()
+                s_position.code = position.symbol
+                s_position.name = position.symbol_name
+                s_position.balance = float(position.quantity)
+                s_position.available_balance = float(position.available_quantity)
+                s_position.cost_price = float(position.cost_price)
+                s_position.market = f'{position.market}_长桥'
+                result[position.symbol] = s_position
         self.stock_positions = result
         return result
 

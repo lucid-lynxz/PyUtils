@@ -14,13 +14,13 @@ class StockPosition:
     name: str = ''  # 股票名称
 
     # 数量信息
-    balance: int = 0  # 股票余额 int 表示多少股
-    available_balance: int = 0  # 可用余额 int 表示多少股
+    balance: float = 0  # 股票余额 int 表示多少股
+    available_balance: float = 0  # 可用余额 int 表示多少股
 
     # 价格信息
     cost_price: float = 0.0  # 成本价 float
     market_price: float = 0.0  # 市价 float
-    market: str = ''  # 交易市场
+    market: str = ''  # 交易市场, 若希望使用非同花顺软件进行交易,请在market信息中包含对应软件名 比如: '长桥'  '尊嘉' 等
     # 以上数据是来自于同花顺的持仓数据截图ocr结果
 
     # 以下涨跌停价等信息是从akshare获取的数据
@@ -95,7 +95,7 @@ class StockPosition:
     @property
     def is_hk_stock(self) -> bool:
         """是否是港股"""
-        return '港股' in self.market or '沪HK' in self.market or '深HK' in self.market or '香港' in self.market
+        return '港股' in self.market or 'HK' in self.market or '香港' in self.market
 
     # 计算属性
     @property
@@ -115,14 +115,27 @@ class StockPosition:
         """计算市值"""
         return self.market_price * self.balance
 
+    @staticmethod
+    def has_valid_suffix(symbol: str) -> bool:
+        """检测股票代码是否已包含市场前后缀"""
+        _prefix_list = ['SH', 'SZ', 'BJ', 'HK', 'US']
+        for prefix in _prefix_list:
+            if symbol.startswith(prefix) or symbol.endswith(f'.{prefix}'):
+                return True
+        return False
+
     @property
     def symbol(self):
+        if StockPosition.has_valid_suffix(self.code):
+            return self.code
         if self.is_hk_stock:
             return f'{self.code}.HK'
         elif '上海' in self.market:
             return f'{self.code}.SH'
         elif '深圳' in self.market:
             return f'{self.code}.SZ'
+        elif 'US' in self.market:
+            return f'{self.code}.US'
         return self.code
 
     # 显示方法
