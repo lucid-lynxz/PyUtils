@@ -4,13 +4,13 @@ import os
 import re
 import sys
 import time
-import subprocess
+import subprocess, signal
 import functools
 import importlib.util
 import logging
 import platform
 import threading
-from typing import Type, Union, Optional
+from typing import Type, Union, Optional, List
 
 Number = Union[int, float]
 
@@ -95,7 +95,7 @@ class CommonUtil(object):
     @classmethod
     def exeCmdBySubprocess(cls, cmd: str, printCmdInfo: bool = True, timeout: int = 30) -> str:
         """
-        执行shell命令, 可得到返回值
+        同步执行shell命令, 可得到返回值
         :param cmd: 待执行的命令
         :param printCmdInfo: 是否打印命令内容
         :param timeout: 超时时间, 单位秒, 默认30秒
@@ -126,6 +126,46 @@ class CommonUtil(object):
         except Exception as e:
             CommonUtil.printLog(f"exeCmd exception:{cmd}\n{e}".strip(), printCmdInfo)
             return ""
+
+    @staticmethod
+    def exeCmdAsync(cmd: Union[str, List[str]]) -> subprocess.Popen:
+        """
+        异步执行shell命令, 可得到进程信息, 如pid (_process.pid)
+        :param cmd: 待执行的命令, 对于单个命令, 可以直接传入字符串, 对于带参命令, 需要传入列表
+            比如直接传入 'scrcpy' 可以运行该命令
+            但若有带参, 如: 'scrcpy --audio-source=output --audio-codec=aac --record abc.mp4' 在需要传入list, 以空格进行切分,最终如下:
+            ['scrcpy', '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4']
+        """
+        _process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        # _process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        CommonUtil.printLog(f"exeCmdAsync pid:{_process.pid},cmd={cmd}")
+        return _process
+
+    @staticmethod
+    def stopProcess(process):
+        try:
+            if sys.platform == 'win32':
+                # Windows approach
+                process.terminate()
+            else:
+                # Unix/Linux approach
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            CommonUtil.printLog(f"killPid success:{process.pid}")
+        except Exception as e:
+            print(f"Error stopping process: {e}")
+            return False
+        return True
+
+    @staticmethod
+    def killPid(pid: int) -> bool:
+        try:
+            # 发送终止信号
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            CommonUtil.printLog(f"killPid success:{pid}")
+            return True
+        except Exception as e:
+            CommonUtil.printLog(f"killPid exception:{pid}\n{e}".strip())
+            return False
 
     @classmethod
     def exeCmdByOSSystem(cls, cmd: str, printCmdInfo: bool = True):
@@ -567,3 +607,9 @@ def singleton(cls):
         return instances[cls]
 
     return get_instance
+
+
+# if __name__ == '__main__':
+#     _process = CommonUtil.exeCmdAsync(['scrcpy', '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4'])
+#     time.sleep(3)
+#     CommonUtil.stopProcess(_process)
