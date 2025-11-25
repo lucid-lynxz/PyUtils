@@ -1,17 +1,17 @@
-import dataclasses
 import os
 import traceback
 from decimal import Decimal
 from typing import List, Type, Optional, Union
 
-from longport.openapi import Config, QuoteContext, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote, TradeContext
-from wool_tasks.ths_trade.bean.stock_position import StockPosition
+from longport.openapi import Config, QuoteContext, SubType, SecurityQuote, OrderType, OrderSide, TimeInForceType, SecurityStaticInfo, PushQuote
+from longport.openapi import TradeContext, OrderDetail, OrderStatus, OpenApiException
 
 from util.CommonUtil import CommonUtil
 from util.ConfigUtil import NewConfigParser
 from util.FileUtil import FileUtil
-from util.TimeUtil import TimeUtil
 from util.NetUtil import NetUtil
+from util.TimeUtil import TimeUtil
+from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
 
 class LBTrader(object):
@@ -50,6 +50,8 @@ class LBTrader(object):
         self.stop_loss_pct: float = float(lb_settings.get('stop_loss_pct', '5'))  # 止损比例, 默认5, 表示5%, >0 有效
         self.stop_profit_pct: float = float(lb_settings.get('stop_profit_pct', '8'))  # 止盈比例, 默认8, 表示8%, >0 有效
         self.bounce_pct: float = float(lb_settings.get('bounce_pct', '0.5'))  # 止盈回落比例,默认0.5%, 当止盈触发后, 若价格回落超过此比例, 则会触发止损
+
+        self.order_detail_dict: dict[str, OrderDetail] = {}  # 订单详情信息, key-订单id, value-订单详情
 
         # token过期提醒: https://open.longportapp.com/zh-CN/account
         fmt = '%Y-%m-%d'
@@ -208,6 +210,62 @@ class LBTrader(object):
         self.stock_positions = result
         return result
 
+    def get_order_detail(self, order_id: str, enable_from_cache: bool = False, print_log: bool = False) -> Union[OrderDetail, None]:
+        """
+        获取订单详情
+        https://open.longportapp.com/zh-CN/docs/trade/order/order_detail
+        @param order_id: 订单id
+        @param enable_from_cache: 是否从缓存中获取
+        @param print_log: 是否打印日志
+        """
+        if enable_from_cache and order_id in self.order_detail_dict:
+            return self.order_detail_dict[order_id]
+
+        resp = self.tradeCtx.order_detail(order_id)
+        success = LBTrader.is_order_success(resp)
+        CommonUtil.printLog(f'get_order_detail({order_id}) success={success},detail={resp}', print_log)
+        self.order_detail_dict[order_id] = resp
+        return resp
+
+    @staticmethod
+    def is_order_success(order: Union[OrderDetail, None]) -> bool:
+        """
+        订单是否执行成功
+        """
+        return order is None or order.status == OrderStatus.Filled
+
+    @staticmethod
+    def is_order_fail(order: Union[OrderDetail, None]) -> bool:
+        """
+        订单是否明确执行失败(不包括未提交等尚未执行状态)
+        Rejected已拒绝   Expired已过期
+        """
+        return order is not None and order.status in [OrderStatus.Rejected, OrderStatus.Expired]
+
+    def cancel_order(self, order_id: str) -> bool:
+        """
+        撤销订单
+        https://open.longportapp.com/zh-CN/docs/trade/order/withdraw
+        """
+        result = False
+        msg = ''
+        try:
+            self.tradeCtx.cancel_order(order_id)
+            result = True
+        except Exception as e:
+            # OpenApiException(601011, '599f1dd826d5f0d619a68a9b745bf41d', 'Order has been cancelled.')
+            if isinstance(e, OpenApiException):
+                result = e.code == 601011  # order has been cancelled
+                msg = f',{e.message}'
+            else:
+                msg = f',Exception:{e}'
+
+        detail = self.get_order_detail(order_id)
+
+        order_info = '' if detail is None else f'\n原订单信息: {detail.side} {detail.stock_name} {detail.quantity}股,价格:{detail.price}元 {detail.status}\n{detail.msg}'
+        NetUtil.push_to_robot(f'cancel_order({order_id})={result}{msg}{order_info.strip()}')
+        return result
+
 
 if __name__ == '__main__':
     trader = LBTrader()
@@ -218,7 +276,7 @@ if __name__ == '__main__':
 
 
     def on_quote(symbol_quote: str, quote_item: PushQuote):
-        CommonUtil.printLog(f'--> on_quote {symbol_quote}, {quote_item}')
+        CommonUtil.printLog(f'--> on_quote {symbol_quote}, {quote_item}', False)
 
 
     trader.set_on_subscribe(on_quote)
@@ -240,3 +298,10 @@ if __name__ == '__main__':
     # CommonUtil.printLog(resp)
 
     CommonUtil.printLog(f'trader.get_stock_position()={trader.get_stock_position()}')
+
+    trader.get_order_detail('1177783233673199616')
+    trader.get_order_detail('1177436536254267392')
+    trader.cancel_order('1177783233673199616')
+    trader.cancel_order('1177436536254267392')
+
+    TimeUtil.sleep(3)

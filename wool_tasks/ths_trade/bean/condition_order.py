@@ -13,6 +13,7 @@ from wool_tasks.ths_trade.long_bridge_trade import LBTrader
 from wool_tasks.ths_trade.zj_auto_trade import ZJTrader
 from util.QMTUtil import QmtUtil
 from util.qmt.market_bean import StockData, MarketData
+from util.DelayedTaskManager import DelayedTaskManager
 
 
 class ConditionOrder(Runnable):
@@ -167,6 +168,7 @@ class ConditionOrder(Runnable):
         self.config_path: Optional[str] = None  # 配置文件路径
         self.row_number: int = -1  # 行号, 从0开始, 0表示第一行
         self.row_str: Optional[str] = None  # 原始内容
+        self.delay_task_manager = DelayedTaskManager()  # 延迟任务管理器
 
         symbol = AkShareUtil.get_full_stock_code(self.position.code, self.position.market, False)
 
@@ -190,6 +192,12 @@ class ConditionOrder(Runnable):
             # QmtUtil.subscribe_quote(symbol, period='1m')
         except Exception as e:
             NetUtil.push_to_robot(f'QmtUtil.subscribe_quote error for {self.position.code}: {e}')
+
+    def reset_extreme_value(self):
+        """
+        复位条件单极值数据, 用于重新检测
+        """
+        self.extreme_value: float = -999999 if self.break_upward else 999999
 
     def use_long_bridge(self) -> bool:
         """
@@ -257,6 +265,26 @@ class ConditionOrder(Runnable):
             return
 
         self.check_condition(latest_price)
+
+    def _check_lb_order_detail(self, order_id: str):
+        """
+        提交订单后延迟检查订单状态, 直到订单完成
+        若状态为失败, 则撤销订单,并重新启用条件单
+        """
+        while True:
+            resp = self.long_trader.get_order_detail(order_id)
+            success = LBTrader.is_order_success(resp)
+            if success:
+                break
+
+            fail = LBTrader.is_order_fail(resp)
+            if fail:
+                self.long_trader.cancel_order(order_id)
+                self.active = True
+                self.reset_extreme_value()
+                NetUtil.push_to_robot(f'长桥 {self.position.code} {self.position.name} 订单({order_id})执行失败,重新启用条件单')
+                break
+            TimeUtil.sleep(30)  # 30秒后重新检查
 
     def check_condition(self, latest_price: float, price_tip: str = '最新价'):
         """
@@ -363,6 +391,8 @@ class ConditionOrder(Runnable):
                 # from longport.openapi import SubmitOrderResponse
                 result = self.long_trader.deal(self.position.symbol, latest_price, self.deal_count)
                 success = result is not None and not CommonUtil.isNoneOrBlank(result.order_id)
+                if success:
+                    self.delay_task_manager.addTask(30, self._check_lb_order_detail, result.order_id)
             elif self.use_zhunjia():
                 app_name = '尊嘉'
                 # from longport.openapi import SubmitOrderResponse
