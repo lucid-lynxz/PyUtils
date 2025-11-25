@@ -14,7 +14,7 @@ class DelayedTaskManager:
         self.asyncTasks = {}  # 异步任务
         self.task_counter = 0  # 任务ID计数器
 
-    def addTask(self, delay_seconds: int, func: Callable, *args, **kwargs):
+    def addTask(self, delay_seconds: int, func: Callable, *args, **kwargs) -> int:
         """
         添加一个延迟执行的任务
         基于线程,会在单独的线程中运行, 适用于CPU密集型或者真正并行执行的任务,可以执行普通函数
@@ -65,7 +65,7 @@ class DelayedTaskManager:
             return True
         return False
 
-    async def addAsyncTask(self, delay_seconds: int, func: Callable, *args, **kwargs):
+    async def addAsyncTask(self, delay_seconds: int, func: Callable, *args, **kwargs) -> int:
         """
         添加一个延迟执行的异步任务
         基于协程,在asyncio事件循环中运行, 适用于IO密集型,可以执行普通函数和协程函数
