@@ -254,8 +254,10 @@ class LBTrader(object):
             result = True
         except Exception as e:
             # OpenApiException(601011, '599f1dd826d5f0d619a68a9b745bf41d', 'Order has been cancelled.')
+            # OpenApiException: (code=603301, trace_id=5d80ea709416b4766d9499ebecdb2494) The symbol currently does not support short selling.
             if isinstance(e, OpenApiException):
                 result = e.code == 601011  # order has been cancelled
+                result = result or e.code == 603301  # 已经清仓,然后又有条件单触发进行卖出,被系统认为是做空
                 msg = f',{e.message}'
             else:
                 msg = f',Exception:{e}'

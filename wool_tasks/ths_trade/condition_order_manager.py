@@ -92,7 +92,7 @@ if __name__ == '__main__':
         CommonUtil.printLog(f'创建尊嘉工具类出错:{e}')
 
     # 读取CSV文件并转换为条件单对象列表
-    conditionOrderList: list = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
+    conditionOrderList: List[ConditionOrder] = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
 
     # 加入长桥证券的持仓股票信息, 进行止盈止损操作
     if enable_long_bridge and lb_trader.auto_stop:
@@ -267,6 +267,25 @@ if __name__ == '__main__':
                     # NetUtil.push_to_robot(f'{_data.iloc[0]}', printLog=True)
 
 
+        def task_get_lb_stock_position():
+            """
+            定期更新长桥持仓
+            """
+            if enable_long_bridge:
+                try:
+                    lb_pos_dict = lb_trader.get_stock_position(force=True)
+                    # CommonUtil.printLog(f'task_get_lb_stock_position:{lb_pos_dict}')
+                    for c_order in conditionOrderList:
+                        o_symbol = c_order.position.symbol
+                        if o_symbol in lb_pos_dict:
+                            lb_Pos = lb_pos_dict[o_symbol]
+                            c_order.position.balance = lb_Pos.balance
+                            c_order.position.available_balance = lb_Pos.available_balance
+                            c_order.position.cost_price = lb_Pos.cost_price
+                except Exception as e:
+                    NetUtil.push_to_robot(f'task_get_lb_stock_position 出错:{e}')
+
+
         task_condition_orders_hk()
 
         # 等待到下一个交易日
@@ -283,6 +302,7 @@ if __name__ == '__main__':
             (scheduler
              .add_task("task_condition_orders", task_condition_orders, interval=1, unit='minutes', at_time=':01')
              .add_task("get_all_stock_position", ths_trader.get_all_stock_position, interval=1, unit='hours', at_time=':02')
+             .add_task("task_get_lb_stock_position", task_get_lb_stock_position, interval=10, unit='minutes', at_time=':05')
              # .add_task("task_condition_orders_hk", task_condition_orders_hk, interval=10, unit='seconds', condition=enable_long_bridge)
              # .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
              .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
