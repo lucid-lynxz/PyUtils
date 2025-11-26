@@ -389,10 +389,22 @@ class ConditionOrder(Runnable):
             if self.use_long_bridge():
                 app_name = '长桥'
                 # from longport.openapi import SubmitOrderResponse
-                result = self.long_trader.deal(self.position.symbol, latest_price, self.deal_count)
+                symbol = self.position.symbol
+                result = self.long_trader.deal(symbol, latest_price, self.deal_count)
                 success = result is not None and not CommonUtil.isNoneOrBlank(result.order_id)
                 if success:
-                    self.delay_task_manager.addTask(30, self._check_lb_order_detail, result.order_id)
+                    pos_dict = self.long_trader.get_stock_position([symbol])
+                    if symbol in pos_dict.keys():
+                        pos = pos_dict[symbol]
+                        self.position.balance = pos.balance
+                        self.position.available_balance = pos.available_balance
+
+                    # 卖出操作, 且当前可用股票数量大于0,则延迟检测订单状态
+                    # 不限制的话, 可能出现在长桥app设置了条件单且成交了,  脚本中的止盈止损条件单之后又触发了, 导致订单失败的情况, 报错:
+                    # OpenApiException: (code=603301, trace_id=5d80ea709416b4766d9499ebecdb2494) The symbol currently does not support short selling
+                    if self.deal_count < 0 < self.position.available_balance:
+                        self.delay_task_manager.addTask(30, self._check_lb_order_detail, result.order_id)
+
             elif self.use_zhunjia():
                 app_name = '尊嘉'
                 # from longport.openapi import SubmitOrderResponse
