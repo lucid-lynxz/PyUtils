@@ -569,11 +569,13 @@ class FileUtil(object):
             object_class: Type[T],
             skip_rows: int = 0,
             delimiter: str = ',',
-            encoding: str = 'utf-8'
+            encoding: str = 'utf-8',
+            skip_empty_line: bool = True
     ) -> List[T]:
         """
         读取CSV文件并转换为对象列表
-        会跳过以 # 或 ; 开头的行以及空白行
+        会跳过以 # 或 ; 开头的行
+        skip_empty_line=True时, 还会跳过空白行
         泛型对象T中必须包含有一个函数:
 
         @classmethod
@@ -586,6 +588,7 @@ class FileUtil(object):
         - skip_rows: 跳过的行数（默认为1，跳过标题行）
         - delimiter: 分隔符（默认为逗号）
         - encoding: 文件编码（默认为utf-8）
+        - skip_empty_line: 是否跳过空行
 
         返回:
         - 对象列表
@@ -604,7 +607,7 @@ class FileUtil(object):
 
             # 逐行解析并转换为对象
             for row_num, row in enumerate(reader, start=skip_rows):
-                if not row or all(not cell.strip() for cell in row):  # 跳过空行
+                if skip_empty_line and (not row or all(not cell.strip() for cell in row)):  # 跳过空行
                     continue
 
                 if row[0].startswith('#') or row[0].startswith(';'):  # 跳过以 # 或 ; 开头的行
@@ -617,6 +620,8 @@ class FileUtil(object):
                 row = row_str.split(delimiter)
 
                 try:
+                    if '搜索历史记录' in row[0]:
+                        print(f'搜索历史记录')
                     obj = object_class.by_csv_row(row)
 
                     obj.config_path = file_path
@@ -638,6 +643,46 @@ class FileUtil(object):
         :return: 如果是绝对路径返回True，相对路径返回False
         """
         return os.path.isabs(path)
+
+    @staticmethod
+    def extract_lines(src_path: str, line_ranges: List[Union[int, tuple]], encoding: str = 'utf-8') -> str:
+        """
+        从指定源文件中提取指定区域行的内容,并拼接成一个新字符串
+        @param src_path: 源文件路径, 通常是txt或者csv文件, 默认使用utf-8编码
+        @param line_ranges: 行范围列表，每个元素是一个元组 (start_line(含), end_line(含)  或单个行号, 行号从0开始
+        @param encoding: 源文件编码
+        @return str: 提取出的内容
+        """
+        if not FileUtil.isFileExist(src_path):
+            CommonUtil.printLog(f'extract_lines fail: 源文件不存在:{FileUtil.recookPath(src_path)}')
+            return ""
+
+        lines = FileUtil.readFile(src_path, encoding=encoding)
+        # 提取指定行范围的内容
+        extracted_lines = []
+        for line_range in line_ranges:
+            if isinstance(line_range, int):
+                # 单行提取
+                line_index = line_range  # 转换为0基索引
+                if 0 <= line_index < len(lines):
+                    extracted_lines.append(lines[line_index])
+            elif isinstance(line_range, tuple) and len(line_range) == 2:
+                # 范围提取
+                start_line, end_line = line_range
+                start_index = start_line
+                end_index = end_line
+
+                # 确保索引在有效范围内
+                start_index = max(0, start_index)
+                end_index = min(len(lines) - 1, end_index)
+
+                # 提取范围内的行
+                if start_index <= end_index:
+                    extracted_lines.extend(lines[start_index:end_index + 1])
+            else:
+                CommonUtil.printLog(f"无效的行范围格式: {line_range}")
+                return ""
+        return "".join(extracted_lines)
 
 
 if __name__ == '__main__':
