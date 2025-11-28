@@ -569,11 +569,13 @@ class FileUtil(object):
             object_class: Type[T],
             skip_rows: int = 0,
             delimiter: str = ',',
-            encoding: str = 'utf-8'
+            encoding: str = 'utf-8',
+            skip_empty_line: bool = True
     ) -> List[T]:
         """
         读取CSV文件并转换为对象列表
-        会跳过以 # 或 ; 开头的行以及空白行
+        会跳过以 # 或 ; 开头的行
+        skip_empty_line=True时, 还会跳过空白行
         泛型对象T中必须包含有一个函数:
 
         @classmethod
@@ -586,6 +588,7 @@ class FileUtil(object):
         - skip_rows: 跳过的行数（默认为1，跳过标题行）
         - delimiter: 分隔符（默认为逗号）
         - encoding: 文件编码（默认为utf-8）
+        - skip_empty_line: 是否跳过空行
 
         返回:
         - 对象列表
@@ -604,7 +607,7 @@ class FileUtil(object):
 
             # 逐行解析并转换为对象
             for row_num, row in enumerate(reader, start=skip_rows):
-                if not row or all(not cell.strip() for cell in row):  # 跳过空行
+                if skip_empty_line and (not row or all(not cell.strip() for cell in row)):  # 跳过空行
                     continue
 
                 if row[0].startswith('#') or row[0].startswith(';'):  # 跳过以 # 或 ; 开头的行
@@ -617,6 +620,8 @@ class FileUtil(object):
                 row = row_str.split(delimiter)
 
                 try:
+                    if '搜索历史记录' in row[0]:
+                        print(f'搜索历史记录')
                     obj = object_class.by_csv_row(row)
 
                     obj.config_path = file_path
