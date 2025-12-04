@@ -1,14 +1,15 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
-import os
-import re
 import csv
-import pandas as pd
-import numpy as np
+import os
 import platform
+import re
 import shutil
-from typing import AnyStr, Optional, List, Type, Generic, TypeVar, Union
+from typing import Optional, List, Type, TypeVar, Union
+
+import numpy as np
+import pandas as pd
 
 from util.CommonUtil import CommonUtil
 
@@ -653,7 +654,7 @@ class FileUtil(object):
         @param src_path: 源文件路径, 通常是txt或者csv文件, 默认使用utf-8编码
         @param line_ranges: 行范围列表，每个元素是一个元组 (start_line(含), end_line(含)  或单个行号, 行号从0开始
         @param encoding: 源文件编码
-    @param skip_empty_lines: 是否在处理前跳过文件中的所有空白行, 默认为 True
+        @param skip_empty_lines: 是否在处理前跳过文件中的所有空白行, 默认为 True
         @return str: 提取出的内容
         """
         if not FileUtil.isFileExist(src_path):
@@ -693,38 +694,156 @@ class FileUtil(object):
         return "".join(extracted_lines)
 
     @staticmethod
-    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True):
+    def extract_csv(src_path: str, column_name: str, row_ranges: List[Union[int, tuple]],
+                    output_path: str = None, encoding: str = 'utf-8-sig',
+                    remove_empty_row: bool = True,
+                    process_func: Optional[callable] = None) -> pd.DataFrame:
+        """
+        从指定CSV文件中提取指定列的部分数据，并可选择保存为新的CSV文件
+        参考 extract_lines() 方法实现
+        兼容单个数据跨多行存储的情况(带有\n换行符), 能正确识别为str数据
+
+        @param src_path: 源CSV文件路径
+        @param column_name: 要提取的列名，例如 'query'
+        @param row_ranges: 行范围列表，每个元素是一个元组 (start_row(含), end_row(含)) 或单个行号，行号从0开始(不包括column行)
+        @param output_path: 输出CSV文件路径，如果提供则保存为新的CSV文件，默认为None不保存
+        @param encoding: 源文件编码，默认为 'utf-8-sig'
+        @param remove_empty_row: 是否删除空白行，默认为True
+        @param process_func: 可选的处理函数，用于对每个row数据进行处理，函数签名应为 func(data: str) -> str
+        @return pd.DataFrame: 提取后的DataFrame
+        """
+        if not FileUtil.isFileExist(src_path):
+            CommonUtil.printLog(f'extract_csv fail: 源文件不存在:{FileUtil.recookPath(src_path)}')
+            return pd.DataFrame()
+
+        try:
+            # 读取CSV文件，使用 dtype=str 确保所有数据都作为字符串处理
+            # keep_default_na=False 和 na_values=[''] 确保空值也被当作字符串处理
+            df = pd.read_csv(src_path, encoding=encoding, dtype=str, keep_default_na=False, na_values=[''])
+
+            # 确保所有NaN值都被替换为空字符串
+            df = df.fillna('')
+
+            # 检查列是否存在
+            if column_name not in df.columns:
+                CommonUtil.printLog(f'extract_csv fail: 列 "{column_name}" 不存在于文件中')
+                return pd.DataFrame()
+
+            # 提取指定列
+            extracted_df = df[[column_name]].copy()
+
+            # 根据行范围筛选数据
+            selected_indices = []
+            for row_range in row_ranges:
+                if isinstance(row_range, int):
+                    # 单行提取
+                    if 0 <= row_range < len(extracted_df):
+                        selected_indices.append(row_range)
+                elif isinstance(row_range, tuple) and len(row_range) == 2:
+                    # 范围提取
+                    start_row, end_row = row_range
+                    # 确保索引在有效范围内
+                    start_row = max(0, start_row)
+                    end_row = min(len(extracted_df) - 1, end_row)
+
+                    # 提取范围内的行
+                    if start_row <= end_row:
+                        selected_indices.extend(range(start_row, end_row + 1))
+                else:
+                    CommonUtil.printLog(f"extract_csv fail: 无效的行范围格式 {row_range}")
+                    continue
+
+            # 索引去重并排序索引
+            selected_indices = sorted(list(set(selected_indices)))
+
+            # 根据选定的索引提取数据
+            final_df = extracted_df.iloc[selected_indices].reset_index(drop=True)
+
+            # 如果提供了处理函数，则对数据进行处理
+            if process_func is not None and callable(process_func):
+                final_df[column_name] = final_df[column_name].apply(process_func)
+
+            # 删除空白行
+            if remove_empty_row:
+                final_df = final_df[final_df[column_name].str.strip() != '']
+
+            # 如果提供了输出路径，则保存为新的CSV文件
+            if output_path:
+                FileUtil.createFile(output_path, False)
+                final_df.to_csv(output_path, index=False, encoding=encoding, lineterminator='\n')
+                CommonUtil.printLog(f'extract_csv 保存提取的数据到: {output_path}')
+            return final_df
+        except Exception as e:
+            CommonUtil.printLog(f'extract_csv_columns fail: {e}')
+            return pd.DataFrame()
+
+    @staticmethod
+    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True):
         """
         合并两个DataFrame，去重并解决冲突
-        所有 column 都会保留, 所有row都会保留, 对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
+        对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
 
-        :param df_left: 优先级较高的DataFrame (如果 priority='left')
-        :param df_right: 另一个DataFrame
+        :param df_left: 左侧DataFrame
+        :param df_right: 右侧DataFrame
         :param on_column: 用于去重和合并的公共列名
         :param priority_left: 左侧 DataFrame的值在冲突时优先, 若为False, 则右侧 DataFrame的值优先
+        :param keep_both: 是否保留两个DataFrame中的所有行(True: 保留所有行; False: 只保留优先级高的DataFrame中的行)
         :return: 合并并去重后的最终 DataFrame
         """
-        if not priority_left:
-            df_left, df_right = df_right, df_left  # 交换位置，统一按左优先处理
+        if keep_both:
+            # 保留两个DataFrame的所有行（原有逻辑）
+            if not priority_left:
+                df_left, df_right = df_right, df_left  # 交换位置，统一按左优先处理
 
-        # 1. 合并
-        merged_df = pd.merge(df_left, df_right, on=on_column, how='outer', suffixes=('_left', '_right'))
+            # 1. 合并
+            merged_df = pd.merge(df_left, df_right, on=on_column, how='outer', suffixes=('_left', '_right'))
 
-        # 2. 解决冲突
-        right_columns = [col for col in merged_df.columns if col.endswith('_right')]
-        for right_col in right_columns:
-            left_col = right_col.replace('_right', '_left')
-            merged_df[right_col] = np.where(merged_df[left_col].notna(), merged_df[left_col], merged_df[right_col])
-            merged_df.drop(columns=[left_col], inplace=True)
-            merged_df.rename(columns={right_col: right_col.replace('_right', '')}, inplace=True)
+            # 2. 解决冲突
+            right_columns = [col for col in merged_df.columns if col.endswith('_right')]
+            for right_col in right_columns:
+                left_col = right_col.replace('_right', '_left')
+                merged_df[right_col] = np.where(merged_df[left_col].notna(), merged_df[left_col], merged_df[right_col])
+                merged_df.drop(columns=[left_col], inplace=True)
+                merged_df.rename(columns={right_col: right_col.replace('_right', '')}, inplace=True)
 
-        return merged_df
+            return merged_df
+        else:
+            # 只保留优先级高的DataFrame中的行
+            if priority_left:
+                # 保留左侧DataFrame中的行，如果有冲突则使用左侧的值
+                merged_df = pd.merge(df_left, df_right, on=on_column, how='left', suffixes=('_left', '_right'))
+
+                # 解决冲突，优先使用左侧的值
+                right_columns = [col for col in merged_df.columns if col.endswith('_right')]
+                for right_col in right_columns:
+                    left_col = right_col.replace('_right', '_left')
+                    # 优先使用左侧的值，如果左侧为空则使用右侧的值
+                    merged_df[left_col] = np.where(merged_df[left_col].notna(), merged_df[left_col], merged_df[right_col])
+                    merged_df.drop(columns=[right_col], inplace=True)
+                    merged_df.rename(columns={left_col: left_col.replace('_left', '')}, inplace=True)
+
+                return merged_df
+            else:
+                # 保留右侧DataFrame中的行，如果有冲突则使用右侧的值
+                merged_df = pd.merge(df_left, df_right, on=on_column, how='right', suffixes=('_left', '_right'))
+
+                # 解决冲突，优先使用右侧的值
+                right_columns = [col for col in merged_df.columns if col.endswith('_right')]
+                for right_col in right_columns:
+                    left_col = right_col.replace('_right', '_left')
+                    # 优先使用右侧的值，如果右侧为空则使用左侧的值
+                    merged_df[right_col] = np.where(merged_df[right_col].notna(), merged_df[right_col], merged_df[left_col])
+                    merged_df.drop(columns=[left_col], inplace=True)
+                    merged_df.rename(columns={right_col: right_col.replace('_right', '')}, inplace=True)
+
+                return merged_df
 
     @staticmethod
     def merge_csv(csv1: str, csv2: str, on_column: str,
                   priority_left: bool = True,
                   encoding: str = 'utf-8-sig',
-                  output_csv: Optional[str] = None
+                  output_csv: Optional[str] = None,
+                  keep_both: bool = True
                   ) -> pd.DataFrame:
         """
         合并两个CSV文件，并可以指定以哪个文件为准
@@ -735,12 +854,13 @@ class FileUtil(object):
         :param priority_left: 左侧 DataFrame的值在冲突时优先, 若为False, 则右侧 DataFrame的值优先
         :param output_csv: 将合并后的结果写入的输出CSV文件路径 (可选), None表示不输出
         :param encoding: CSV文件的编码
+        :param keep_both: 是否保留两个DataFrame中的所有行(True: 保留所有行; False: 只保留优先级高的DataFrame中的行)
         :return: 合并后的 DataFrame
         """
         df1 = pd.read_csv(csv1, encoding=encoding)
         df2 = pd.read_csv(csv2, encoding=encoding)
 
-        merged_df = FileUtil.merge_dataframe(df1, df2, on_column, priority_left)
+        merged_df = FileUtil.merge_dataframe(df1, df2, on_column, priority_left, keep_both)
         if output_csv:
             merged_df.to_csv(output_csv, encoding=encoding, index=False)
         return merged_df
