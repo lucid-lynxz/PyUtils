@@ -92,7 +92,7 @@ if __name__ == '__main__':
         CommonUtil.printLog(f'创建尊嘉工具类出错:{e}')
 
     # 读取CSV文件并转换为条件单对象列表
-    conditionOrderList: List[ConditionOrder] = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0)
+    conditionOrderList: List[ConditionOrder] = FileUtil.read_csv_to_objects(condition_order_path, ConditionOrder, 0, replace_dict={'=': ',', ' ': ''})
 
     # 加入长桥证券的持仓股票信息, 进行止盈止损操作
     if enable_long_bridge and lb_trader.auto_stop:
