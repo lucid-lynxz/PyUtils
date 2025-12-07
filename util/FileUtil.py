@@ -6,7 +6,7 @@ import os
 import platform
 import re
 import shutil
-from typing import Optional, List, Type, TypeVar, Union
+from typing import Optional, List, Type, TypeVar, Union, Dict
 
 import numpy as np
 import pandas as pd
@@ -573,7 +573,8 @@ class FileUtil(object):
             skip_rows: int = 0,
             delimiter: str = ',',
             encoding: str = 'utf-8',
-            skip_empty_line: bool = True
+            skip_empty_line: bool = True,
+            replace_dict: Optional[Dict[str, str]] = None
     ) -> List[T]:
         """
         读取CSV文件并转换为对象列表
@@ -592,6 +593,7 @@ class FileUtil(object):
         - delimiter: 分隔符（默认为逗号）
         - encoding: 文件编码（默认为utf-8）
         - skip_empty_line: 是否跳过空行
+        - replace_dict: 将指定的字符串替换为其他字符串的字典, 如: {'#': '#', ' ': ''}
 
         返回:
         - 对象列表
@@ -616,10 +618,12 @@ class FileUtil(object):
                 if row[0].startswith('#') or row[0].startswith(';'):  # 跳过以 # 或 ; 开头的行
                     continue
 
-                # 去除等号和空格, 将等号转为逗号,避免原内容中包含冒号时, 冒号会被识别为 key-value 的分隔符
+                # 按需去除等号和空格, 将等号转为逗号,避免原内容中包含冒号时, 冒号会被识别为 key-value 的分隔符
                 row_str = delimiter.join(row)
                 ori_row_str = row_str
-                row_str = row_str.replace('=', ',').replace(' ', '')
+                if replace_dict:
+                    for k, v in replace_dict.items():
+                        row_str = row_str.replace(k, v)
                 row = row_str.split(delimiter)
 
                 try:
@@ -694,10 +698,11 @@ class FileUtil(object):
         return "".join(extracted_lines)
 
     @staticmethod
-    def extract_csv(src_path: str, column_name: str, row_ranges: List[Union[int, tuple]],
+    def extract_csv(src_path: str, column_name: str, row_ranges: List[Union[int, tuple]] = None,
                     output_path: str = None, encoding: str = 'utf-8-sig',
                     remove_empty_row: bool = True,
-                    process_func: Optional[callable] = None) -> pd.DataFrame:
+                    process_func: Optional[callable] = None,
+                    keyword: Optional[str] = None) -> pd.DataFrame:
         """
         从指定CSV文件中提取指定列的部分数据，并可选择保存为新的CSV文件
         参考 extract_lines() 方法实现
@@ -706,10 +711,12 @@ class FileUtil(object):
         @param src_path: 源CSV文件路径
         @param column_name: 要提取的列名，例如 'query'
         @param row_ranges: 行范围列表，每个元素是一个元组 (start_row(含), end_row(含)) 或单个行号，行号从0开始(不包括column行)
+                          默认为None，表示处理全部数据范围
         @param output_path: 输出CSV文件路径，如果提供则保存为新的CSV文件，默认为None不保存
         @param encoding: 源文件编码，默认为 'utf-8-sig'
         @param remove_empty_row: 是否删除空白行，默认为True
         @param process_func: 可选的处理函数，用于对每个row数据进行处理，函数签名应为 func(data: str) -> str
+        @param keyword: 待提取列数据中需包含的关键字，默认为None，不进行过滤
         @return pd.DataFrame: 提取后的DataFrame
         """
         if not FileUtil.isFileExist(src_path):
@@ -719,7 +726,8 @@ class FileUtil(object):
         try:
             # 读取CSV文件，使用 dtype=str 确保所有数据都作为字符串处理
             # keep_default_na=False 和 na_values=[''] 确保空值也被当作字符串处理
-            df = pd.read_csv(src_path, encoding=encoding, dtype=str, keep_default_na=False, na_values=[''])
+            # df = pd.read_csv(src_path, encoding=encoding, dtype=str, keep_default_na=False, na_values=[''])
+            df = pd.read_csv(src_path, encoding=encoding, dtype=str)
 
             # 确保所有NaN值都被替换为空字符串
             df = df.fillna('')
@@ -732,32 +740,42 @@ class FileUtil(object):
             # 提取指定列
             extracted_df = df[[column_name]].copy()
 
-            # 根据行范围筛选数据
-            selected_indices = []
-            for row_range in row_ranges:
-                if isinstance(row_range, int):
-                    # 单行提取
-                    if 0 <= row_range < len(extracted_df):
-                        selected_indices.append(row_range)
-                elif isinstance(row_range, tuple) and len(row_range) == 2:
-                    # 范围提取
-                    start_row, end_row = row_range
-                    # 确保索引在有效范围内
-                    start_row = max(0, start_row)
-                    end_row = min(len(extracted_df) - 1, end_row)
+            # 处理行范围筛选
+            if row_ranges is None:
+                # 如果row_ranges为None，则处理全部数据范围
+                final_df = extracted_df.reset_index(drop=True)
+            else:
+                # 根据行范围筛选数据
+                selected_indices = []
+                for row_range in row_ranges:
+                    if isinstance(row_range, int):
+                        # 单行提取
+                        if 0 <= row_range < len(extracted_df):
+                            selected_indices.append(row_range)
+                    elif isinstance(row_range, tuple) and len(row_range) == 2:
+                        # 范围提取
+                        start_row, end_row = row_range
+                        # 确保索引在有效范围内
+                        start_row = max(0, start_row)
+                        end_row = min(len(extracted_df) - 1, end_row)
 
-                    # 提取范围内的行
-                    if start_row <= end_row:
-                        selected_indices.extend(range(start_row, end_row + 1))
-                else:
-                    CommonUtil.printLog(f"extract_csv fail: 无效的行范围格式 {row_range}")
-                    continue
+                        # 提取范围内的行
+                        if start_row <= end_row:
+                            selected_indices.extend(range(start_row, end_row + 1))
+                    else:
+                        CommonUtil.printLog(f"extract_csv fail: 无效的行范围格式 {row_range}")
+                        continue
 
-            # 索引去重并排序索引
-            selected_indices = sorted(list(set(selected_indices)))
+                # 索引去重并排序索引
+                selected_indices = sorted(list(set(selected_indices)))
 
-            # 根据选定的索引提取数据
-            final_df = extracted_df.iloc[selected_indices].reset_index(drop=True)
+                # 根据选定的索引提取数据
+                final_df = extracted_df.iloc[selected_indices].reset_index(drop=True)
+
+            # 添加keyword过滤条件
+            if keyword is not None:
+                # 过滤出指定列包含keyword的数据
+                final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, na=False)].reset_index(drop=True)
 
             # 如果提供了处理函数，则对数据进行处理
             if process_func is not None and callable(process_func):
@@ -864,6 +882,83 @@ class FileUtil(object):
         if output_csv:
             merged_df.to_csv(output_csv, encoding=encoding, index=False)
         return merged_df
+
+    @staticmethod
+    def calc_dataframe_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None, keyword_col: Optional[str] = None) -> dict:
+        """
+        计算指定列的准确率统计信息:
+        1. 过滤 column_base 和 column_compare 均有值的数据
+            会生成一个dataFrame, 记为: valid_df
+            对应的数据量, 记为: valid_cnt  即: len(valid_df)
+        2. 计算 valid_df 中 column_base 和 column_compare 相同值的数量
+            会生成一个dataFrame, 记为: same_df
+            对应的数据量, 记为: same_cnt  即: len(same_df)
+        3. 计算准确率, 记为: accuracy = same_cnt / valid_cnt
+
+        Args:
+            df (pandas.DataFrame): 数据框
+            column_base (str): 基准数据列名, 此为真值列
+            column_compare (str): 待统计准确率的列名, 此为预测值列
+            keyword (str, optional): 关键字过滤条件，如果提供且keyword_col不为空，则 keyword_col 列的值必须包含该关键字才被视为有效数据
+            keyword_col (str, optional): 关键字所在的列名，用于判断是否满足条件。如果为None，则默认是: column_compare
+
+        Returns:
+            dict: 包含统计信息的字典，各key含义如下：
+                - total_cnt (int): 总数据数，即数据框的总行数
+                - valid_cnt (int): 有效数据数，即两个列均有值的行数
+                - same_cnt (int): 匹配数据数，即两个列值相等的行数
+                - accuracy (float): 准确率，计算公式为 same_cnt/valid_cnt
+                - valid_df (pandas.DataFrame): 有效数据的DataFrame，即两个列均有值的数据子集
+                - same_df (pandas.DataFrame): 匹配数据的DataFrame，即两个列值相等的数据子集
+        """
+        # 1. 总数据数
+        total_cnt = len(df)
+
+        # 2. column_base 和 column_compare 均有值的数据量
+        valid_df = df[df[column_base].notna() & df[column_compare].notna()]
+
+        # 3. 如果提供了keyword和keyword_col参数，则进一步过滤keyword_col包含关键字的数据
+        keyword_col = column_compare if keyword_col is None else keyword_col
+        if keyword is not None and keyword_col is not None and keyword_col in df.columns:
+            valid_df = valid_df[valid_df[keyword_col].astype(str).str.contains(keyword, na=False)]
+
+        valid_cnt = len(valid_df)
+
+        # 4. column_base 和 column_compare 值相等的数据量及对应DataFrame
+        same_df = valid_df[valid_df[column_base] == valid_df[column_compare]]
+        same_cnt = len(same_df)
+
+        # 5. 准确率计算
+        accuracy = same_cnt / valid_cnt if valid_cnt > 0 else 0
+
+        return {
+            'total_cnt': total_cnt,  # 总数据数
+            'valid_cnt': valid_cnt,  # 有效数据数（两列均有值，且满足keyword条件）
+            'same_cnt': same_cnt,  # 匹配数据数（两列值相等）
+            'accuracy': accuracy,  # 准确率（匹配数/有效数）
+            'valid_df': valid_df,  # 有效数据DataFrame
+            'same_df': same_df  # 匹配数据DataFrame
+        }
+
+    @staticmethod
+    def calc_csv_accuracy(csv_path: str, column_base: str, column_compare: str,
+                          keyword: Optional[str] = None, keyword_col: Optional[str] = None, encoding: str = 'utf-8-sig'):
+        """
+        计算CSV文件指定列的准确率
+
+        Args:
+            csv_path (str): CSV文件路径
+            column_base (str): 基准数据列名, 此为真值列
+            column_compare (str): 待统计准确率的列名, 此为预测值列
+            keyword (str, optional): 关键字过滤条件，如果提供且keyword_col不为空，则 keyword_col 列的值必须包含该关键字才被视为有效数据
+            keyword_col (str, optional): 关键字所在的列名，用于判断是否满足条件。如果为None，则默认是: column_compare
+            encoding (str): CSV文件的编码，默认为 'utf-8-sig'
+
+        Returns:
+            dict: 统计信息字典，包含准确率、有效数据数、匹配数据数、总数据数等信息
+        """
+        df = pd.read_csv(csv_path, encoding=encoding)
+        return FileUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col)
 
 
 if __name__ == '__main__':
