@@ -15,6 +15,8 @@ T = TypeVar('T')  # 泛型类型
 """
 CSV/padans工具类
 支持: 
+* read_csv(): 读取csv文件, 并将NaN值替换为空字符串
+
 * read_csv_to_objects(): 读取csv文件, 对行数据进行字符替换, 并将每行数据转化为特定的对象
 * extract_csv(): 从csv文件中提取指定列的数据, 支持关键字和行号过滤, 并进行数据清洗和处理
 
@@ -25,10 +27,21 @@ CSV/padans工具类
 * calc_dataframe_accuracy(): 计算DataFrame中指定列的准确率
 
 * to_markdown(): 将DataFrame转换为Markdown格式的字符串, 并存储到指定的文件中
+
+* filter_and_replace_dataframe(): 过滤指定列的数据, 对结果进行行号二次过滤和指定数据替换
 """
 
 
 class CSVUtil(object):
+
+    @staticmethod
+    def read_csv(src_path: str, encoding: str = 'utf-8-sig') -> pd.DataFrame:
+        """
+        以str格式读取CSV文件, 并将NaN值替换为空字符串
+        """
+        df = pd.read_csv(src_path, encoding=encoding, dtype=str)
+        return df.fillna('')
+
     @staticmethod
     def read_csv_to_objects(
             file_path: str,
@@ -110,7 +123,7 @@ class CSVUtil(object):
                     output_path: str = None, encoding: str = 'utf-8-sig',
                     remove_empty_row: bool = True,
                     process_func: Optional[callable] = None,
-                    keyword: Optional[str] = None) -> pd.DataFrame:
+                    keyword: Optional[str] = None, regex: bool = False) -> pd.DataFrame:
         """
         从指定CSV文件中提取指定列的部分数据，并可选择保存为新的CSV文件
         参考 extract_lines() 方法实现
@@ -125,6 +138,7 @@ class CSVUtil(object):
         @param remove_empty_row: 是否删除空白行，默认为True
         @param process_func: 可选的处理函数，用于对每个row数据进行处理，函数签名应为 func(data: str) -> str
         @param keyword: 待提取列数据中需包含的关键字，默认为None，不进行过滤
+        @param regex: 是否将keyword视为正则表达式进行匹配，默认为False
         @return pd.DataFrame: 提取后的DataFrame
         """
         if not FileUtil.isFileExist(src_path):
@@ -182,8 +196,12 @@ class CSVUtil(object):
 
             # 添加keyword过滤条件
             if keyword is not None:
-                # 过滤出指定列包含keyword的数据
-                final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, na=False)].reset_index(drop=True)
+                if regex:
+                    # 使用正则表达式匹配
+                    final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, regex=True, na=False)].reset_index(drop=True)
+                else:
+                    # 普通文本匹配
+                    final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, regex=False, na=False)].reset_index(drop=True)
 
             # 如果提供了处理函数，则对数据进行处理
             if process_func is not None and callable(process_func):
@@ -391,3 +409,85 @@ class CSVUtil(object):
             FileUtil.write2File(output_file, markdown_str, encoding=encoding)
 
         return markdown_str
+
+    @staticmethod
+    def filter_and_replace_dataframe(
+            dataframe: pd.DataFrame,
+            filter_column: str,
+            filter_keyword: Optional[str] = None,
+            filter_regex: bool = False,
+            row_ranges: Optional[List[Union[int, tuple]]] = None,
+            replace_columns_dict: Optional[Dict[str, str]] = None
+    ) -> pd.DataFrame:
+        """
+        对传入的DataFrame进行拷贝然后过滤，并在指定范围内替换指定列的数据
+
+        @param dataframe: 输入的DataFrame
+        @param filter_column: 用于过滤的列名
+        @param filter_keyword: 过滤关键字，如果提供则过滤出包含该关键字的行
+        @param filter_regex: 是否将filter_keyword视为正则表达式进行匹配，默认为False
+        @param row_ranges: 替换的行范围列表，每个元素是一个元组 (start_row, end_row) 或单个行号，
+                          行号相对于过滤后的DataFrame，从0开始。
+                          默认为None，表示替换所有行
+        @param replace_columns_dict: 需要替换数据的列名字典，格式为 {列名: 替换值}
+        @return: 处理后的DataFrame
+        """
+        # 创建DataFrame副本避免修改原始数据
+        result_df = dataframe.copy()
+
+        # 如果没有提供过滤关键字，则不过滤数据
+        if filter_keyword is not None:
+            # 检查过滤列是否存在
+            if filter_column not in result_df.columns:
+                CommonUtil.printLog(f"警告: 列 '{filter_column}' 不存在于DataFrame中")
+                return result_df
+
+            # 根据是否使用正则表达式进行过滤
+            if filter_regex:
+                filtered_df = result_df[result_df[filter_column].astype(str).str.contains(filter_keyword, regex=True, na=False)]
+            else:
+                filtered_df = result_df[result_df[filter_column].astype(str).str.contains(filter_keyword, regex=False, na=False)]
+        else:
+            # 不过滤，使用全部数据
+            filtered_df = result_df
+
+        # 如果没有指定要替换的列，则直接返回
+        if not replace_columns_dict:
+            return filtered_df
+
+        # 验证要替换的列是否存在
+        missing_columns = [col for col in replace_columns_dict.keys() if col not in filtered_df.columns]
+        if missing_columns:
+            CommonUtil.printLog(f"警告: 列 {missing_columns} 不存在于DataFrame中")
+            return filtered_df
+
+        # 确定要替换的行索引
+        if row_ranges is None:
+            # 默认替换所有过滤出的行
+            replace_indices = filtered_df.index.tolist()
+        else:
+            # 根据指定范围确定要替换的行
+            replace_indices = []
+            for row_range in row_ranges:
+                if isinstance(row_range, int):
+                    # 单行替换
+                    if 0 <= row_range < len(filtered_df):
+                        replace_indices.append(filtered_df.index[row_range])
+                elif isinstance(row_range, tuple) and len(row_range) == 2:
+                    # 范围替换
+                    start_row, end_row = row_range
+                    # 确保索引在有效范围内
+                    start_row = max(0, start_row)
+                    end_row = min(len(filtered_df) - 1, end_row)
+
+                    # 添加范围内的行索引
+                    if start_row <= end_row:
+                        replace_indices.extend(filtered_df.index[start_row:end_row + 1])
+                else:
+                    CommonUtil.printLog(f"警告: 无效的行范围格式 {row_range}")
+
+        # 执行替换操作
+        for col, value in replace_columns_dict.items():
+            filtered_df.loc[replace_indices, col] = value
+
+        return filtered_df
