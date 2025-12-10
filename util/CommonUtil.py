@@ -2,15 +2,10 @@
 # -*- coding:utf-8 -*-
 import functools
 import importlib.util
-import os
-import platform
-import re
-import signal
-import subprocess
-import sys
-import threading
-import time
-from typing import Type, Union, Optional, List
+import os, sys, threading, time, re
+import platform, random
+import signal, subprocess
+from typing import Type, Union, Optional, List, Set
 
 Number = Union[int, float]
 
@@ -569,6 +564,47 @@ class CommonUtil(object):
                 return font_path
         return None
 
+    @staticmethod
+    def generate_random_numbers(count: int, min_val: int = 0, max_val: int = None, print_exclude_set: bool = False) -> Set:
+        """
+        在指定范围 [min_val,max_val] 内生成指定个数的不重复随机数, 返回一个 Set() 集合
+        可自行排序:  sorted(random_numbers)
+
+        Args:
+            count: 需要生成的随机数个数
+            min_val: 最小值（包含），默认为0
+            max_val: 最大值（包含），默认为count-1+min_val
+            print_exclude_set: 是否打印排除的数字集合，默认为False
+
+        Returns:
+            set: 包含不重复随机数的集合
+        """
+        if max_val is None:
+            max_val = count - 1 + min_val
+
+        total_range = max_val - min_val + 1
+
+        # 检查范围是否足够容纳所需数量的数字
+        if total_range < count:
+            raise ValueError("范围太小，无法生成指定数量的不重复数字")
+
+        # 当需要生成的数字接近总数时，使用反向策略更高效
+        if count > total_range * 0.9:  # 当超过90%时使用反向策略
+            # 生成需要排除的数字
+            exclude_count = total_range - count
+            excluded_numbers = set(random.sample(range(min_val, max_val + 1), exclude_count))
+            if print_exclude_set:
+                CommonUtil.printLog(f"排除的数字集合: {excluded_numbers}")
+            # 生成全量集合并减去排除的数字
+            full_range = set(range(min_val, max_val + 1))
+            return full_range - excluded_numbers
+        else:
+            # 正常采样策略
+            result_set = set(random.sample(range(min_val, max_val + 1), count))
+            if print_exclude_set:
+                CommonUtil.printLog(f"排除的数字集合: {set(range(min_val, max_val + 1)) - result_set}")
+            return result_set
+
 
 # 配置日志
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -630,7 +666,11 @@ def singleton(cls):
 
     return get_instance
 
-# if __name__ == '__main__':
-#     _process = CommonUtil.exeCmdAsync(['scrcpy', '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4'])
-#     time.sleep(3)
-#     CommonUtil.stopProcess(_process)
+
+if __name__ == '__main__':
+    #     _process = CommonUtil.exeCmdAsync(['scrcpy', '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4'])
+    #     time.sleep(3)
+    #     CommonUtil.stopProcess(_process)
+    rst = CommonUtil.generate_random_numbers(10, 0, 100)
+    print(rst)
+    print(sorted(rst))

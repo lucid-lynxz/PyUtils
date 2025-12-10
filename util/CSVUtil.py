@@ -43,6 +43,20 @@ class CSVUtil(object):
         return df.fillna('')
 
     @staticmethod
+    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig') -> bool:
+        """
+        将DataFrame保存为CSV文件
+        """
+        try:
+            FileUtil.createFile(output_path, False)
+            df.to_csv(output_path, index=False, encoding=encoding, lineterminator='\n')
+            CommonUtil.printLog(f'to_csv 保存提取的数据到: {output_path}')
+            return True
+        except Exception as e:
+            CommonUtil.printLog(f'to_csv 保存提取的数据到: {output_path} 失败: {e}')
+            return False
+
+    @staticmethod
     def read_csv_to_objects(
             file_path: str,
             object_class: Type[T],
@@ -413,45 +427,45 @@ class CSVUtil(object):
     @staticmethod
     def filter_and_replace_dataframe(
             dataframe: pd.DataFrame,
-            filter_column: str,
-            filter_keyword: Optional[str] = None,
-            filter_regex: bool = False,
+            filter_columns_dict: Optional[Dict[str, str]] = None,
             row_ranges: Optional[List[Union[int, tuple]]] = None,
-            replace_columns_dict: Optional[Dict[str, str]] = None
+            replace_columns_dict: Optional[Dict[str, str]] = None,
+            copy: bool = False
     ) -> pd.DataFrame:
         """
         对传入的DataFrame进行拷贝然后过滤，并在指定范围内替换指定列的数据
 
         @param dataframe: 输入的DataFrame
-        @param filter_column: 用于过滤的列名
-        @param filter_keyword: 过滤关键字，如果提供则过滤出包含该关键字的行
-        @param filter_regex: 是否将filter_keyword视为正则表达式进行匹配，默认为False
+        @param filter_columns_dict: 过滤条件字典，格式为 { 列名: 正则表达式 }，支持多列过滤
         @param row_ranges: 替换的行范围列表，每个元素是一个元组 (start_row, end_row) 或单个行号，
                           行号相对于过滤后的DataFrame，从0开始。
                           默认为None，表示替换所有行
         @param replace_columns_dict: 需要替换数据的列名字典，格式为 {列名: 替换值}
+        @param copy: 是否对原始DataFrame进行拷贝,避免修改原数据, 默认为True
         @return: 处理后的DataFrame
+                如果只过滤不替换, 则返回过滤后的DataFrame(仅包含符合条件的行)
+                若有替换, 则返回替换后的完整DataFrame(包含所有行，但相关数据已被替换)
         """
-        # 创建DataFrame副本避免修改原始数据
-        result_df = dataframe.copy()
+        # 按需创建DataFrame副本避免修改原始数据
+        result_df = dataframe.copy() if copy else dataframe
 
-        # 如果没有提供过滤关键字，则不过滤数据
-        if filter_keyword is not None:
+        # 如果没有提供过滤字典，则不过滤数据
+        if filter_columns_dict is not None and len(filter_columns_dict) > 0:
             # 检查过滤列是否存在
-            if filter_column not in result_df.columns:
-                CommonUtil.printLog(f"警告: 列 '{filter_column}' 不存在于DataFrame中")
+            missing_columns = [col for col in filter_columns_dict.keys() if col not in result_df.columns]
+            if missing_columns:
+                CommonUtil.printLog(f"警告: 列 {missing_columns} 不存在于DataFrame中")
                 return result_df
 
             # 根据是否使用正则表达式进行过滤
-            if filter_regex:
-                filtered_df = result_df[result_df[filter_column].astype(str).str.contains(filter_keyword, regex=True, na=False)]
-            else:
-                filtered_df = result_df[result_df[filter_column].astype(str).str.contains(filter_keyword, regex=False, na=False)]
+            filtered_df = result_df
+            for filter_column, filter_keyword in filter_columns_dict.items():
+                filtered_df = filtered_df[filtered_df[filter_column].astype(str).str.contains(filter_keyword, regex=True, na=False)]
         else:
             # 不过滤，使用全部数据
             filtered_df = result_df
 
-        # 如果没有指定要替换的列，则直接返回
+        # 如果没有指定要替换的列，则直接返回过滤后的DataFrame
         if not replace_columns_dict:
             return filtered_df
 
@@ -486,8 +500,9 @@ class CSVUtil(object):
                 else:
                     CommonUtil.printLog(f"警告: 无效的行范围格式 {row_range}")
 
-        # 执行替换操作
+        # 执行替换操作(在完整DataFrame上进行替换)
         for col, value in replace_columns_dict.items():
-            filtered_df.loc[replace_indices, col] = value
+            result_df.loc[replace_indices, col] = value
 
-        return filtered_df
+        # 如果有替换操作，返回完整的DataFrame
+        return result_df
