@@ -8,11 +8,19 @@ from typing import Dict, Optional
 
 
 class CSVKeywordProcessor:
+    """
+    传入关键字及其类型的映射关系表, 支持从csv中读取数据后, 匹配关键字映射表, 并将映射的类型信息填入指定的列中
+    主要方法:
+    CSVKeywordProcessor(): 初始化方法, 传入关键字映射表, 二次处理规则, 连接符, 兜底处理方法, 预处理方法
+    process_csv(): 处理csv文件, 匹配关键字, 并将处理后的文本填入指定的列中, 最后写入到文件中
+    """
+
     def __init__(self, keyword_mapping: Optional[Dict[str, str]] = None,
                  remove_rules: Optional[Dict[str, list]] = None,
                  join_separator: str = '-',
                  preprocessing: Optional[callable] = None,
-                 fallback_processor: Optional[callable] = None
+                 fallback_processor: Optional[callable] = None,
+                 common_subfix: Optional[str] = None
                  ):
         """
         初始化CSV关键字处理器
@@ -25,6 +33,7 @@ class CSVKeywordProcessor:
         :param preprocessing: 预处理方法，接收query参数，返回处理最终的query结果
                               主要用于query可能不合理的情况, 预先进行数据清洗
                               比如: 去除空格, 去除特殊字符, 去除标点符号, 去除敏感词等
+        :param common_subfix: 公共后缀, 所有映射列别最后都会追加该后缀
         """
         if keyword_mapping is None:
             # 默认关键字映射关系
@@ -40,6 +49,7 @@ class CSVKeywordProcessor:
 
         # 连接符
         self.join_separator = join_separator
+        self.common_subfix: str = common_subfix  # 公共后缀
 
         # 编译正则表达式模式以提高性能
         self.compiled_patterns = {}
@@ -243,6 +253,8 @@ class CSVKeywordProcessor:
 
                 # 设置结果值
                 row[result_index] = self.apply_secondary_processing(query_text, result)
+                if self.common_subfix is not None and not row[result_index].endswith(self.common_subfix):
+                    row[result_index] += self.common_subfix
 
             # 写入处理后的数据到输出文件，使用Excel兼容的编码
             with open(output_file, 'w', encoding='utf-8-sig', newline='') as outfile:
@@ -263,7 +275,8 @@ def main(keyword_mapping: dict,  # 映射关系
          join_separator: str = '-',  # 连接符
          input_file_encoding: Optional[str] = None,
          preprocessing: Optional[callable] = None,  # 预处理方法
-         fallback_processor: Optional[callable] = None  # 兜底处理方法
+         fallback_processor: Optional[callable] = None,  # 兜底处理方法
+         common_subfix: Optional[str] = None,
          ) -> str:
     """
     主函数，用于处理CSV文件
@@ -278,10 +291,11 @@ def main(keyword_mapping: dict,  # 映射关系
     :param join_separator: 连接符，默认为'-'
     :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
     :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果
+    :param common_subfix: 公共后缀, 所有映射列别最后都会追加该后缀
     :return: 输出文件路径
     """
     new_output_file = None
-    processor = CSVKeywordProcessor(keyword_mapping, secondary_processing_rules, join_separator, preprocessing, fallback_processor)
+    processor = CSVKeywordProcessor(keyword_mapping, secondary_processing_rules, join_separator, preprocessing, fallback_processor, common_subfix=common_subfix)
     if os.path.exists(input_file):
         try:
             new_output_file = processor.process_csv(
