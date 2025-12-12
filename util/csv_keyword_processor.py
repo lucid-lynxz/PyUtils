@@ -4,7 +4,8 @@
 import csv
 import os
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+from util.CommonUtil import CommonUtil
 
 
 class CSVKeywordProcessor:
@@ -20,7 +21,7 @@ class CSVKeywordProcessor:
                  join_separator: str = '-',
                  preprocessing: Optional[callable] = None,
                  fallback_processor: Optional[callable] = None,
-                 common_subfix: Optional[str] = None
+                 common_tip: Optional[str] = None
                  ):
         """
         初始化CSV关键字处理器
@@ -29,11 +30,12 @@ class CSVKeywordProcessor:
         :param remove_rules: 二次处理规则，键为类别名，值为删除规则列表
                             每个元素都可以是正则表达式, query作用后删除民众的部分,剩余部分拼接到类别中, 使用 join_separator 进行连接
         :param join_separator: 连接符，默认为'-'
-        :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果
+        :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果tuple[str,str],第一个str表示category,第二个str表示slot
+                                   主要用于query可能不合理的情况, 兜底处理, 第一个category返回非空时才有效
         :param preprocessing: 预处理方法，接收query参数，返回处理最终的query结果
                               主要用于query可能不合理的情况, 预先进行数据清洗
                               比如: 去除空格, 去除特殊字符, 去除标点符号, 去除敏感词等
-        :param common_subfix: 公共后缀, 所有映射列别最后都会追加该后缀
+        :param common_tip: 公共提示语, 若类型文本中不包含该提示语, 会追加到结尾
         """
         if keyword_mapping is None:
             # 默认关键字映射关系
@@ -49,7 +51,7 @@ class CSVKeywordProcessor:
 
         # 连接符
         self.join_separator = join_separator
-        self.common_subfix: str = common_subfix  # 公共后缀
+        self.common_tip: str = common_tip  # 公共提示信息
 
         # 编译正则表达式模式以提高性能
         self.compiled_patterns = {}
@@ -86,14 +88,18 @@ class CSVKeywordProcessor:
                 return result
         return None
 
-    def apply_secondary_processing(self, text: str, category: str) -> str:
+    def apply_secondary_processing(self, text: str, category: str, slot: Optional[str] = None) -> str:
         """
         对匹配到的类别进行二次处理，提取关键信息并追加到类别中
 
         :param text: 原始文本
         :param category: 匹配到的类别
+        :param slot: 匹配到的槽位信息，默认为None, 若非None,则直接拼接返回最终结果
         :return: 处理后的类别
         """
+        if slot:
+            return f"{category}{self.join_separator}{slot}"
+
         # 如果没有为该类别定义二次处理规则，则直接返回原类别
         if category not in self.compiled_secondary_patterns:
             return category
@@ -102,22 +108,22 @@ class CSVKeywordProcessor:
         rules = self.compiled_secondary_patterns[category]
 
         # 应用每个规则
-        processed_text = text
+        slot = text
         for pattern in rules:
             # 删除匹配到的部分
-            processed_text = pattern.sub('', processed_text)
+            slot = pattern.sub('', slot)
 
         # 去除首尾空格
-        processed_text = processed_text.strip()
+        slot = slot.strip()
 
         # 如果处理后的文本为空，则直接返回原类别
-        if not processed_text:
+        if not slot:
             return category
 
         # 将处理后的文本追加到类别中
-        return f"{category}{self.join_separator}{processed_text}"
+        return f"{category}{self.join_separator}{slot}"
 
-    def process_with_fallback(self, query: str) -> Optional[str]:
+    def process_with_fallback(self, query: str) -> Optional[Tuple[str, str]]:
         """
         使用兜底处理方法处理query
 
@@ -225,36 +231,40 @@ class CSVKeywordProcessor:
                     row[query_index] = query_text
 
                 # 匹配关键字并获取结果
-                result = self.match_keyword(query_text)
+                category: str = self.match_keyword(query_text)
+                slot: str = ''
 
                 # 如果没有匹配结果，尝试使用兜底处理方法
-                if result is None and self.fallback_processor:
-                    result = self.process_with_fallback(query_text)
+                if category is None and self.fallback_processor:
+                    fallback_result = self.process_with_fallback(query_text)
 
-                # 如果没有匹配结果，跳过
-                if result is None:
+                    # 如果没有匹配结果，跳过
+                    if isinstance(fallback_result, tuple):
+                        category, slot = fallback_result
+
+                if CommonUtil.isNoneOrBlank(category):
                     continue
 
                 # 检查类别限制
                 if category_limit is not None:
                     # 获取当前类别的计数
-                    count = category_counts.get(result, 0)
+                    count = category_counts.get(category, 0)
 
                     # 如果已达到限制，则跳过
                     if count >= category_limit:
                         continue
 
                     # 更新计数器
-                    category_counts[result] = count + 1
+                    category_counts[category] = count + 1
 
                 # 确保行有足够的列来存储结果
                 while len(row) <= result_index:
                     row.append('')
 
                 # 设置结果值
-                row[result_index] = self.apply_secondary_processing(query_text, result)
-                if self.common_subfix is not None and not row[result_index].endswith(self.common_subfix):
-                    row[result_index] += self.common_subfix
+                row[result_index] = self.apply_secondary_processing(query_text, category, slot)
+                if self.common_tip is not None and self.common_tip not in row[result_index]:
+                    row[result_index] += self.common_tip
 
             # 写入处理后的数据到输出文件，使用Excel兼容的编码
             with open(output_file, 'w', encoding='utf-8-sig', newline='') as outfile:
@@ -276,7 +286,7 @@ def main(keyword_mapping: dict,  # 映射关系
          input_file_encoding: Optional[str] = None,
          preprocessing: Optional[callable] = None,  # 预处理方法
          fallback_processor: Optional[callable] = None,  # 兜底处理方法
-         common_subfix: Optional[str] = None,
+         common_tip: Optional[str] = None,
          ) -> str:
     """
     主函数，用于处理CSV文件
@@ -290,12 +300,12 @@ def main(keyword_mapping: dict,  # 映射关系
     :param secondary_processing_rules: 二次处理规则，键为类别名，值为删除规则列表
     :param join_separator: 连接符，默认为'-'
     :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
-    :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果
-    :param common_subfix: 公共后缀, 所有映射列别最后都会追加该后缀
+    :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果tuple[str,str], 第一个str是category类别信息, 第二个str是slot信息
+    :param common_tip: 公用提示语, 若类型文本中不包含该提示语, 会追加到结尾
     :return: 输出文件路径
     """
     new_output_file = None
-    processor = CSVKeywordProcessor(keyword_mapping, secondary_processing_rules, join_separator, preprocessing, fallback_processor, common_subfix=common_subfix)
+    processor = CSVKeywordProcessor(keyword_mapping, secondary_processing_rules, join_separator, preprocessing, fallback_processor, common_tip=common_tip)
     if os.path.exists(input_file):
         try:
             new_output_file = processor.process_csv(
@@ -306,7 +316,7 @@ def main(keyword_mapping: dict,  # 映射关系
                 category_limit=category_limit,
                 input_file_encoding=input_file_encoding
             )
-            print("文件处理完成，结果保存在: {}".format(new_output_file))
+            CommonUtil.printLog("文件处理完成，结果保存在: {}".format(new_output_file))
 
             # 显示处理结果
             if print_result_limit is None or print_result_limit > 0:

@@ -93,19 +93,19 @@ class JiebaUtil:
     @staticmethod
     def recook(text: str, stop_words: Optional[Set[str]] = None,
                replace_tags: Optional[Dict[str, str]] = None,
+               replace_word_tag: Optional[Dict[str, str]] = None,
                delete_tags: Optional[Set[str]] = None,
                delete_previous_words: bool = False,
-               print_log: bool = False,
-               replace_word_tag: Optional[Dict[str, str]] = None) -> List[pseg.pair]:
+               print_log: bool = False) -> List[pseg.pair]:
         """
         分词并替换和删除指定词性/停止词信息，返回有核心词汇
         :param text: 输入文本
         :param stop_words: 自定义停用词列表, 若传入, 则会过滤停用词, 比如: {'的', '?' }
         :param replace_tags: 需要替换的词性标签, 比如日常可能会将数词词性看成名词,方便判断短语是否是简单名词
+        :param replace_word_tag:  将指定分词改为特定的词性, 比如: '镇' 原本会被识别为动词'v', 传入: {'镇':'n'} 可强行改为名称 'n'
         :param delete_tags: 需删除的词性标签（非语素词+语气词） (会先替换再删除)，可按需增删, 比如: {'y', 'u', 'uj', 'uz', 'uv', 'e', 'o', 'w'}
         :param delete_previous_words: 当命中 stop_words或delete_tags 操作时, 是否删除该词之前已缓存的词,默认false
         :param print_log: 是否打印日志
-        :param replace_word_tag:  将指定分词改为特定的词性, 比如: '镇' 原本会被识别为动词'v', 传入: {'镇':'n'} 可强行改为名称 'n'
         :return: 过滤后的词性信息数组, 若要获取最终文本: ''.join([pair.word for pair in filtered_words])
         """
         # 步骤1：分词+词性标注
@@ -126,6 +126,12 @@ class JiebaUtil:
                 flag = t_replace_tags[flag]
                 pair.flag = flag
 
+            # 修改分次词性替换
+            if len(t_replace_word_tags) > 0:
+                if pair.word in t_replace_word_tags:
+                    flag = t_replace_word_tags[pair.word]
+                    pair.flag = flag
+
             # 条件1：排除指定词性的词
             if flag in t_delete_tags:
                 if delete_previous_words:
@@ -142,12 +148,6 @@ class JiebaUtil:
             # 保留有语义的词
             filtered_words.append(pair)
 
-        # 修改分次词性
-        if len(t_replace_word_tags) > 0:
-            for pair in filtered_words:
-                if pair.word in t_replace_word_tags:
-                    pair.flag = t_replace_word_tags[pair.word]
-
         if print_log:
             f_text = ''.join([pair.word for pair in filtered_words])
             if text == f_text:
@@ -160,7 +160,7 @@ class JiebaUtil:
 
     @staticmethod
     def is_noun_phrase(text: Union[str, List[jieba.posseg.pair]],
-                       endwith_noun_only: bool = False,
+                       endswith_noun_only: bool = False,
                        **kwargs) -> bool:
         """
         简单判断一个文本片段是否是名词性短语, 不一定准确
@@ -172,7 +172,7 @@ class JiebaUtil:
         5. 特殊处理一些常见的非名词短语结构，如“动词+名词”
 
         :param text: 待判断的文本片段 或者已经拆分好的词性列表
-        :param endwith_noun_only: 只要以名词结尾的, 都返回True, 默认False
+        :param endswith_noun_only: 只要以名词结尾的, 都返回True, 默认False
         :param **kwargs: 主要是传入 recook() 方法支持的参数, 包括以下内容:
             stop_words (Optional[Set[str]]): 停用词列表, 若传入, 则会过滤停用词, 比如: {'的' , '?' }
             replace_tags (Optional[Dict[str, str]]): 需要替换的词性标签 , 比如日常可能会将数词词性看成名词,方便判断短语是否是简单名词
@@ -209,7 +209,7 @@ class JiebaUtil:
 
         # 有任何动词就不算名词性短语
         # 若有需要忽略指定的动词, 请按需传入: stop_words 参数
-        if not endwith_noun_only and any(flag in JiebaUtil.verb_flags for flag in flags):
+        if not endswith_noun_only and any(flag in JiebaUtil.verb_flags for flag in flags):
             return False
 
         # 非名词结尾的都返回False

@@ -43,17 +43,25 @@ class CSVUtil(object):
         return df.fillna('')
 
     @staticmethod
-    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig') -> bool:
+    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n') -> bool:
         """
         将DataFrame保存为CSV文件
+        :param df: DataFrame
+        :param output_path: 输出路径
+        :param encoding: 编码
+        :param index: 是否保存索引
+        :param lineterminator: 行分隔符
         """
+        if CommonUtil.isNoneOrBlank(output_path):
+            return False
+
         try:
             FileUtil.createFile(output_path, False)
-            df.to_csv(output_path, index=False, encoding=encoding, lineterminator='\n')
-            CommonUtil.printLog(f'to_csv 保存提取的数据到: {output_path}')
+            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator)
+            CommonUtil.printLog(f'to_csv 保存数据到: {output_path}')
             return True
         except Exception as e:
-            CommonUtil.printLog(f'to_csv 保存提取的数据到: {output_path} 失败: {e}')
+            CommonUtil.printLog(f'to_csv 保存数据到: {output_path} 失败: {e}')
             return False
 
     @staticmethod
@@ -226,17 +234,14 @@ class CSVUtil(object):
                 final_df = final_df[final_df[column_name].str.strip() != '']
 
             # 如果提供了输出路径，则保存为新的CSV文件
-            if output_path:
-                FileUtil.createFile(output_path, False)
-                final_df.to_csv(output_path, index=False, encoding=encoding, lineterminator='\n')
-                CommonUtil.printLog(f'extract_csv 保存提取的数据到: {output_path}')
+            CSVUtil.to_csv(final_df, output_path, encoding=encoding)
             return final_df
         except Exception as e:
             CommonUtil.printLog(f'extract_csv_columns fail: {e}')
             return pd.DataFrame()
 
     @staticmethod
-    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True):
+    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True, deduplicate: bool = False):
         """
         合并两个DataFrame，去重并解决冲突
         对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
@@ -246,8 +251,36 @@ class CSVUtil(object):
         :param on_column: 用于去重和合并的公共列名
         :param priority_left: 左侧 DataFrame的值在冲突时优先, 若为False, 则右侧 DataFrame的值优先
         :param keep_both: 是否保留两个DataFrame中的所有行(True: 保留所有行; False: 只保留优先级高的DataFrame中的行)
+        :param deduplicate: 是否在合并前对两个DataFrame按on_column去重，默认False
         :return: 合并并去重后的最终 DataFrame
         """
+        # 如果需要去重，则先对两个DataFrame按on_column去重，保留第一条记录
+        if deduplicate:
+            df_left = CSVUtil.deduplicate_dataframe(df_left, on_column)
+            df_right = CSVUtil.deduplicate_dataframe(df_right, on_column)
+        else:
+            # 如果不去重但仍希望避免笛卡尔积效应，需要预处理重复记录
+            # 当keep_both=False时，我们只保留一侧的数据，避免重复记录导致的笛卡尔积
+            if not keep_both:
+                if priority_left:
+                    # 保留左侧DataFrame中的所有记录，去除右侧DataFrame中与左侧重复的记录（但保留右侧独有的记录）
+                    # 先找出在左侧DataFrame中存在的query
+                    left_queries = set(df_left[on_column])
+                    # 从右侧DataFrame中移除与左侧重复的记录，但保留每组重复记录的第一条
+                    df_right_no_duplicates = df_right[~df_right[on_column].isin(left_queries)]
+                    # 合并右侧独有的记录和右侧重复记录的第一条
+                    df_right_unique = df_right[df_right[on_column].isin(left_queries)].drop_duplicates(subset=[on_column], keep='first')
+                    df_right = pd.concat([df_right_no_duplicates, df_right_unique]).reset_index(drop=True)
+                else:
+                    # 保留右侧DataFrame中的所有记录，去除左侧DataFrame中与右侧重复的记录（但保留左侧独有的记录）
+                    # 先找出在右侧DataFrame中存在的query
+                    right_queries = set(df_right[on_column])
+                    # 从左侧DataFrame中移除与右侧重复的记录，但保留每组重复记录的第一条
+                    df_left_no_duplicates = df_left[~df_left[on_column].isin(right_queries)]
+                    # 合并左侧独有的记录和左侧重复记录的第一条
+                    df_left_unique = df_left[df_left[on_column].isin(right_queries)].drop_duplicates(subset=[on_column], keep='first')
+                    df_left = pd.concat([df_left_no_duplicates, df_left_unique]).reset_index(drop=True)
+
         if keep_both:
             # 保留两个DataFrame的所有行（原有逻辑）
             if not priority_left:
@@ -301,7 +334,8 @@ class CSVUtil(object):
                   priority_left: bool = True,
                   encoding: str = 'utf-8-sig',
                   output_csv: Optional[str] = None,
-                  keep_both: bool = True
+                  keep_both: bool = True,
+                  deduplicate: bool = False
                   ) -> pd.DataFrame:
         """
         合并两个CSV文件，并可以指定以哪个文件为准
@@ -313,14 +347,14 @@ class CSVUtil(object):
         :param output_csv: 将合并后的结果写入的输出CSV文件路径 (可选), None表示不输出
         :param encoding: CSV文件的编码
         :param keep_both: 是否保留两个DataFrame中的所有行(True: 保留所有行; False: 只保留优先级高的DataFrame中的行)
+        :param deduplicate: 是否在合并前对两个DataFrame按on_column去重，默认False
         :return: 合并后的 DataFrame
         """
-        df1 = pd.read_csv(csv1, encoding=encoding)
-        df2 = pd.read_csv(csv2, encoding=encoding)
+        df1 = CSVUtil.read_csv(csv1, encoding=encoding)
+        df2 = CSVUtil.read_csv(csv2, encoding=encoding)
 
-        merged_df = CSVUtil.merge_dataframe(df1, df2, on_column, priority_left, keep_both)
-        if output_csv:
-            merged_df.to_csv(output_csv, encoding=encoding, index=False)
+        merged_df = CSVUtil.merge_dataframe(df1, df2, on_column, priority_left, keep_both, deduplicate)
+        CSVUtil.to_csv(merged_df, output_csv, encoding=encoding, index=False)
         return merged_df
 
     @staticmethod
@@ -506,3 +540,40 @@ class CSVUtil(object):
 
         # 如果有替换操作，返回完整的DataFrame
         return result_df
+
+    @staticmethod
+    def deduplicate_dataframe(df: pd.DataFrame, subset: Union[str, List[str]], keep: str = 'first') -> pd.DataFrame:
+        """
+        基于指定列对DataFrame进行去重操作, 返回去重后的DataFrame (不修改原DataFrame)
+        P.S. 如果需要修改原DataFrame, 请使用: df.drop_duplicates(subset=subset, keep=keep, inplace=True)
+
+        :param df: 待去重的DataFrame
+        :param subset: 用于判断重复的列名或列名列表，如: 'column_name' 或 ['col1', 'col2']
+        :param keep: 保留策略，'first'(默认)保留第一次出现的记录，'last' 保留最后一次出现的记录，False 删除所有重复项
+        :return: 去重后的DataFrame
+        """
+        return df.drop_duplicates(subset=subset, keep=keep).reset_index(drop=True)
+
+    @staticmethod
+    def find_duplicate_rows(df: pd.DataFrame, subset: Union[str, List[str]]) -> pd.DataFrame:
+        """
+        查找并返回基于指定列的重复行，将重复的行排列在一起(保持原始索引)，便于快速查看重复内容
+        P.S. 返回的dataframe会保留原索引,若需要重置索引, 请使用: result_df.reset_index(drop=True)
+
+        :param df: 输入的DataFrame
+        :param subset: 用于判断重复的列名或列名列表，如: 'column_name' 或 ['col1', 'col2']
+        :return: 包含所有重复行的DataFrame，按重复组排列
+        """
+        # 找到所有重复的行（包括首次出现的行）
+        duplicate_mask = df.duplicated(subset=subset, keep=False)
+        duplicates_df = df[duplicate_mask].copy()
+
+        # 如果只有一列用于判断重复，直接按该列排序
+        if isinstance(subset, str):
+            sorted_df = duplicates_df.sort_values(by=[subset])
+        else:
+            # 如果是多列，按这些列排序，使重复的行聚集在一起
+            sorted_df = duplicates_df.sort_values(by=subset)
+
+        # return sorted_df.reset_index(drop=True) # 重置索引
+        return sorted_df
