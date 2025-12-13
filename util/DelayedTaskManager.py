@@ -1,10 +1,10 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 
 import asyncio
 import threading
 import time
-from typing import Callable, Union
+from typing import Callable, Union, List, Set
 
 
 class DelayedTaskManager:
@@ -13,6 +13,12 @@ class DelayedTaskManager:
         self.tasks = {}  # 同步任务
         self.asyncTasks = {}  # 异步任务
         self.task_counter = 0  # 任务ID计数器
+
+        # 依赖关系管理
+        self.dependencies = {}  # {task_id: set of dependency task ids} 存储每个任务的依赖项
+        self.dependents = {}  # {task_id: set of dependent task ids}    存储每个任务被哪些任务依赖
+        self.completed_tasks = set()  # 已完成的任务
+        self.pending_tasks = {}  # 等待依赖满足的任务 {task_id: task_info}
 
     def addTask(self, delay_seconds: int, func: Callable, *args, **kwargs) -> int:
         """
@@ -24,27 +30,87 @@ class DelayedTaskManager:
         :param kwargs: 函数关键字参数
         :return: 任务ID，用于后续取消任务
         """
+        return self.addDependentTask(delay_seconds, [], func, *args, **kwargs)
 
-        # 创建包装函数，执行完后从任务列表中移除
+    def addDependentTask(self, delay_seconds: int, depends_on: List[int],
+                         func: Callable, *args, **kwargs) -> int:
+        """
+        添加一个带依赖关系的延迟执行任务
+        :param delay_seconds: 延迟秒数
+        :param depends_on: 依赖的任务ID列表
+        :param func: 要执行的函数
+        :param args: 函数参数
+        :param kwargs: 函数关键字参数
+        :return: 任务ID
+        """
+        # 分配任务ID
+        task_id = self.task_counter
+        self.task_counter += 1
+
+        # 存储依赖关系
+        self.dependencies[task_id] = set(depends_on)
+
+        # 更新反向依赖关系
+        for dep_id in depends_on:
+            if dep_id not in self.dependents:
+                self.dependents[dep_id] = set()
+            self.dependents[dep_id].add(task_id)
+
+        # 创建包装函数
         def wrapper():
             try:
                 func(*args, **kwargs)
             finally:
+                self._mark_task_completed(task_id)
                 if task_id in self.tasks:
                     del self.tasks[task_id]
 
-        # 创建并启动Timer
-        timer = threading.Timer(delay_seconds, wrapper)
-        timer.daemon = True  # 设置为守护线程，主线程结束时自动终止
+        # 检查是否可以立即执行
+        if self._can_execute(task_id):
+            # 创建并启动Timer
+            timer = threading.Timer(delay_seconds, wrapper)
+            timer.daemon = True  # 设置为守护线程，主线程结束时自动终止
+            self.tasks[task_id] = timer
+            timer.start()
+        else:
+            # 暂时缓存任务信息
+            self.pending_tasks[task_id] = {
+                'type': 'sync',
+                'delay': delay_seconds,
+                'wrapper': wrapper
+            }
 
-        # 分配任务ID并存储
-        task_id = self.task_counter
-        self.task_counter += 1
-        self.tasks[task_id] = timer
-
-        # 启动计时器
-        timer.start()
         return task_id
+
+    def _can_execute(self, task_id: int) -> bool:
+        """检查任务是否可以执行（所有依赖都已完成）"""
+        dependencies = self.dependencies.get(task_id, set())
+        return dependencies.issubset(self.completed_tasks)
+
+    def _mark_task_completed(self, task_id: int):
+        """标记任务完成，并尝试触发依赖任务"""
+        self.completed_tasks.add(task_id)
+
+        # 检查是否有等待此任务完成的依赖任务
+        dependents = self.dependents.get(task_id, set())
+        for dependent_id in dependents.copy():
+            if self._can_execute(dependent_id):
+                self._execute_pending_task(dependent_id)
+
+    def _execute_pending_task(self, task_id: int):
+        """执行等待中的任务"""
+        if task_id in self.pending_tasks:
+            task_info = self.pending_tasks.pop(task_id)
+
+            if task_info['type'] == 'sync':
+                timer = threading.Timer(task_info['delay'], task_info['wrapper'])
+                timer.daemon = True
+                self.tasks[task_id] = timer
+                timer.start()
+            elif task_info['type'] == 'async':
+                # 正确处理异步任务
+                task = asyncio.create_task(task_info['wrapper']())
+                self.asyncTasks[task_id] = task
 
     def _cancelTask(self, task_id: Union[int, None]) -> bool:
         """
@@ -75,6 +141,31 @@ class DelayedTaskManager:
         :param kwargs: 函数关键字参数
         :return: 任务ID，用于后续取消任务
         """
+        return await self.addAsyncDependentTask(delay_seconds, [], func, *args, **kwargs)
+
+    async def addAsyncDependentTask(self, delay_seconds: int, depends_on: List[int],
+                                    func: Callable, *args, **kwargs) -> int:
+        """
+        添加一个带依赖关系的异步延迟任务
+        :param delay_seconds: 延迟秒数
+        :param depends_on: 依赖的任务ID列表
+        :param func: 要执行的函数
+        :param args: 函数参数
+        :param kwargs: 函数关键字参数
+        :return: 任务ID
+        """
+        # 分配任务ID
+        task_id = self.task_counter
+        self.task_counter += 1
+
+        # 存储依赖关系
+        self.dependencies[task_id] = set(depends_on)
+
+        # 更新反向依赖关系
+        for dep_id in depends_on:
+            if dep_id not in self.dependents:
+                self.dependents[dep_id] = set()
+            self.dependents[dep_id].add(task_id)
 
         # 创建包装协程
         async def wrapper():
@@ -90,16 +181,23 @@ class DelayedTaskManager:
                 print(f"任务 {task_id} 被取消")
                 raise
             finally:
+                self._mark_task_completed(task_id)
                 if task_id in self.asyncTasks:
                     del self.asyncTasks[task_id]
 
-        # 创建并启动任务
-        task = asyncio.create_task(wrapper())
-
-        # 分配任务ID并存储
-        task_id = self.task_counter
-        self.task_counter += 1
-        self.asyncTasks[task_id] = task
+        # 检查是否可以立即执行
+        if self._can_execute(task_id):
+            # 创建并启动任务
+            task = asyncio.create_task(wrapper())
+            self.asyncTasks[task_id] = task
+        else:
+            # 暂时缓存任务信息
+            self.pending_tasks[task_id] = {
+                'type': 'async',
+                'delay': delay_seconds,
+                'wrapper': wrapper,  # ✅ 存储协程函数本身，不执行
+                'args': (args, kwargs)  # 可能还需要存储参数
+            }
 
         return task_id
 
@@ -165,6 +263,30 @@ async def _example():
     await asyncio.sleep(3)
     if manager.cancelTask(task4):
         print(f"{time.strftime('%H:%M:%S')} 已取消10秒后的异步任务 {task4}")
+
+    # 测试依赖关系
+    print(f"\n\n{time.strftime('%H:%M:%S')} 开始测试依赖关系:")
+
+    def task_b():
+        print(f"{time.strftime('%H:%M:%S')} Task B 执行完成")
+
+    def task_c():
+        print(f"{time.strftime('%H:%M:%S')} Task C 执行完成")
+
+    def task_a():
+        print(f"{time.strftime('%H:%M:%S')} Task A 执行完成 (依赖B和C)")
+
+    # 创建有依赖关系的任务
+    task_b_id = manager.addTask(2, task_b)  # 2秒后执行
+    task_c_id = await manager.addAsyncTask(3, task_c)  # 3秒后执行
+    task_a_id = await manager.addAsyncDependentTask(1, [task_b_id, task_c_id], task_a)  # 依赖B和C完成后执行
+
+    print(f"{time.strftime('%H:%M:%S')} 已安排依赖任务: A依赖于B和C")
+
+    # 等待所有任务完成
+    await asyncio.sleep(4)
+    time.sleep(4)
+    print(f"{time.strftime('%H:%M:%S')} 依赖关系示例结束")
 
     # 等待第一个任务执行完成
     await asyncio.sleep(3)
