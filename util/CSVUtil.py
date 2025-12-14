@@ -145,7 +145,9 @@ class CSVUtil(object):
                     output_path: str = None, encoding: str = 'utf-8-sig',
                     remove_empty_row: bool = True,
                     process_func: Optional[callable] = None,
-                    keyword: Optional[str] = None, regex: bool = False) -> pd.DataFrame:
+                    filter_columns_dict: Optional[Dict[str, str]] = None,
+                    keep_all_columns: bool = False,
+                    max_rows: Optional[int] = None) -> pd.DataFrame:
         """
         从指定CSV文件中提取指定列的部分数据，并可选择保存为新的CSV文件
         参考 extract_lines() 方法实现
@@ -159,8 +161,9 @@ class CSVUtil(object):
         @param encoding: 源文件编码，默认为 'utf-8-sig'
         @param remove_empty_row: 是否删除空白行，默认为True
         @param process_func: 可选的处理函数，用于对每个row数据进行处理，函数签名应为 func(data: str) -> str
-        @param keyword: 待提取列数据中需包含的关键字，默认为None，不进行过滤
-        @param regex: 是否将keyword视为正则表达式进行匹配，默认为False
+        @param filter_columns_dict: 过滤条件字典，格式为 { 列名: 正则表达式 }，支持多列过滤
+        @param keep_all_columns: 是否保留所有列数据，默认为False，只保留指定列
+        @param max_rows: 最大输出行数，None表示全部输出，默认为None
         @return pd.DataFrame: 提取后的DataFrame
         """
         if not FileUtil.isFileExist(src_path):
@@ -181,8 +184,25 @@ class CSVUtil(object):
                 CommonUtil.printLog(f'extract_csv fail: 列 "{column_name}" 不存在于文件中')
                 return pd.DataFrame()
 
-            # 提取指定列
-            extracted_df = df[[column_name]].copy()
+            extracted_df = df.copy()
+
+            # 如果没有提供过滤字典，则不过滤数据
+            if filter_columns_dict is not None and len(filter_columns_dict) > 0:
+                # 检查过滤列是否存在
+                missing_columns = [col for col in filter_columns_dict.keys() if col not in extracted_df.columns]
+                if missing_columns:
+                    CommonUtil.printLog(f"警告: 列 {missing_columns} 不存在于DataFrame中")
+                    return extracted_df
+
+                # 根据是否使用正则表达式进行过滤
+                filtered_df = extracted_df
+                for filter_column, filter_keyword in filter_columns_dict.items():
+                    filtered_df = filtered_df[filtered_df[filter_column].astype(str).str.contains(filter_keyword, regex=True, na=False)]
+                extracted_df = filtered_df
+
+            # 根据keep_all_columns参数决定是否保留所有列
+            if not keep_all_columns:
+                extracted_df = df[[column_name]].copy()
 
             # 处理行范围筛选
             if row_ranges is None:
@@ -216,15 +236,6 @@ class CSVUtil(object):
                 # 根据选定的索引提取数据
                 final_df = extracted_df.iloc[selected_indices].reset_index(drop=True)
 
-            # 添加keyword过滤条件
-            if keyword is not None:
-                if regex:
-                    # 使用正则表达式匹配
-                    final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, regex=True, na=False)].reset_index(drop=True)
-                else:
-                    # 普通文本匹配
-                    final_df = final_df[final_df[column_name].astype(str).str.contains(keyword, regex=False, na=False)].reset_index(drop=True)
-
             # 如果提供了处理函数，则对数据进行处理
             if process_func is not None and callable(process_func):
                 final_df[column_name] = final_df[column_name].apply(process_func)
@@ -232,6 +243,10 @@ class CSVUtil(object):
             # 删除空白行
             if remove_empty_row:
                 final_df = final_df[final_df[column_name].str.strip() != '']
+
+            # 限制输出数据量
+            if max_rows is not None and max_rows > 0:
+                final_df = final_df.head(max_rows)
 
             # 如果提供了输出路径，则保存为新的CSV文件
             CSVUtil.to_csv(final_df, output_path, encoding=encoding)
@@ -241,7 +256,8 @@ class CSVUtil(object):
             return pd.DataFrame()
 
     @staticmethod
-    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True, deduplicate: bool = False):
+    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True,
+                        deduplicate: bool = False):
         """
         合并两个DataFrame，去重并解决冲突
         对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
@@ -293,9 +309,29 @@ class CSVUtil(object):
             right_columns = [col for col in merged_df.columns if col.endswith('_right')]
             for right_col in right_columns:
                 left_col = right_col.replace('_right', '_left')
-                merged_df[right_col] = np.where(merged_df[left_col].notna(), merged_df[left_col], merged_df[right_col])
+                # 当左侧值为空时，使用右侧值；否则使用左侧值
+                merged_df[right_col] = np.where(
+                    (merged_df[left_col].isna()) | (merged_df[left_col] == ''),
+                    merged_df[right_col],
+                    merged_df[left_col]
+                )
                 merged_df.drop(columns=[left_col], inplace=True)
                 merged_df.rename(columns={right_col: right_col.replace('_right', '')}, inplace=True)
+
+            # 对于左侧DataFrame中完全为空的列，使用右侧DataFrame中的值进行填充
+            for col in merged_df.columns:
+                if col != on_column and not col.endswith('_left') and not col.endswith('_right'):
+                    # 检查该列是否在右侧DataFrame中存在
+                    right_col_name = col + '_right'
+                    if right_col_name in merged_df.columns:
+                        # 如果当前列为空，则使用右侧列的值
+                        merged_df[col] = np.where(
+                            (merged_df[col].isna()) | (merged_df[col] == ''),
+                            merged_df[right_col_name],
+                            merged_df[col]
+                        )
+                        # 删除右侧列
+                        merged_df.drop(columns=[right_col_name], inplace=True)
 
             return merged_df
         else:
@@ -309,9 +345,28 @@ class CSVUtil(object):
                 for right_col in right_columns:
                     left_col = right_col.replace('_right', '_left')
                     # 优先使用左侧的值，如果左侧为空则使用右侧的值
-                    merged_df[left_col] = np.where(merged_df[left_col].notna(), merged_df[left_col], merged_df[right_col])
+                    merged_df[left_col] = np.where(
+                        (merged_df[left_col].isna()) | (merged_df[left_col] == ''),
+                        merged_df[right_col],
+                        merged_df[left_col]
+                    )
                     merged_df.drop(columns=[right_col], inplace=True)
                     merged_df.rename(columns={left_col: left_col.replace('_left', '')}, inplace=True)
+
+                # 对于左侧DataFrame中完全为空的列，使用右侧DataFrame中的值进行填充
+                for col in merged_df.columns:
+                    if col != on_column and not col.endswith('_left') and not col.endswith('_right'):
+                        # 检查该列是否在右侧DataFrame中存在
+                        right_col_name = col + '_right'
+                        if right_col_name in merged_df.columns:
+                            # 如果当前列为空，则使用右侧列的值
+                            merged_df[col] = np.where(
+                                (merged_df[col].isna()) | (merged_df[col] == ''),
+                                merged_df[right_col_name],
+                                merged_df[col]
+                            )
+                            # 删除右侧列
+                            merged_df.drop(columns=[right_col_name], inplace=True)
 
                 return merged_df
             else:
@@ -323,9 +378,28 @@ class CSVUtil(object):
                 for right_col in right_columns:
                     left_col = right_col.replace('_right', '_left')
                     # 优先使用右侧的值，如果右侧为空则使用左侧的值
-                    merged_df[right_col] = np.where(merged_df[right_col].notna(), merged_df[right_col], merged_df[left_col])
+                    merged_df[right_col] = np.where(
+                        (merged_df[right_col].isna()) | (merged_df[right_col] == ''),
+                        merged_df[left_col],
+                        merged_df[right_col]
+                    )
                     merged_df.drop(columns=[left_col], inplace=True)
                     merged_df.rename(columns={right_col: right_col.replace('_right', '')}, inplace=True)
+
+                # 对于右侧DataFrame中完全为空的列，使用左侧DataFrame中的值进行填充
+                for col in merged_df.columns:
+                    if col != on_column and not col.endswith('_left') and not col.endswith('_right'):
+                        # 检查该列是否在左侧DataFrame中存在
+                        left_col_name = col + '_left'
+                        if left_col_name in merged_df.columns:
+                            # 如果当前列为空，则使用左侧列的值
+                            merged_df[col] = np.where(
+                                (merged_df[col].isna()) | (merged_df[col] == ''),
+                                merged_df[left_col_name],
+                                merged_df[col]
+                            )
+                            # 删除左侧列
+                            merged_df.drop(columns=[left_col_name], inplace=True)
 
                 return merged_df
 
@@ -358,7 +432,8 @@ class CSVUtil(object):
         return merged_df
 
     @staticmethod
-    def calc_dataframe_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None, keyword_col: Optional[str] = None) -> dict:
+    def calc_dataframe_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None,
+                                keyword_col: Optional[str] = None) -> dict:
         """
         计算指定列的准确率统计信息:
         1. 过滤 column_base 和 column_compare 均有值的数据
@@ -577,3 +652,136 @@ class CSVUtil(object):
 
         # return sorted_df.reset_index(drop=True) # 重置索引
         return sorted_df
+
+    @staticmethod
+    def filter_matching_columns(df: pd.DataFrame, column_pairs: Dict[str, str], all_match: bool = True, same_value: bool = True):
+        """
+        找出DataFrame中指定列对值相同或不同的数据行
+
+        参数:
+        df: pandas DataFrame
+        column_pairs: dict, 键值对表示需要比较的列, 如 {'A': 'B', 'C': 'D'}
+        all_match: bool, True表示所有条件都满足(AND)，False表示任意条件满足(OR)
+        same_value: bool, True表示查找值相同的行，False表示查找值不同的行
+
+        返回:
+        过滤后的DataFrame，只包含满足条件的行
+        """
+        if not column_pairs:
+            return df
+
+        # 定义逻辑操作函数替代lambda表达式
+        def and_operation(x, y):
+            return x & y
+
+        def or_operation(x, y):
+            return x | y
+
+        def same_compare(col1_param, col2_param):
+            return df[col1_param] == df[col2_param]
+
+        def diff_compare(col1_param, col2_param):
+            return df[col1_param] != df[col2_param]
+
+        # 根据all_match选择逻辑操作
+        if all_match:
+            mask = True
+            op = and_operation
+        else:
+            mask = False
+            op = or_operation
+
+        # 根据same_value选择比较操作符
+        if same_value:
+            compare_op = same_compare
+        else:
+            compare_op = diff_compare
+
+        # 遍历所有列对，检查每一对列的值是否符合条件
+        for col1, col2 in column_pairs.items():
+            condition = compare_op(col1, col2)
+            mask = op(mask, condition)
+
+        # 返回符合条件的行
+        return df[mask]
+
+    @staticmethod
+    def filter_containing_columns(df: pd.DataFrame, column_pairs: Dict[str, str], all_match: bool = True):
+        """
+        找出DataFrame中指定列对值存在包含关系的数据行
+
+        参数:
+        df: pandas DataFrame
+        column_pairs: dict, 键值对表示需要比较包含关系的列, 如 {'A': 'B', 'C': 'D'} 表示A包含B, C包含D
+        all_match: bool, True表示所有条件都满足(AND)，False表示任意条件满足(OR)
+
+        返回:
+        过滤后的DataFrame，只包含满足包含关系条件的行
+        """
+        if not column_pairs:
+            return df
+
+        # 定义逻辑操作函数
+        def and_operation(x, y):
+            return x & y
+
+        def or_operation(x, y):
+            return x | y
+
+        def contains_compare(col1_param, col2_param):
+            """检查col1是否包含col2的值"""
+            return df[col1_param].astype(str).str.contains(df[col2_param].astype(str), regex=False, na=False)
+
+        # 根据all_match选择逻辑操作
+        if all_match:
+            mask = True
+            op = and_operation
+        else:
+            mask = False
+            op = or_operation
+
+        # 遍历所有列对，检查每一对列的值是否符合包含关系
+        for col1, col2 in column_pairs.items():
+            condition = contains_compare(col1, col2)
+            mask = op(mask, condition)
+
+        # 返回符合条件的行
+        return df[mask]
+
+    @staticmethod
+    def diff(df1: pd.DataFrame, df2: pd.DataFrame, on_columns: Union[str, List[str]], max_rows: Optional[int] = None) -> pd.DataFrame:
+        """
+        基于指定列的值进行唯一性判断，从df1中删除df2的数据，保留只唯一存在于df1的数据
+
+        :param df1: 源DataFrame
+        :param df2: 要从中删除数据的DataFrame
+        :param on_columns: 用于比较的列名或列名列表
+        :param max_rows: 最大返回行数, None表示不限制
+        :return: 只在df1中存在而不在df2中的数据DataFrame
+        """
+        # 确保on_columns是列表格式
+        if isinstance(on_columns, str):
+            on_columns = [on_columns]
+
+        # 检查指定的列是否都存在于两个DataFrame中
+        missing_in_df1 = [col for col in on_columns if col not in df1.columns]
+        missing_in_df2 = [col for col in on_columns if col not in df2.columns]
+
+        if missing_in_df1:
+            CommonUtil.printLog(f"警告: 列 {missing_in_df1} 不存在于df1中")
+        if missing_in_df2:
+            CommonUtil.printLog(f"警告: 列 {missing_in_df2} 不存在于df2中")
+
+        result_df = df1.copy()
+        if missing_in_df1 or missing_in_df2:
+            pass
+        else:
+            # 使用merge和indicator参数来识别只在df1中存在的行
+            result_df = result_df.merge(df2[on_columns].copy(), on=on_columns, how='left', indicator=True)
+            # 保留只在df1中存在的行
+            result_df = result_df[result_df['_merge'] == 'left_only'].drop('_merge', axis=1)
+
+        result_df = result_df.reset_index(drop=True)
+        if max_rows is not None:
+            result_df = result_df.head(max_rows)
+        return result_df
