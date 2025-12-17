@@ -2,7 +2,9 @@
 # -*- coding:utf-8 -*-
 
 import csv
-from typing import Optional, List, Type, TypeVar, Union, Dict
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, List, Type, TypeVar, Union, Dict, Callable
 
 import numpy as np
 import pandas as pd
@@ -35,15 +37,18 @@ CSV/padans工具类
 class CSVUtil(object):
 
     @staticmethod
-    def read_csv(src_path: str, encoding: str = 'utf-8-sig') -> pd.DataFrame:
+    def read_csv(src_path: str, encoding: str = 'utf-8-sig', usecols: List[str] = None) -> pd.DataFrame:
         """
         以str格式读取CSV文件, 并将NaN值替换为空字符串
+        :param src_path: csv源文件路径
+        :param encoding: 编码
+        :param usecols: 要读取的列, None或[] 表示读取全部列
         """
-        df = pd.read_csv(src_path, encoding=encoding, dtype=str)
+        df = pd.read_csv(src_path, encoding=encoding, dtype=str, usecols=usecols)
         return df.fillna('')
 
     @staticmethod
-    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n') -> bool:
+    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n', mode: str = 'w') -> bool:
         """
         将DataFrame保存为CSV文件
         :param df: DataFrame
@@ -51,13 +56,14 @@ class CSVUtil(object):
         :param encoding: 编码
         :param index: 是否保存索引
         :param lineterminator: 行分隔符
+        :param mode: 保存模式, w-覆盖  a-追加
         """
         if CommonUtil.isNoneOrBlank(output_path):
             return False
 
         try:
             FileUtil.createFile(output_path, False)
-            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator)
+            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode)
             CommonUtil.printLog(f'to_csv 保存数据到: {output_path}')
             return True
         except Exception as e:
@@ -510,13 +516,14 @@ class CSVUtil(object):
         return CSVUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col)
 
     @staticmethod
-    def to_markdown(dataframe, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig') -> str:
+    def to_markdown(dataframe, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig', title: Optional[str] = None) -> str:
         """
         将 DataFrame 转换为 Markdown 表格字符串,并按需存储到文件中
         :param dataframe: 输入的 DataFrame
         :param include_index: 是否包含索引列（默认为 True）
         :param output_file: 输出的 Markdown 文件路径（可选）
         :param encoding: 文件编码（默认为 'utf-8-sig'）
+        :param title: 表格标题（可选），如果提供则在表格第一行添加标题行
         """
         if include_index:
             n_df = dataframe.reset_index()  # 将index变成数据列,并返回一个行的df
@@ -524,7 +531,17 @@ class CSVUtil(object):
             n_df = dataframe
 
         markdown_str = "| " + " | ".join(n_df.columns) + " |\n"
-        markdown_str += "| " + " | ".join(["---"] * len(n_df.columns)) + " |\n"
+
+        # 添加表格标题行（如果提供）
+        if title:
+            # 创建标题行，将标题放在第一列，其余列为空
+            title_row = f"| {title} "
+            for i in range(len(n_df.columns) - 1):
+                title_row += "| "
+            title_row += "|\n"
+            title_row += "| " + " | ".join([":---:"] * len(n_df.columns)) + " |\n"
+            markdown_str = title_row + markdown_str
+
         for _, row in n_df.iterrows():
             markdown_str += "| " + " | ".join(str(v) for v in row) + " |\n"
 
@@ -534,45 +551,40 @@ class CSVUtil(object):
         return markdown_str
 
     @staticmethod
-    def filter_and_replace_dataframe(
-            dataframe: pd.DataFrame,
+    def filter_and_replace(
+            df: pd.DataFrame,
             filter_columns_dict: Optional[Dict[str, str]] = None,
             row_ranges: Optional[List[Union[int, tuple]]] = None,
             replace_columns_dict: Optional[Dict[str, str]] = None,
-            copy: bool = False
     ) -> pd.DataFrame:
         """
         对传入的DataFrame进行拷贝然后过滤，并在指定范围内替换指定列的数据
 
-        @param dataframe: 输入的DataFrame
+        @param df: 输入的DataFrame
         @param filter_columns_dict: 过滤条件字典，格式为 { 列名: 正则表达式 }，支持多列过滤
         @param row_ranges: 替换的行范围列表，每个元素是一个元组 (start_row, end_row) 或单个行号，
                           行号相对于过滤后的DataFrame，从0开始。
                           默认为None，表示替换所有行
         @param replace_columns_dict: 需要替换数据的列名字典，格式为 {列名: 替换值}
-        @param copy: 是否对原始DataFrame进行拷贝,避免修改原数据, 默认为True
         @return: 处理后的DataFrame
                 如果只过滤不替换, 则返回过滤后的DataFrame(仅包含符合条件的行)
                 若有替换, 则返回替换后的完整DataFrame(包含所有行，但相关数据已被替换)
         """
-        # 按需创建DataFrame副本避免修改原始数据
-        result_df = dataframe.copy() if copy else dataframe
-
         # 如果没有提供过滤字典，则不过滤数据
         if filter_columns_dict is not None and len(filter_columns_dict) > 0:
             # 检查过滤列是否存在
-            missing_columns = [col for col in filter_columns_dict.keys() if col not in result_df.columns]
+            missing_columns = [col for col in filter_columns_dict.keys() if col not in df.columns]
             if missing_columns:
                 CommonUtil.printLog(f"警告: 列 {missing_columns} 不存在于DataFrame中")
-                return result_df
+                return df
 
             # 根据是否使用正则表达式进行过滤
-            filtered_df = result_df
+            filtered_df = df
             for filter_column, filter_keyword in filter_columns_dict.items():
                 filtered_df = filtered_df[filtered_df[filter_column].astype(str).str.contains(filter_keyword, regex=True, na=False)]
         else:
             # 不过滤，使用全部数据
-            filtered_df = result_df
+            filtered_df = df
 
         # 如果没有指定要替换的列，则直接返回过滤后的DataFrame
         if not replace_columns_dict:
@@ -611,10 +623,58 @@ class CSVUtil(object):
 
         # 执行替换操作(在完整DataFrame上进行替换)
         for col, value in replace_columns_dict.items():
-            result_df.loc[replace_indices, col] = value
+            df.loc[replace_indices, col] = value
 
         # 如果有替换操作，返回完整的DataFrame
-        return result_df
+        return df
+
+    @staticmethod
+    def sample_by_column_values(df: pd.DataFrame, column_name: str, value_counts_dict: Dict[str, int], balance_counts: bool = False) -> pd.DataFrame:
+        """
+        按指定列的不同值随机抽样
+
+        Args:
+            df: 源DataFrame
+            column_name: 要筛选的列名
+            value_counts_dict: 字典，key为要筛选的值，value为每个值要抽取的行数
+            balance_counts: 是否平衡每个值的抽取数量，默认为False, 若为True,则会以实际各类可取数量的最小值作为最终获取数
+
+        Returns:
+            抽样后的DataFrame
+        """
+
+        if balance_counts:
+            # 平衡模式：各类别数据量保持一致
+            min_cnt = len(df)
+            for value, cnt in value_counts_dict.items():
+                filtered = df[df[column_name] == value]
+                final_cnt = min(len(filtered), cnt)
+                min_cnt = min(min_cnt, final_cnt)
+
+            for key in value_counts_dict:
+                value_counts_dict[key] = min_cnt
+
+        sampled_dfs = []
+
+        for value, count in value_counts_dict.items():
+            # 筛选出该值的所有行
+            filtered_df = df[df[column_name] == value]
+
+            # 如果该值的行数少于要求的数量，则取全部
+            # 否则随机抽取指定数量
+            if len(filtered_df) <= count:
+                sampled_dfs.append(filtered_df)
+            else:
+                sampled_dfs.append(filtered_df.sample(n=count, random_state=42))
+
+        # 合并所有抽样的结果
+        if sampled_dfs:
+            result_df = pd.concat(sampled_dfs, ignore_index=True)
+            # 打乱最终结果的顺序
+            result_df = result_df.sample(frac=1, random_state=42).reset_index(drop=True)
+            return result_df
+        else:
+            return pd.DataFrame()
 
     @staticmethod
     def deduplicate_dataframe(df: pd.DataFrame, subset: Union[str, List[str]], keep: str = 'first') -> pd.DataFrame:
@@ -641,7 +701,7 @@ class CSVUtil(object):
         """
         # 找到所有重复的行（包括首次出现的行）
         duplicate_mask = df.duplicated(subset=subset, keep=False)
-        duplicates_df = df[duplicate_mask].copy()
+        duplicates_df = df[duplicate_mask]
 
         # 如果只有一列用于判断重复，直接按该列排序
         if isinstance(subset, str):
@@ -785,3 +845,133 @@ class CSVUtil(object):
         if max_rows is not None:
             result_df = result_df.head(max_rows)
         return result_df
+
+    @staticmethod
+    def convert_excel(input_file: str, temp_csv: str) -> str:
+        """
+        如果输入是 Excel，则转为可分块读取的 CSV 文件, 否则直接返回原文件路径
+        :param input_file: 输入文件路径, 支持: .xlsx  .xls  .csv
+        :param temp_csv: 转换excel时, 并将内容存储到该CSV文件中
+        :return: 转换后的文件路径
+        """
+        if input_file.lower().endswith(('.xlsx', '.xls')):
+            if not FileUtil.isFileExist(temp_csv):
+                CommonUtil.printLog("🔄 正在将 Excel 转换为临时 CSV 文件以支持高效分块读取...")
+                try:
+                    df = pd.read_excel(input_file, dtype=str)
+                    df.to_csv(temp_csv, index=False, encoding='utf-8')
+                    CommonUtil.printLog(f"✅ Excel 已成功转换为: {temp_csv}")
+                except Exception as e:
+                    CommonUtil.printLog(f"❌ Excel 转换失败: {e}")
+                    raise
+            else:
+                CommonUtil.printLog(f"✅ 使用已有临时 CSV: {temp_csv}")
+            return temp_csv
+        else:
+            return input_file  # 已经是 CSV
+
+    @staticmethod
+    def batch_concurrency_process(csv_file: str, output_file: str,
+                                  process_row_data: Callable[[pd.Series], None],
+                                  col_keyword: str = 'query',
+                                  chunk_size: int = 1000,
+                                  max_concurrent: int = 30,
+                                  on_chunk_finished: Callable[[str, pd.DataFrame], None] = None) -> pd.DataFrame:
+        """
+        从csv文件中分批次提取数据, 批次内部对各行数据进行并发处理, 返回新结果, 并将结果覆盖回原行数据中
+
+        :param csv_file: 输入CSV文件路径, 通常是: src.csv
+        :param output_file: 输出CSV文件路径, 通常是: 自动_t.csv
+                            若文件已存在, 会读取其 col_keyword 列信息,去重, 并跳过相关行数据的处理
+        :param process_row_data: 行数据处理函数, 输入是原始行对象pd.Series, 直接在其上修改即可
+        :param col_keyword: 在input/output文件中都要存在的列名, 用于去重, 处理新行数据时, 若检测到该列数据已有处理过的缓存,则实际使用缓存值
+        :param chunk_size: 每次读取的行数
+        :param max_concurrent: 批次内部数据处理的并发数
+        :param on_chunk_finished: 每批次的数据处理完成后的回调函数, 输入为: 结果信息, 处理后的DataFrame
+        """
+        result_df = pd.DataFrame()
+        # 1. 检查输入文件
+        if not FileUtil.isFileExist(csv_file):
+            CommonUtil.printLog(f"❌ 输入文件不存在: {csv_file}")
+            return result_df
+
+        # 2. 加载已处理的数据（用于去重）
+        processed_queries = set()
+        if FileUtil.isFileExist(output_file):
+            try:
+                df_done = pd.read_csv(output_file, usecols=[col_keyword], dtype=str)
+                processed_queries = set(df_done[col_keyword].dropna())
+                CommonUtil.printLog(f"✅ 检测到已有结果文件，跳过 {len(processed_queries)} 条已处理数据")
+            except Exception as e:
+                CommonUtil.printLog(f"⚠️ 读取已有结果失败，将重新处理全部数据: {e}")
+
+        total_processed = 0
+        start_time = time.time()
+
+        # 3. 分块读取
+        try:
+            chunk_iter = pd.read_csv(csv_file, chunksize=chunk_size, dtype=str)
+        except Exception as e:
+            CommonUtil.printLog(f"❌ 无法分块读取文件 {csv_file}: {e}")
+            return result_df
+
+        # 5. 循环处理每个 chunk
+        for chunk_idx, chunk in enumerate(chunk_iter, start=1):
+            if col_keyword not in chunk.columns:
+                CommonUtil.printLog(f"❌ 输入文件中缺少 '{col_keyword}' 列")
+                return result_df
+
+            # 清洗并过滤掉空值和已处理项
+            queries_to_process = []
+            for q in chunk[col_keyword]:
+                if pd.isna(q):
+                    continue
+                q_str = str(q).strip()
+                if q_str and q_str not in processed_queries:
+                    queries_to_process.append(q_str)
+
+            if not queries_to_process:
+                CommonUtil.printLog(f"⏭️ 批次 {chunk_idx}: 无新数据，跳过")
+                continue
+
+            CommonUtil.printLog(f"▶ 处理批次 {chunk_idx} | 新增待处理: {len(queries_to_process)} 条")
+
+            # 并发处理当前批次
+            # with ThreadPoolExecutor 会等待所有任务都执行完成后再继续执行
+            # result_df = pd.DataFrame()
+            result_df = chunk
+            with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+                futures = [executor.submit(process_row_data, chunk.iloc[i]) for i in range(len(chunk))]
+                # for future in futures:
+                #     try:
+                #         res = future.result()
+                #         if isinstance(res, pd.Series):
+                #             result_df = pd.concat([result_df, res.to_frame().T], ignore_index=True)
+                #     except Exception as exc:
+                #         CommonUtil.printLog(f"线程执行出错: {exc}")
+
+            # 增量写入结果
+            if len(result_df) > 0:
+                # 写入文件（批次之间是串行的，不需要加锁）
+                write_header = not FileUtil.isFileExist(output_file)
+                result_df.to_csv(output_file, mode='a', header=write_header, index=False, encoding='utf-8-sig')
+
+                # 更新已处理集合
+                processed_queries.update(result_df[col_keyword].astype(str))
+                total_processed += len(result_df)
+                msg = f"✅ 批次 {chunk_idx} 完成 | 写入: {len(result_df)} 条 | 累计成功: {total_processed} "
+                CommonUtil.printLog(msg)
+                if on_chunk_finished:
+                    on_chunk_finished(msg, result_df)
+
+            # 可选：降低请求密度
+            time.sleep(0.5)
+
+        # 6. 总结统计
+        elapsed = time.time() - start_time
+        hours = elapsed / 3600
+        CommonUtil.printLog(f"🎉 全部处理完成！")
+        CommonUtil.printLog(f"📊 总耗时: {elapsed:.1f} 秒 ({hours:.2f} 小时)")
+        CommonUtil.printLog(f"📈 总成功条数: {total_processed}")
+
+        CommonUtil.printLog(f"📁 最终结果保存至: {output_file}")
