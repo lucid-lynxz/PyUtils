@@ -1,26 +1,57 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
+# pip install torch transformers datasets scikit-learn evaluate pandas numpy tokenizers -U
 
-# pip install torch transformers datasets scikit-learn evaluate pandas numpy -U
-import torch
+import os
+import platform
+import re
 import warnings
+from typing import Optional, List, Dict, Tuple, Set
+
 import numpy as np
 import pandas as pd
-from typing import Optional, List, Dict, Union, Tuple
-from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+import torch
 from datasets import Dataset, DatasetDict, ClassLabel
 from sklearn.utils.class_weight import compute_class_weight
-import os
-import re
-import platform
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments, AutoTokenizer, AutoModelForTokenClassification, pipeline
 
 from util.CSVUtil import CSVUtil
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 
+"""
+基于bert-base-chinese库的语义分类工具类, 网址: https://huggingface.co/google-bert/bert-base-chinese/tree/main
+相关方法:
+训练: train()
+预测: predict_single_with_confidence()
+
+基于 uer/roberta-base-finetuned-cluener2020-chinese 进行的命名实体识别(NER),
+hg网址:https://huggingface.co/uer/roberta-base-finetuned-cluener2020-chinese
+github:https://github.com/CLUEbenchmark/CLUENER2020
+相关方法: 
+提取实体关键信息: extract_entity()
+生成类别信息: update_entity_category()
+
+
+
+以上库默认从huggingface加载, 可以手动下载后离线使用,通常需要下载以下文件:
+* config.json	            模型结构配置（层数、维度等），是加载模型的 “身份证”
+* tokenizer_config.json	    分词器配置（如何切分文本、最大长度等）
+* pytorch_model.bin	        模型权重文件（核心参数），PyTorch 框架必须依赖
+* vocab.txt	                分词器词汇表（中文模型的汉字、符号映射）
+* special_tokens_map.json	特殊 token 映射（如 [CLS]/[SEP] 等，分词器需要）
+
+以下几个可以不用下载, 补充下文件功能说明:
+* flax_model.msgpack：Flax/JAX 框架的权重（用 PyTorch 的话不需要）
+* tf_model.h5：TensorFlow 框架的权重（同理，不用 TensorFlow 则无需下载）
+* added_tokens.json：如果模型没有额外新增 token，这个文件可选（大部分场景用不到）
+* .gitattributes/README.md：仓库配置和说明文档（不影响模型加载）
+"""
+
 # ===================== 基础配置 & 内存保护 =====================
 os.environ["WANDB_DISABLED"] = "true"  # 关闭wandb日志
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1" # 强制使用CPU避免显存错误
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"  # 设置 Hugging Face 镜像
 
 # 限制PyTorch内存占用策略
 torch.backends.cudnn.benchmark = False
@@ -57,20 +88,31 @@ class BertUtil:
 
     def __init__(
             self,
-            model_path: str = "bert-base-chinese",
+            classify_model_path: str = "bert-base-chinese",
             id2label: Optional[Dict[int, str]] = None,
-            device: Optional[str] = None
+            device: Optional[str] = None,
+            ner_model_path: str = "uer/roberta-base-finetuned-cluener2020-chinese"
     ):
         """
         初始化工具类
-        :param model_path: 模型路径, 也支持本地路径, 默认是下载到 HF_HOME 所在的目录,若未设置, 默认位置: 'C:/Users/{用户名}/.cache/huggingface/' 目录
+        :param classify_model_path: 文本分类模型路径, 也支持本地路径, 默认是下载到 HF_HOME 所在的目录,若未设置, 默认位置: 'C:/Users/{用户名}/.cache/huggingface/' 目录
                             bert-base-chinese 模型下载地址:  https://huggingface.co/google-bert/bert-base-chinese/tree/main
                            若训练速度太慢, 且对精度要求不高, 可以使用模型: "prajjwal1/bert-tiny"  下载地址:  https://huggingface.co/prajjwal1/bert-tiny/tree/main
         :param id2label: 标签id到名称的映射, 格式: {0: "测试", 1: "其他"}   key-数字 value-名称
         :param device: 运行设备（自动检测或手动指定）
+        :param ner_model_path: 文本关键信息提取模型路径, 也支持本地路径
         """
+        if classify_model_path is None:
+            inner_path = FileUtil.recookPath(f"{BertUtil._cache}/models/bert-base-chinese/")
+            if FileUtil.isFileExist(inner_path):
+                classify_model_path = inner_path
+        if ner_model_path is None:
+            inner_path = FileUtil.recookPath(f"{BertUtil._cache}/models/uer/roberta-base-finetuned-cluener2020-chinese/")
+            if FileUtil.isFileExist(inner_path):
+                ner_model_path = inner_path
+
         # 基础配置
-        self.model_path = model_path
+        self.model_path = classify_model_path
         self.id2label = id2label if id2label else {0: "测试", 1: "其他"}
         self.num_labels = len(self.id2label)
         self.label2id = {v: k for k, v in self.id2label.items()}
@@ -93,7 +135,7 @@ class BertUtil:
             else:
                 self.device = torch.device(device)
 
-        # 初始化模型/分词器
+        # 以下是文本分类相关变量, 初始化模型/分词器
         self.tokenizer = None
         self.model = None
         self.trainer = None
@@ -104,7 +146,30 @@ class BertUtil:
         self.data_label2idx = None
         self.idx2data_label = None
 
-        CommonUtil.printLog(f"\n初始化完成 | 设备：{self.device} | 标签数：{self.num_labels} | 模型：{model_path} | 缓存路径: {BertUtil._cache}")
+        # 以下是文本关键信息提取(NER)相关变量初始化tokenizer和模型（中文优化版）
+        if ner_model_path is not None:
+            local_path = FileUtil.isFileExist(ner_model_path)
+            abs_path_ner = ner_model_path
+            # if abs_path_ner.endswith('/'):
+            #     abs_path_ner = abs_path_ner[:-1]
+
+            CommonUtil.printLog(
+                f"\n加载文本关键信息提取模型 | 本地路径：{local_path} | 模型路径：{FileUtil.recookPath(abs_path_ner) if local_path else abs_path_ner}")
+            self.tokenizer_ner = AutoTokenizer.from_pretrained(abs_path_ner, local_files_only=local_path)
+            self.model_ner = AutoModelForTokenClassification.from_pretrained(abs_path_ner, local_files_only=local_path)
+            self.pipeline_ner = pipeline("token-classification", model=self.model_ner, tokenizer=self.tokenizer_ner, aggregation_strategy="simple")
+            self.entity_category: Set[str] = set()  # 实体类别, 用于模型提取无结果时的兜底策略, 通过 update_entity_category() 方法进行设置
+
+            # 打印模型的标签数量和索引（key的范围）
+            CommonUtil.printLog("模型的标签数量：", self.model_ner.num_labels)  # 输出7，对应0-6
+            CommonUtil.printLog("模型的标签索引范围：0 ~", self.model_ner.num_labels - 1)
+
+            # （进阶）如果模型自带id2label映射，可直接获取
+            if hasattr(self.model_ner.config, "id2label"):
+                CommonUtil.printLog("模型自带的标签映射：", self.model_ner.config.id2label)
+
+        CommonUtil.printLog(
+            f"\n初始化完成 | 设备：{self.device} | 标签数：{self.num_labels} | 分类模型：{classify_model_path} | 缓存路径: {BertUtil._cache} | 文本关键信息提取模型：{ner_model_path}")
 
     def _init_tokenizer_and_model(self):
         """初始化bert-base-chinese分词器和模型"""
@@ -528,36 +593,203 @@ class BertUtil:
 
         return results
 
+    def extract_entity_by_model(self, text: str, target_labels_set: Optional[Set[str]] = None) -> Optional[List[str]]:
+        """
+        使用 uer/roberta-base-finetuned-cluener2020-chinese 等模型进行文本信息提取
+        注意: 该模型只能提取具体的机构等信息, 无法提取类别数据, 比如: 可以匹配到  '工商银行', 但无法匹配 '银行' 这个大类
+        """
+        # CLUE 的实体类型映射（我们关心的）, 具体见: https://github.com/CLUEbenchmark/CLUENER2020
+        TARGET_LABELS = target_labels_set if target_labels_set else {
+            "address",  # 地址: **省**市**区**街**号，**路，**街道，**村等（如单独出现也标记）。地址是标记尽量完全的, 标记到最细。
+            # "book",  # 书名: 小说，杂志，习题集，教科书，教辅，地图册，食谱，书店里能买到的一类书籍，包含电子书。
+            "company",  # 公司: **公司，**集团，**银行（央行，中国人民银行除外，二者属于政府机构）, 如：新东方，包含新华网/中国军网等。
+            # "game",  # 游戏: 常见的游戏，注意有一些从小说，电视剧改编的游戏，要分析具体场景到底是不是游戏
+            # "government",  # 政府: 包括中央行政机关和地方行政机关两级。 中央行政机关有国务院、国务院组成部门（包括各部、委员会、中国人民银行和审计署）、国务院直属机构（如海关、税务、工商、环保总局等），军队等。
+            # "movie",  # 电影: 也包括拍的一些在电影院上映的纪录片，如果是根据书名改编成电影，要根据场景上下文着重区分下是电影名字还是书名。
+            "name",  # 姓名: 一般指人名，也包括小说里面的人物，宋江，武松，郭靖，小说里面的人物绰号：及时雨，花和尚，著名人物的别称，通过这个别称能对应到某个具体人物。
+            "organization",  # 组织机构: 篮球队，足球队，乐团，社团等，另外包含小说里面的帮派如：少林寺，丐帮，铁掌帮，武当，峨眉等。
+            # "position",  # 职位: 古时候的职称：巡抚，知州，国师等。现代的总经理，记者，总裁，艺术家，收藏家等
+            "scene",  # 景点: 常见旅游景点如：长沙公园，深圳动物园，海洋馆，植物园，黄河，长江等。
+        }
+
+        results = self.pipeline_ner(text)
+        entities = []
+        seen = set()
+        for ent in results:
+            if ent["entity_group"] in TARGET_LABELS:
+                word = ent["word"].strip().replace(" ", "")
+                if word and word not in seen:
+                    entities.append(word)
+                    seen.add(word)
+        return entities
+
+    @staticmethod
+    def update_entity_category(types: Optional[Set[str]] = None, type_file: Optional[str] = None) -> Set[str]:
+        """
+        拼接类别信息
+        :param types: 少量类名信息
+        :param type_file: 类名存储文件路径, 每行表示一个类名, 以 # 开头的行 以及 空白行会被剔除
+        :return: Set 将以上类别数据 以及内聚的数据进行合并后得到最终的类别信息
+        """
+        # 预定义的类别
+        entity_types = {"咖啡店", "餐厅", "医院", "加油站", "超市", "银行", "学校", "公园", "酒店", "药店"}
+        if types:
+            entity_types.update(types)
+
+        if FileUtil.isFileExist(type_file):
+            lines = FileUtil.readFile(type_file)
+            lines = [item.strip() for item in lines if not item.startswith('#') and item.strip()]
+            entity_types.update(set(lines))
+        return entity_types
+
+    @staticmethod
+    def extract_entity_by_type(text: str, types: Set[str], lower_compare: bool = False) -> List[str]:
+        """
+        根据已知的类别信息, 检测输入文本是否包含该类别, 有就提取并返回
+        类别数据有两个来源: 方法内部预定义值, 以及外部传入, 传入数据包含两种: 少量类型的Set 以及  大量类型存储文件 type_file
+        :param text: 输入的待匹配文本
+        :param types: 少量类名信息
+        :param type_file: 类名存储文件路径, 每行表示一个类名, 以 # 开头的行 以及 空白行会被剔除
+        :param lower_compare: 是否转小写再比较
+        :return: list 匹配到到的类别数据
+        """
+        # 标准化 & 匹配
+        result_list = []
+        # 标准化：转小写、去空格（中文无需分词）
+        clean_text = re.sub(r"\s+", "", text)
+        if lower_compare:
+            clean_text = clean_text.lower()
+        for poi in sorted(types, key=len, reverse=True):  # 长词优先
+            t_poi = poi.lower() if lower_compare else poi
+            if t_poi in clean_text:
+                result_list.append(t_poi)
+        return result_list
+
+    def extract_entity(self, text: str, types: Set[str], print_log: bool = False) -> List[str]:
+        """
+        提取输入文本中的关键实体信息, 会通过模型 和 类别 数据进行提取, 最后进行合并输出
+        由于模型和类别识别时, 可能分别提取到同一个slot, 但长度不一样,因此需要做合并并舍弃掉较短的slot元素
+        :param text: 待提取的文本
+        :param types: 类别信息列表, 通过 update_entity_category() 生成
+        :param print_log: 是否输出日志
+        """
+        slot_model = self.extract_entity_by_model(text)
+        slot_model = slot_model if slot_model else []
+        CommonUtil.printLog(f"\tslot_model: {','.join(slot_model) if slot_model else '无'}", condition=print_log, includeTime=False)
+        #
+        slot_type = BertUtil.extract_entity_by_type(text, types)
+        CommonUtil.printLog(f"\tslot_type: {','.join(slot_type) if slot_type else '无'}", condition=print_log, includeTime=False)
+        result_list = BertUtil.merge_lists_with_longer_match(slot_model, slot_type)
+
+        # slot.extend([item for item in slot_types if item not in slot])
+        CommonUtil.printLog(f"\tresult_slot(模型+类别): {','.join(result_list) if result_list else '无'}", condition=print_log, includeTime=False)
+        return result_list
+
+    @staticmethod
+    def merge_lists_with_longer_match(list_a: List[str], list_b: List[str]) -> List[str]:
+        """
+        合并两个字符串列表，保留更长的匹配元素
+
+        规则：
+        - 如果一个元素是另一个元素的子串，则保留更长的元素
+        - 如果元素完全相同，只保留一个
+        - 如果没有包含关系，两个都保留
+
+        Args:
+            list_a: 第一个字符串列表
+            list_b: 第二个字符串列表
+
+        Returns:
+            合并后的列表
+
+        Example:
+             A = ['ABC', 'efg']
+             B = ['ABCD', 'efg', 'hij']
+             merge_lists_with_longer_match(A, B)
+             结果: ['ABCD', 'efg', 'hij']
+        """
+        # 合并两个列表
+        combined = list_a + list_b
+        result = []
+
+        # 标记要删除的元素索引
+        to_remove = set()
+
+        for i in range(len(combined)):
+            if i in to_remove:
+                continue
+
+            for j in range(i + 1, len(combined)):
+                if j in to_remove:
+                    continue
+
+                item_i = combined[i]
+                item_j = combined[j]
+
+                # 判断包含关系
+                if item_i in item_j:
+                    # item_i 是 item_j 的子串，保留更长的 item_j，删除 item_i
+                    to_remove.add(i)
+                    break
+                elif item_j in item_i:
+                    # item_j 是 item_i 的子串，保留更长的 item_i，删除 item_j
+                    to_remove.add(j)
+
+        # 构建结果列表
+        for i in range(len(combined)):
+            if i not in to_remove:
+                result.append(combined[i])
+
+        return result
+
 
 # ===================== 测试代码 =====================
 if __name__ == "__main__":
+    """
+    基于bert进行短语分类训练
+    本类提供了两类数据: 
+    1. 预定义的常见query, 具体将:  keyword_queries/nearby_queries/navigation_queries/complex_queries 等定义
+    2. 从csv文件中读取的人工标注数据, 具体见: csv_dir 定义的目录, csv文件名固定为: train.csv
+        要求包含以下类: query/manual_type/manual_intent, 每种每类的数据量建议保持平衡, 提取数据时会以最少的哪一类为准
+        默认各类随机采样300条query (具体见 max_size 便来管理) 结合预定义的 query 组成最终的训练集
+        
+    id2label: 表示分类的标签, 0: 关键字搜, 1: 周边搜, 2: 简单导航, 3: 复杂
+    """
+
     cache_dir = FileUtil.create_cache_dir(None, __file__)
     id2label = {0: "关键字搜", 1: "周边搜", 2: "简单导航", 3: "复杂"}  # 分类的标签id
     usecols = ['query', 'manual_type', 'manual_intent']  # 从csv文件中要读取的列名
+    need_train_classify = False  # 是否需要想训练分类, 若为False,则表示本地已有模型,直接预测
+
+    # 训练用的csv文件配置
     csv_dir: str = f'{cache_dir}/bert'
-    csv_manual = f'{csv_dir}/train.csv'
-    max_size = 300
+    csv_manual = f'{csv_dir}/train.csv'  # 文件路径
+    max_size = 300  # 从csv中每类最多提取的query条数
+
+    # 模型路径
+    classify_model_path = None  # f"{cache_dir}/models/bert-base-chinese/"  # 分类模型路径
+    ner_model_path = None  # f"{cache_dir}/models/uer/roberta-base-finetuned-cluener2020-chinese/"  # 关键实体提取模型路径
 
     # 构建平衡的训练数据集
     # 数据源1: 预定义的query
     keyword_queries = [
         "搜索万达广场", "查找咖啡店", "查询银行网点", "餐厅",
-        "找加油站", "搜索超市", "查找医院", "搜索学校",
-        "搜索酒店", "查找ATM机", "查询公交站", "搜索电影院",
+        "找加油站", "搜索超市", "查找医院", "帮我搜索学校",
+        "搜索酒店", "ATM", "查询酒吧", "电影院",
         "找停车场", "小艺,帮我搜索下药店", "查找图书馆", "小德帮我找一下健身房"
     ]
 
     nearby_queries = [
-        "附近有什么好吃的", "周边有哪些商店", "最近有什么景点",
+        "请问,附近有什么好吃的", "周边有哪些商店", "周边有什么景点",
         "附近有咖啡厅吗", "周围有什么银行", "附近有什么酒店",
         "周边有什么娱乐场所", "附近有医院吗", "周围有什么超市",
         "附近有什么餐厅推荐", "周边有什么特色小吃", "周围有什么购物中心",
-        "找找附近哪里有加油站", "搜索周边书店", "查找周围的快餐店", "附近有美容院吗"
+        "找找附近哪里有加油站", "你好小德, 帮我搜索周边书店", "帮我查找周围的快餐店", "请问,附近有美容院吗"
     ]
 
     navigation_queries = [
-        "去万达广场怎么走", "导航到火车站", "到机场的路线",
-        "去市中心的路", "导航到超市", "到学校的路线",
+        "请问去万达广场怎么走", "你好,导航到火车站", "到机场的路线",
+        "去市中心的路", "帮我导航到超市", "到学校的路线",
         "去公园怎么走", "万绿湖导航", "到医院的最佳路线",
         "去海边的路", "导航到展览馆", "到体育馆怎么走",
         "我要去博物馆怎么去", "到图书馆的最快路线", "去动物园怎么走", "到地铁站的路"
@@ -566,7 +798,7 @@ if __name__ == "__main__":
     complex_queries = [
         "从我家到公司最快的路线", "避开拥堵去机场的路",
         "多个地点的最佳游览顺序", "考虑限行的上班路线",
-        "带充电桩的停车场推荐", "避开收费站去景点的路",
+        "带充电桩的停车场推荐", "最近的麦当劳",
         "考虑停车费的购物路线", "多目的地最优路径规划",
         "避开高峰期去火车站", "小德看下前面的路况",
         "包含休息点的长途驾驶路线", "考虑油耗的省油路线",
@@ -626,23 +858,27 @@ if __name__ == "__main__":
     CSVUtil.to_csv(df_train, f"{csv_dir}/sample.csv")
 
     # 初始化分类器（使用bert-base-chinese模型）
-    classifier = BertUtil(
-        model_path=f"{cache_dir}/models/bert-base-chinese/",
-        id2label=id2label
+    bertUtil = BertUtil(
+        classify_model_path=classify_model_path,
+        id2label=id2label,
+        ner_model_path=ner_model_path
     )
 
     # 训练模型
-    classifier.train(
-        df=df,
-        query_col="query",
-        label_col="label_id",
-        num_train_epochs=5
-    )
+    if need_train_classify:
+        bertUtil.train(
+            df=df,
+            query_col="query",
+            label_col="label_id",
+            per_device_train_batch_size=3,
+            num_train_epochs=5
+        )
 
     # 预测测试
     test_queries = [
         "万达广场导航",
         "搜索附近的咖啡店",
+        "搜索附近的厦门市的咖啡店",
         "复杂的城市路线规划",
         "关键字搜索商场店铺",
         "你好,搜索朝阳公园",
@@ -652,22 +888,31 @@ if __name__ == "__main__":
         "小爱同学,这条路堵不堵",
         "hello小艺,这几天的天气怎么样",
         "小德小德,我要去北京天安门",
+        "最近的咖啡店",
+        "可以帮我搜周边的加油站吗",
+        "请问附近哪里有幼儿园吗",
+        "我想找一家酒吧",
+        "请问附近哪有青年旅舍吗",
+        "请问附近哪里有ATM机吗",
     ]
 
     # 单条预测
     print("\n=== 单条预测结果 ===")
     for query in test_queries:
-        result = classifier.predict_single(query)
+        result = bertUtil.predict_single(query)
         print(f"{query:<20} → {result}")
 
     # 单条预测带置信度
     print("\n=== 单条预测结果（带置信度） ===")
+    amap_poi_types = bertUtil.update_entity_category(type_file='./configs/amap_poi_types.txt')
     for query in test_queries:
-        result, confidence = classifier.predict_single_with_confidence(query)
-        print(f"{query:<20} → {result} (置信度: {confidence:.3f})")
+        result, confidence = bertUtil.predict_single_with_confidence(query)
+        print(f"\n{query:<20} → {result} (置信度: {confidence:.3f})")
+        if '复杂' not in result:
+            bertUtil.extract_entity(query, amap_poi_types, True)
 
     # 批量预测
     print("\n=== 批量预测结果 ===")
-    batch_results = classifier.predict_batch(test_queries, batch_size=2)
+    batch_results = bertUtil.predict_batch(test_queries, batch_size=2)
     for query, result in zip(test_queries, batch_results):
         print(f"{query:<20} → {result}")
