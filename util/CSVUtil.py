@@ -439,7 +439,7 @@ class CSVUtil(object):
 
     @staticmethod
     def calc_dataframe_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None,
-                                keyword_col: Optional[str] = None) -> dict:
+                                keyword_col: Optional[str] = None, enable_any_empty: bool = False, enable_all_empty: bool = False) -> dict:
         """
         计算指定列的准确率统计信息:
         1. 过滤 column_base 和 column_compare 均有值的数据
@@ -456,11 +456,13 @@ class CSVUtil(object):
             column_compare (str): 待统计准确率的列名, 此为预测值列
             keyword (str, optional): 关键字过滤条件，如果提供且keyword_col不为空，则 keyword_col 列的值必须包含该关键字才被视为有效数据
             keyword_col (str, optional): 关键字所在的列名，用于判断是否满足条件。如果为None，则默认是: column_compare
+            enable_any_empty (bool, optional): 是否允许任意一列是空。若为True，则允许列值为空字符串''或NaN 若为False,则两列都要求非空
+            enable_all_empty (bool, optional): 是否允许所有列是空。若为True，则允许所有列都为空, 不做过滤, 优先级高于enable_any_empty
 
         Returns:
             dict: 包含统计信息的字典，各key含义如下：
                 - total_cnt (int): 总数据数，即数据框的总行数
-                - valid_cnt (int): 有效数据数，即两个列均有值的行数
+                - valid_cnt (int): 有效数据数，即两个列均有值的行数, 若 enable_empty=True, 则允许值为空
                 - same_cnt (int): 匹配数据数，即两个列值相等的行数
                 - accuracy (float): 准确率，计算公式为 same_cnt/valid_cnt
                 - valid_df (pandas.DataFrame): 有效数据的DataFrame，即两个列均有值的数据子集
@@ -469,8 +471,21 @@ class CSVUtil(object):
         # 1. 总数据数
         total_cnt = len(df)
 
-        # 2. column_base 和 column_compare 均有值的数据量
-        valid_df = df[df[column_base].notna() & df[column_compare].notna()]
+        # 2. 根据 enable_empty 参数过滤有效数据
+        if enable_all_empty: # 允许两列都为空,则无需做过滤
+            valid_df = df
+        elif enable_any_empty: # 允许任意一列为空
+            # 注意：NaN表示数据缺失，空字符串''表示数据存在但为空
+            valid_df = df[(df[column_base].notna()) | (df[column_compare].notna())]
+        else:
+            # 不允许空值：两列都有值且不为空字符串
+            # valid_df = df[
+            #     (df[column_base].notna()) &
+            #     (df[column_compare].notna()) &
+            #     (df[column_base].astype(str).str.strip() != '') &
+            #     (df[column_compare].astype(str).str.strip() != '')
+            # ]
+            valid_df = df[df[column_base].notna() & df[column_compare].notna()]
 
         # 3. 如果提供了keyword和keyword_col参数，则进一步过滤keyword_col包含关键字的数据
         keyword_col = column_compare if keyword_col is None else keyword_col
@@ -480,7 +495,7 @@ class CSVUtil(object):
         valid_cnt = len(valid_df)
 
         # 4. column_base 和 column_compare 值相等的数据量及对应DataFrame
-        same_df = valid_df[valid_df[column_base] == valid_df[column_compare]]
+        same_df = valid_df[valid_df[column_base].astype(str) == valid_df[column_compare].astype(str)]
         same_cnt = len(same_df)
 
         # 5. 准确率计算
@@ -497,7 +512,8 @@ class CSVUtil(object):
 
     @staticmethod
     def calc_csv_accuracy(csv_path: str, column_base: str, column_compare: str,
-                          keyword: Optional[str] = None, keyword_col: Optional[str] = None, encoding: str = 'utf-8-sig'):
+                          keyword: Optional[str] = None, keyword_col: Optional[str] = None, encoding: str = 'utf-8-sig',
+                          enable_any_empty: bool = False, enable_all_empty: bool = False):
         """
         计算CSV文件指定列的准确率
 
@@ -508,12 +524,14 @@ class CSVUtil(object):
             keyword (str, optional): 关键字过滤条件，如果提供且keyword_col不为空，则 keyword_col 列的值必须包含该关键字才被视为有效数据
             keyword_col (str, optional): 关键字所在的列名，用于判断是否满足条件。如果为None，则默认是: column_compare
             encoding (str): CSV文件的编码，默认为 'utf-8-sig'
+            enable_any_empty (bool, optional): 是否允许任意一列是空。若为True，则允许列值为空
+            enable_all_empty (bool, optional): 是否允许所有列是空。若为True，则允许所有列都为空,优先级高于enable_any_empty
 
         Returns:
             dict: 统计信息字典，包含准确率、有效数据数、匹配数据数、总数据数等信息
         """
         df = pd.read_csv(csv_path, encoding=encoding)
-        return CSVUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col)
+        return CSVUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col, enable_any_empty, enable_all_empty)
 
     @staticmethod
     def to_markdown(dataframe, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig', title: Optional[str] = None) -> str:

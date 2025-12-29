@@ -5,6 +5,7 @@ import csv
 import os
 import re
 from typing import Dict, Optional, Tuple
+
 from util.CommonUtil import CommonUtil
 
 
@@ -144,7 +145,8 @@ class CSVKeywordProcessor:
                     query_column: str = 'query',
                     result_column: str = 'result',
                     category_limit: Optional[int] = None,
-                    input_file_encoding: Optional[str] = None) -> str:
+                    input_file_encoding: Optional[str] = None,
+                    deduplicate: bool = False) -> str:
         """
         处理CSV文件，根据关键字映射关系填充结果列
 
@@ -154,6 +156,7 @@ class CSVKeywordProcessor:
         :param result_column: 结果要保存的列名，默认为 'result'
         :param category_limit: 每种类别的处理阈值，None表示不限制，默认为None
         :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
+        :param deduplicate: 是否需要对input_file进行去重(只对加载的数据去重, 不修改原始文件内容)
         :return: 输出文件路径
         """
         # 如果输出文件路径未指定，则与输入文件相同（将覆盖原文件）
@@ -164,6 +167,9 @@ class CSVKeywordProcessor:
         output_dir = os.path.dirname(output_file)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
+
+        # 已处理过的 query_column 数据, 用于去重(deduplicate=True时启用)
+        query_history = set()
 
         # 读取并处理CSV文件
         input_encoding = input_file_encoding or 'utf-8-sig'
@@ -216,14 +222,21 @@ class CSVKeywordProcessor:
                 if not row or all(cell.strip() == '' for cell in row):
                     continue
 
-                # 如果结果列已经有值，则跳过
-                if len(row) > result_index and row[result_index].strip() != '':
-                    continue
-
                 # 获取query文本
                 query_text = ''
                 if len(row) > query_index:
                     query_text = row[query_index]
+
+                # 如果要去重, 跳过已处理过的query
+                if deduplicate and query_text in query_history:
+                    continue
+
+                # 如果结果列已经有值，则跳过
+                if len(row) > result_index and row[result_index].strip() != '':
+                    # 如果要去重,则缓存该query
+                    if deduplicate:
+                        query_history.add(query_text)
+                    continue
 
                 # 对query数据进行预处理
                 if self.preprocessing and callable(self.preprocessing):
@@ -266,6 +279,10 @@ class CSVKeywordProcessor:
                 if self.common_tip is not None and self.common_tip not in row[result_index]:
                     row[result_index] += self.common_tip
 
+                # 如果要去重,则缓存该query
+                if deduplicate:
+                    query_history.add(query_text)
+
             # 写入处理后的数据到输出文件，使用Excel兼容的编码
             with open(output_file, 'w', encoding='utf-8-sig', newline='') as outfile:
                 writer = csv.writer(outfile)
@@ -287,6 +304,7 @@ def main(keyword_mapping: dict,  # 映射关系
          preprocessing: Optional[callable] = None,  # 预处理方法
          fallback_processor: Optional[callable] = None,  # 兜底处理方法
          common_tip: Optional[str] = None,
+         deduplicate: bool = False
          ) -> str:
     """
     主函数，用于处理CSV文件
@@ -302,6 +320,7 @@ def main(keyword_mapping: dict,  # 映射关系
     :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
     :param fallback_processor: 兜底处理方法，接收query参数，返回处理结果tuple[str,str], 第一个str是category类别信息, 第二个str是slot信息
     :param common_tip: 公用提示语, 若类型文本中不包含该提示语, 会追加到结尾
+    :param deduplicate: 是否需要对input_file进行去重(只对加载的数据去重, 不修改原始文件内容)
     :return: 输出文件路径
     """
     new_output_file = None
@@ -314,7 +333,8 @@ def main(keyword_mapping: dict,  # 映射关系
                 query_column=query_column,
                 result_column=result_column,
                 category_limit=category_limit,
-                input_file_encoding=input_file_encoding
+                input_file_encoding=input_file_encoding,
+                deduplicate=deduplicate
             )
             CommonUtil.printLog("文件处理完成，结果保存在: {}".format(new_output_file))
 
