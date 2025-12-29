@@ -51,7 +51,11 @@ github:https://github.com/CLUEbenchmark/CLUENER2020
 # ===================== 基础配置 & 内存保护 =====================
 os.environ["WANDB_DISABLED"] = "true"  # 关闭wandb日志
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1" # 强制使用CPU避免显存错误
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"  # 设置 Hugging Face 镜像
+# 设置 Hugging Face 镜像
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# os.environ["HF_ENDPOINT"] = "https://hub.yonghong.tech"
+os.environ["HF_ENDPOINT"] = "https://aliendao.cn"
+# os.environ["HF_HUB_OFFLINE"] = "0"  # 设为1表示离线模式，0表示在线
 
 # 限制PyTorch内存占用策略
 torch.backends.cudnn.benchmark = False
@@ -91,7 +95,8 @@ class BertUtil:
             classify_model_path: str = "bert-base-chinese",
             id2label: Optional[Dict[int, str]] = None,
             device: Optional[str] = None,
-            ner_model_path: str = "uer/roberta-base-finetuned-cluener2020-chinese"
+            ner_model_path: str = "uer/roberta-base-finetuned-cluener2020-chinese",
+            model_cache_dir: Optional[str] = None
     ):
         """
         初始化工具类
@@ -101,17 +106,33 @@ class BertUtil:
         :param id2label: 标签id到名称的映射, 格式: {0: "测试", 1: "其他"}   key-数字 value-名称
         :param device: 运行设备（自动检测或手动指定）
         :param ner_model_path: 文本关键信息提取模型路径, 也支持本地路径
+        :param model_cache_dir: 缓存目录, 用于存储模型和分词器, 默认为 None, 会自动创建缓存目录
         """
-        if classify_model_path is None:
-            inner_path = FileUtil.recookPath(f"{BertUtil._cache}/models/bert-base-chinese/")
-            if FileUtil.isFileExist(inner_path):
-                classify_model_path = inner_path
-        if ner_model_path is None:
-            inner_path = FileUtil.recookPath(f"{BertUtil._cache}/models/uer/roberta-base-finetuned-cluener2020-chinese/")
-            if FileUtil.isFileExist(inner_path):
-                ner_model_path = inner_path
+
+        if model_cache_dir is None:
+            model_cache_dir = FileUtil.recookPath(f"{BertUtil._cache}/models")
+        FileUtil.createFile(f'{model_cache_dir}/', False)
+
+        # 处理分类模型路径
+        classify_model_path = classify_model_path if classify_model_path else 'bert-base-chinesebert-base-chinese'
+        is_local_path = FileUtil.isFileExist(classify_model_path)
+        local_path = classify_model_path if is_local_path else f'{model_cache_dir}/{classify_model_path}/'
+        local_path = FileUtil.recookPath(local_path)
+        is_local_path = FileUtil.isFileExist(local_path)
+        classify_model_path = local_path if is_local_path else classify_model_path
+        CommonUtil.printLog(f"加载文本分类模型: {classify_model_path}")
+
+        # 处理NER模型路径
+        ner_model_path = ner_model_path if ner_model_path else 'uer/roberta-base-finetuned-cluener2020-chinese'
+        is_local_path = FileUtil.isFileExist(ner_model_path)
+        local_path = ner_model_path if is_local_path else f'{model_cache_dir}/{ner_model_path}/'
+        local_path = FileUtil.recookPath(local_path)
+        is_local_path = FileUtil.isFileExist(local_path)
+        ner_model_path = local_path if is_local_path else ner_model_path
+        CommonUtil.printLog(f"加载文本关键信息提取模型: {ner_model_path}")
 
         # 基础配置
+        self.model_cache_dir = model_cache_dir
         self.model_path = classify_model_path
         self.id2label = id2label if id2label else {0: "测试", 1: "其他"}
         self.num_labels = len(self.id2label)
@@ -153,9 +174,8 @@ class BertUtil:
             # if abs_path_ner.endswith('/'):
             #     abs_path_ner = abs_path_ner[:-1]
 
-            CommonUtil.printLog(
-                f"\n加载文本关键信息提取模型 | 本地路径：{local_path} | 模型路径：{FileUtil.recookPath(abs_path_ner) if local_path else abs_path_ner}")
-            self.tokenizer_ner = AutoTokenizer.from_pretrained(abs_path_ner, local_files_only=local_path)
+            CommonUtil.printLog(f"加载文本关键信息提取模型 | 本地路径：{local_path} | 模型路径：{FileUtil.recookPath(abs_path_ner) if local_path else abs_path_ner}")
+            self.tokenizer_ner = AutoTokenizer.from_pretrained(abs_path_ner, local_files_only=local_path, cache_dir=self.model_cache_dir, resume_download=True)
             self.model_ner = AutoModelForTokenClassification.from_pretrained(abs_path_ner, local_files_only=local_path)
             self.pipeline_ner = pipeline("token-classification", model=self.model_ner, tokenizer=self.tokenizer_ner, aggregation_strategy="simple")
             self.entity_category: Set[str] = set()  # 实体类别, 用于模型提取无结果时的兜底策略, 通过 update_entity_category() 方法进行设置
@@ -174,7 +194,7 @@ class BertUtil:
     def _init_tokenizer_and_model(self):
         """初始化bert-base-chinese分词器和模型"""
         if self.tokenizer is None:
-            self.tokenizer = BertTokenizer.from_pretrained(self.model_path)
+            self.tokenizer = BertTokenizer.from_pretrained(self.model_path, cache_dir=self.model_cache_dir, resume_download=True)
         if self.model is None:
             # 针对 macOS 的特殊处理
             if platform.system() == "Darwin" and str(self.device) == 'cpu':
@@ -759,7 +779,7 @@ if __name__ == "__main__":
     cache_dir = FileUtil.create_cache_dir(None, __file__)
     id2label = {0: "关键字搜", 1: "周边搜", 2: "简单导航", 3: "复杂"}  # 分类的标签id
     usecols = ['query', 'manual_type', 'manual_intent']  # 从csv文件中要读取的列名
-    need_train_classify = False  # 是否需要想训练分类, 若为False,则表示本地已有模型,直接预测
+    need_train_classify = True  # 是否需要想训练分类, 若为False,则表示本地已有模型,直接预测
 
     # 训练用的csv文件配置
     csv_dir: str = f'{cache_dir}/bert'
@@ -767,8 +787,8 @@ if __name__ == "__main__":
     max_size = 300  # 从csv中每类最多提取的query条数
 
     # 模型路径
-    classify_model_path = None  # f"{cache_dir}/models/bert-base-chinese/"  # 分类模型路径
-    ner_model_path = None  # f"{cache_dir}/models/uer/roberta-base-finetuned-cluener2020-chinese/"  # 关键实体提取模型路径
+    classify_model_path = 'bert-base-chinese'  # None  # f"{cache_dir}/models/bert-base-chinese/"  # 分类模型路径
+    ner_model_path = 'uer/roberta-base-finetuned-cluener2020-chinese'  # None  # f"{cache_dir}/models/uer/roberta-base-finetuned-cluener2020-chinese/"  # 关键实体提取模型路径
 
     # 构建平衡的训练数据集
     # 数据源1: 预定义的query
