@@ -37,14 +37,15 @@ CSV/padans工具类
 class CSVUtil(object):
 
     @staticmethod
-    def read_csv(src_path: str, encoding: str = 'utf-8-sig', usecols: List[str] = None) -> pd.DataFrame:
+    def read_csv(src_path: str, encoding: str = 'utf-8-sig', usecols: List[str] = None, skip_rows: int = 0) -> pd.DataFrame:
         """
         以str格式读取CSV文件, 并将NaN值替换为空字符串
         :param src_path: csv源文件路径
         :param encoding: 编码
-        :param usecols: 要读取的列, None或[] 表示读取全部列
+        :param usecols: 要读取的列, None或[] 表示读取全部列, 请确保对应的列名存在
+        :param skip_rows: 要跳过读取的行数
         """
-        df = pd.read_csv(src_path, encoding=encoding, dtype=str, usecols=usecols)
+        df = pd.read_csv(src_path, encoding=encoding, dtype=str, usecols=usecols, skiprows=skip_rows)
         return df.fillna('')
 
     @staticmethod
@@ -472,9 +473,9 @@ class CSVUtil(object):
         total_cnt = len(df)
 
         # 2. 根据 enable_empty 参数过滤有效数据
-        if enable_all_empty: # 允许两列都为空,则无需做过滤
+        if enable_all_empty:  # 允许两列都为空,则无需做过滤
             valid_df = df
-        elif enable_any_empty: # 允许任意一列为空
+        elif enable_any_empty:  # 允许任意一列为空
             # 注意：NaN表示数据缺失，空字符串''表示数据存在但为空
             valid_df = df[(df[column_base].notna()) | (df[column_compare].notna())]
         else:
@@ -865,16 +866,24 @@ class CSVUtil(object):
         return result_df
 
     @staticmethod
-    def convert_excel(input_file: str, temp_csv: str) -> str:
+    def convert_excel(input_file: str, temp_csv: Optional[str] = None, ignore_exist: bool = True) -> str:
         """
         如果输入是 Excel，则转为可分块读取的 CSV 文件, 否则直接返回原文件路径
         :param input_file: 输入文件路径, 支持: .xlsx  .xls  .csv
-        :param temp_csv: 转换excel时, 并将内容存储到该CSV文件中
+        :param temp_csv: excel后存储的csv文件路径, 若为None,则使用input_file同目录下, 将后缀改为csv
+        :param ignore_exist: 忽略已存在的csv文件, 直接转换并覆盖
         :return: 转换后的文件路径
         """
-        if input_file.lower().endswith(('.xlsx', '.xls')):
-            if not FileUtil.isFileExist(temp_csv):
-                CommonUtil.printLog("🔄 正在将 Excel 转换为临时 CSV 文件以支持高效分块读取...")
+        input_lower = input_file.lower()
+        if input_lower.endswith(('.xlsx', '.xls')):
+            if CommonUtil.isNoneOrBlank(temp_csv):
+                temp_csv = input_file.replace('.xlsx', '.csv').replace('.xls', '.csv')
+
+            temp_csv = FileUtil.recookPath(temp_csv)
+            full_name, name, ext = FileUtil.getFileName(input_file)
+
+            if not FileUtil.isFileExist(temp_csv) or ignore_exist:
+                CommonUtil.printLog(f"🔄 正在将 Excel 转换为 CSV 文件: {full_name}")
                 try:
                     df = pd.read_excel(input_file, dtype=str)
                     df.to_csv(temp_csv, index=False, encoding='utf-8')
@@ -883,7 +892,7 @@ class CSVUtil(object):
                     CommonUtil.printLog(f"❌ Excel 转换失败: {e}")
                     raise
             else:
-                CommonUtil.printLog(f"✅ 使用已有临时 CSV: {temp_csv}")
+                CommonUtil.printLog(f"✅ 使用已有的 CSV: {temp_csv}")
             return temp_csv
         else:
             return input_file  # 已经是 CSV
@@ -993,3 +1002,70 @@ class CSVUtil(object):
         CommonUtil.printLog(f"📈 总成功条数: {total_processed}")
 
         CommonUtil.printLog(f"📁 最终结果保存至: {output_file}")
+
+    @staticmethod
+    def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',
+                         on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
+                         reverse_list: bool = False, deduplicate: bool = True, remove_converted_csv: bool = True) -> Optional[pd.DataFrame]:
+        """
+        合并指定目录下除 'output_name' 以及 'ignore_' 开头的所有 csv 文件, 并去重, 保存为 'output_name'.csv
+        若当前目录下有excel文件,则会先转换为csv再做合并
+        要读取和保存的列名为由 'usecols' 定义, 请确保这些列名存在
+        最后会新增一列: 'result_src' 用以记录当前数据来源于哪份文档
+
+        :param src_dir: 源csv/xls/xlsx 文件所在目录, 输出文件也会存储在这个目录中, 比如脚本所在目录: os.path.dirname(os.path.abspath(__file__))
+        :param output_csv_name: 最终合并生成的csv文件名(不包含 .csv 后缀)
+        :param reverse_list: 获取到的csv文件是按名称自然排序的, 是否要倒序
+        :param on_column: 合并和去重数据时的列依据, 非空
+        :param usecols: 读取csv文件时要读取的列数据, None表示全部读取
+        :param skip_rows: 读取csv文件时, 要跳过的表头行数
+        :param deduplicate: 合并后的数据是否要去重
+        :param remove_converted_csv: 合并完成后是否要删除临时转换的csv文件
+
+        比如对于微信对账单excel文件, 会先转化为csv, 然后合并csv(基于时间去重)
+        微信对账单前16行为统计信息表头, 需要跳过
+        微信对账单的详情列名为:
+        交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注
+        """
+        output_csv: str = f'{src_dir}/{output_csv_name}.csv'  # 最终生成的全量csv文件(已去重)
+        file_list: list = FileUtil.listAllFilePath(src_dir, depth=1)
+
+        valid_csv_list = []
+        converted_csv_list = []  # 通过转换生成的临时文件
+        for file in file_list:
+            full_name, name, ext = FileUtil.getFileName(file)
+
+            if output_csv_name != name and ext == 'csv' and not name.startswith('ignore_'):
+                valid_csv_list.append(file)
+
+            if ext in ['xls', 'xlsx']:
+                converted_csv = f'{src_dir}/{name}.csv'
+                CSVUtil.convert_excel(file, converted_csv)
+                converted_csv_list.append(converted_csv)
+                valid_csv_list.append(converted_csv)
+
+        valid_csv_list = sorted(valid_csv_list, reverse=reverse_list)
+        CommonUtil.printLog(f'待合并的csv文件列表为: {[FileUtil.getFileName(x)[0] for x in valid_csv_list]}')
+        df = None
+        for file in valid_csv_list:
+            full_name, name, ext = FileUtil.getFileName(file)
+            df_file = CSVUtil.read_csv(file, usecols=usecols, skip_rows=skip_rows)
+            df_file['result_src'] = full_name  # 数据来源
+            if df is None:
+                df = df_file
+                continue
+            df = CSVUtil.merge_dataframe(df, df_file, on_column=on_column, deduplicate=deduplicate)
+
+        # 清除转换生成的临时文件
+        if remove_converted_csv:
+            for file in converted_csv_list:
+                FileUtil.deleteFile(file)
+
+        if df is None:
+            print('merge_csv_files fail: df is None')
+        else:
+            if deduplicate:
+                df = CSVUtil.deduplicate_dataframe(df, on_column)  # 去重
+            CSVUtil.to_csv(df, output_csv)
+            print(f'merge_csv_files success: {output_csv_name}.csv saved, total rows: {len(df)}')
+        return df

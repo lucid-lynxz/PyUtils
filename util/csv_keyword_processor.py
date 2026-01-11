@@ -74,19 +74,19 @@ class CSVKeywordProcessor:
                     # 如果不是有效的正则表达式，则当作普通字符串处理
                     self.compiled_secondary_patterns[category].append(re.compile(re.escape(rule)))
 
-    def match_keyword(self, text: str) -> Optional[str]:
+    def match_keyword(self, text: str) -> Optional[Tuple[str, str]]:
         """
         检查文本是否匹配任何关键字，并返回对应的映射结果
 
         :param text: 要检查的文本
-        :return: 匹配的关键字对应的映射结果，如果没有匹配则返回None
+        :return: 匹配的关键字对应的映射结果以及对应的正则表达式，如果没有匹配则返回None
         """
         if not text:
             return None
 
         for pattern, result in self.compiled_patterns.items():
             if pattern.search(text):
-                return result
+                return result, pattern.pattern
         return None
 
     def apply_secondary_processing(self, text: str, category: str, slot: Optional[str] = None) -> str:
@@ -146,7 +146,9 @@ class CSVKeywordProcessor:
                     result_column: str = 'result',
                     category_limit: Optional[int] = None,
                     input_file_encoding: Optional[str] = None,
-                    deduplicate: bool = False) -> str:
+                    deduplicate: bool = False,
+                    append_pattern_info: bool = True,
+                    pattern_prefix: str = '-----') -> str:
         """
         处理CSV文件，根据关键字映射关系填充结果列
 
@@ -157,6 +159,8 @@ class CSVKeywordProcessor:
         :param category_limit: 每种类别的处理阈值，None表示不限制，默认为None
         :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
         :param deduplicate: 是否需要对input_file进行去重(只对加载的数据去重, 不修改原始文件内容)
+        :param append_pattern_info: 是否将匹配到的正则表达式信息追加到结果列中
+        :param pattern_prefix: 正则表达式信息的前缀, 默认为'-----'
         :return: 输出文件路径
         """
         # 如果输出文件路径未指定，则与输入文件相同（将覆盖原文件）
@@ -244,7 +248,10 @@ class CSVKeywordProcessor:
                     row[query_index] = query_text
 
                 # 匹配关键字并获取结果
-                category: str = self.match_keyword(query_text)
+                category, pattern_str = None, None
+                match_result = self.match_keyword(query_text)
+                if isinstance(match_result, Tuple):
+                    category, pattern_str = match_result
                 slot: str = ''
 
                 # 如果没有匹配结果，尝试使用兜底处理方法
@@ -278,6 +285,9 @@ class CSVKeywordProcessor:
                 row[result_index] = self.apply_secondary_processing(query_text, category, slot)
                 if self.common_tip is not None and self.common_tip not in row[result_index]:
                     row[result_index] += self.common_tip
+
+                if append_pattern_info:
+                    row[result_index] += f"{pattern_prefix}{pattern_str}"
 
                 # 如果要去重,则缓存该query
                 if deduplicate:
