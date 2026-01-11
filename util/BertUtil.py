@@ -167,6 +167,11 @@ class BertUtil:
         self.data_label2idx = None
         self.idx2data_label = None
 
+        # train() 后生成的微调模型信息
+        self.predict_model_path = None
+        self.predict_model = None
+        self.predict_tokenizer = None
+
         # 以下是文本关键信息提取(NER)相关变量初始化tokenizer和模型（中文优化版）
         if ner_model_path is not None:
             local_path = FileUtil.isFileExist(ner_model_path)
@@ -506,22 +511,30 @@ class BertUtil:
         self.tokenizer.save_pretrained(model_save_path)
         CommonUtil.printLog(f"模型训练完成，保存路径：{model_save_path}")
 
+    def init_predict_model(self, model_path: str = None):
+        """
+        初始化预测模型
+        :param model_path: 模型路径, 可以是本地路径, 也可以是huggingface上的模型名称
+        """
+        model_path = model_path if model_path else f"{BertUtil._cache}/bert_base_model"
+        if self.predict_model_path != model_path:
+            self.predict_model_path = model_path
+            # 加载模型 - 确保在正确的设备上加载
+            self.predict_tokenizer = BertTokenizer.from_pretrained(model_path)
+            self.predict_model = BertForSequenceClassification.from_pretrained(
+                model_path,
+                low_cpu_mem_usage=True,
+                torch_dtype=torch.float32
+            )
+            self.predict_model = self.predict_model.to(self.device)  # 明确转移到指定设备
+            self.predict_model.eval()
+
     def predict_single(self, query: str, model_path: str = None, max_length: int = 64) -> str:
         """单条文本预测"""
-        model_path = model_path if model_path else f"{BertUtil._cache}/bert_base_model"
-
-        # 加载模型 - 确保在正确的设备上加载
-        tokenizer = BertTokenizer.from_pretrained(model_path)
-        model = BertForSequenceClassification.from_pretrained(
-            model_path,
-            low_cpu_mem_usage=True,
-            torch_dtype=torch.float32
-        )
-        model = model.to(self.device)  # 明确转移到指定设备
-        model.eval()
+        self.init_predict_model()
 
         # 预处理
-        inputs = tokenizer(
+        inputs = self.predict_tokenizer(
             query,
             truncation=True,
             padding="max_length",
@@ -532,7 +545,7 @@ class BertUtil:
 
         # 预测
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = self.predict_model(**inputs)
         pred_id = torch.argmax(outputs.logits, dim=1).item()
         pred_label = self.id2label.get(pred_id, f"未知标签_{pred_id}")
 
@@ -540,20 +553,10 @@ class BertUtil:
 
     def predict_single_with_confidence(self, query: str, model_path: str = None, max_length: int = 64) -> Tuple[str, float]:
         """单条文本预测并返回置信度"""
-        model_path = model_path if model_path else f"{BertUtil._cache}/bert_base_model"
-
-        # 加载模型
-        tokenizer = BertTokenizer.from_pretrained(model_path)
-        model = BertForSequenceClassification.from_pretrained(
-            model_path,
-            low_cpu_mem_usage=True,
-            torch_dtype=torch.float32
-        )
-        model = model.to(self.device)
-        model.eval()
+        self.init_predict_model()
 
         # 预处理
-        inputs = tokenizer(
+        inputs = self.predict_tokenizer(
             query,
             truncation=True,
             padding="max_length",
@@ -564,7 +567,7 @@ class BertUtil:
 
         # 预测
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = self.predict_model(**inputs)
             logits = outputs.logits
             probabilities = torch.softmax(logits, dim=-1)
 
@@ -576,17 +579,7 @@ class BertUtil:
 
     def predict_batch(self, queries: List[str], model_path: str = None, max_length: int = 64, batch_size: int = 2) -> List[str]:
         """批量文本预测"""
-        model_path = model_path if model_path else f"{BertUtil._cache}/bert_base_model"
-
-        # 加载模型
-        tokenizer = BertTokenizer.from_pretrained(model_path)
-        model = BertForSequenceClassification.from_pretrained(
-            model_path,
-            low_cpu_mem_usage=True,
-            torch_dtype=torch.float32
-        )
-        model = model.to(self.device)
-        model.eval()
+        self.init_predict_model()
 
         results = []
         # 批量处理
@@ -594,7 +587,7 @@ class BertUtil:
             batch_queries = queries[i:i + batch_size]
 
             # 预处理
-            inputs = tokenizer(
+            inputs = self.predict_tokenizer(
                 batch_queries,
                 truncation=True,
                 padding="max_length",
@@ -605,7 +598,7 @@ class BertUtil:
 
             # 预测
             with torch.no_grad():
-                outputs = model(**inputs)
+                outputs = self.predict_model(**inputs)
             pred_ids = torch.argmax(outputs.logits, dim=1).tolist()
             pred_labels = [self.id2label.get(id, f"未知标签_{id}") for id in pred_ids]
 
@@ -781,7 +774,7 @@ if __name__ == "__main__":
     label2id = {v: k for k, v in id2label.items()}
     invalid_id = 999
     usecols = ['query', 'manual_type', 'manual_intent']  # 从csv文件中要读取的列名
-    need_train_classify = True  # 是否需要想训练分类, 若为False,则表示本地已有模型,直接预测
+    need_train_classify = False  # 是否需要想训练分类, 若为False,则表示本地已有模型,直接预测
 
     # 训练用的csv文件配置
     csv_dir: str = f'{cache_dir}/bert'
@@ -880,6 +873,7 @@ if __name__ == "__main__":
     else:
         df_train = df
     CSVUtil.to_csv(df_train, f"{csv_dir}/sample.csv")
+    df = df_train
 
     # 初始化分类器（使用bert-base-chinese模型）
     bertUtil = BertUtil(
@@ -922,13 +916,13 @@ if __name__ == "__main__":
     ]
 
     # 单条预测
-    print("\n=== 单条预测结果 ===")
+    CommonUtil.printLog("=== 单条预测结果 ===", prefix='\n')
     for query in test_queries:
         result = bertUtil.predict_single(query)
         print(f"{query:<20} → {result}")
 
     # 单条预测带置信度
-    print("\n=== 单条预测结果（带置信度） ===")
+    CommonUtil.printLog("=== 单条预测结果（带置信度） ===", prefix='\n')
     amap_poi_types = bertUtil.update_entity_category(type_file='./configs/amap_poi_types.txt')
     for query in test_queries:
         result, confidence = bertUtil.predict_single_with_confidence(query)
@@ -937,7 +931,8 @@ if __name__ == "__main__":
             bertUtil.extract_entity(query, amap_poi_types, True)
 
     # 批量预测
-    print("\n=== 批量预测结果 ===")
+    CommonUtil.printLog("=== 批量预测结果 ===", prefix='\n')
     batch_results = bertUtil.predict_batch(test_queries, batch_size=2)
     for query, result in zip(test_queries, batch_results):
         print(f"{query:<20} → {result}")
+    CommonUtil.printLog(f'批量预测结束')
