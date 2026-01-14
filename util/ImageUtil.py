@@ -365,19 +365,36 @@ class ImageUtil:
             return self
 
     @staticmethod
-    def merge_images(image_dir: str, rows: int = 1, cols=None, single_column: bool = False, bg_color: str = "white", keep_original_size: bool = True) -> Optional[Image.Image]:
+    def merge_dir_images(image_dir: str, rows: int = 1, cols=None, single_column: bool = False, bg_color: str = "white", keep_original_size: bool = True) -> Optional[Image.Image]:
         """
-        将指定目录下的所有图片,合并成一张大图
-        Args:
-            image_dir (str): 图片目录路径
-            rows (int): 行数，默认为1
-            cols (int): 列数，默认为None（根据行数自动计算）
-        """
+           将指定目录下的所有图片,合并成一张大图
+           Args:
+               image_dir (str): 图片目录路径
+               rows (int): 行数，默认为1
+               cols (int): 列数，默认为None（根据行数自动计算）
+               single_column: 单列模式：强制1列，行数等于图片数量
+               bg_color: 默认图片背景色
+               keep_original_size: 是否保存原始图片尺寸, 不做缩放
+       """
         # 获取目录下所有图片文件
         image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if
                        f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        return ImageUtil.merge_images(image_files, rows, cols, single_column, bg_color, keep_original_size)
+
+    @staticmethod
+    def merge_images(image_files: list, rows: int = 1, cols=None, single_column: bool = False, bg_color: str = "white", keep_original_size: bool = True) -> Optional[Image.Image]:
+        """
+        将指定目录下的所有图片,合并成一张大图
+        Args:
+            image_files (str): 图片路径列表
+            rows (int): 行数，默认为1
+            cols (int): 列数，默认为None（根据行数自动计算）
+            single_column: 单列模式：强制1列，行数等于图片数量
+            bg_color: 默认图片背景色
+            keep_original_size: 是否保存原始图片尺寸, 不做缩放
+        """
         if not image_files:
-            print('No images found in the directory.')
+            print('No images found ')
             return None
 
         # 提取文件名并排序（按字典顺序升序）

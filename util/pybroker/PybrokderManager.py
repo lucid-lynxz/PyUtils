@@ -178,7 +178,7 @@ class StrategyManager:
 
         cols: int = 1 if cnt <= 1 else 2
         rows: int = 1 if cnt <= 1 else int(cnt / 2)
-        image = ImageUtil.merge_images(cache_path, rows=rows, cols=cols)
+        image = ImageUtil.merge_dir_images(cache_path, rows=rows, cols=cols)
         FileUtil.createFile(cache_path, True)
         image_path = FileUtil.recookPath(f'{cache_path}/merged_image.png')
         ImageUtil.save_img(image_path, image)
