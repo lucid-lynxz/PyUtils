@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import csv
 import os
 import re
 from typing import Dict, Optional, Tuple
 
+from util.CSVUtil import CSVUtil
 from util.CommonUtil import CommonUtil
 
 
@@ -159,8 +159,8 @@ class CSVKeywordProcessor:
         :param category_limit: 每种类别的处理阈值，None表示不限制，默认为None
         :param input_file_encoding: 输入文件编码，传None表示使用默认为'utf-8-sig',允许修改, 输出文件固定是: utf-8-sig
         :param deduplicate: 是否需要对input_file进行去重(只对加载的数据去重, 不修改原始文件内容)
-        :param append_pattern_info: 是否将匹配到的正则表达式信息追加到结果列中
-        :param pattern_prefix: 正则表达式信息的前缀, 默认为'-----'
+        :param append_pattern_info: 分类信息结果中是否追加对应的正则表达式内容
+        :param pattern_prefix: 追加正则表达式内容时,需要补充的前缀字符串
         :return: 输出文件路径
         """
         # 如果输出文件路径未指定，则与输入文件相同（将覆盖原文件）
@@ -177,127 +177,86 @@ class CSVKeywordProcessor:
 
         # 读取并处理CSV文件
         input_encoding = input_file_encoding or 'utf-8-sig'
-        with open(input_file, 'r', encoding=input_encoding) as infile:
-            # 使用csv.reader处理文件
-            reader = list(csv.reader(infile))
+        df = CSVUtil.read_csv(input_file, encoding=input_encoding)
+        df.columns = df.columns.str.lstrip('\ufeff')  # 批量去除所有列名左侧的 BOM 字符
 
-            if not reader:
-                raise ValueError("CSV文件为空")
+        # 确保result列存在
+        if result_column not in df.columns:
+            df[result_column] = ''  # 初始化为空字符
+            CommonUtil.printLog(f'{result_column}列不存在, 进行添加')
 
-            # 获取表头并去除BOM字符
-            header = reader[0]
-            # 去除可能存在的BOM字符
-            if header and len(header) > 0:
-                header[0] = header[0].lstrip('\ufeff')
+        # 遍历dataframe
+        # 初始化类别计数器
+        category_counts = {}
+        for index, row in df.iterrows():
+            query_text = row.get(query_column, '')
+            result_text = row.get(result_column, '')
 
-            # 查找query列索引
-            try:
-                query_index = header.index(query_column)
-            except ValueError:
-                # 如果没有找到精确匹配，尝试查找去除BOM后的列名
-                bom_query_column = '\ufeff' + query_column
-                try:
-                    query_index = header.index(bom_query_column)
-                    # 如果找到了带BOM的列名，更新query_column
-                    query_column = bom_query_column
-                except ValueError:
-                    raise ValueError("未找到指定的查询列 '{}'".format(query_column))
+            # 如果要去重, 跳过已处理过的query
+            if deduplicate and query_text in query_history:
+                continue
 
-            # 检查结果列是否存在，如果不存在则添加
-            if result_column in header:
-                result_index = header.index(result_column)
-            else:
-                header.append(result_column)
-                result_index = len(header) - 1
-                # 更新所有行以确保列数一致
-                for i in range(1, len(reader)):
-                    row = reader[i]
-                    while len(row) < len(header):
-                        row.append('')
+            # 跳过空白行
+            if CommonUtil.isNoneOrBlank(query_text):
+                continue
 
-            # 初始化类别计数器
-            category_counts = {}
-
-            # 处理每一行数据（跳过表头）
-            for i in range(1, len(reader)):
-                row = reader[i]
-
-                # 跳过空白行
-                if not row or all(cell.strip() == '' for cell in row):
-                    continue
-
-                # 获取query文本
-                query_text = ''
-                if len(row) > query_index:
-                    query_text = row[query_index]
-
-                # 如果要去重, 跳过已处理过的query
-                if deduplicate and query_text in query_history:
-                    continue
-
-                # 如果结果列已经有值，则跳过
-                if len(row) > result_index and row[result_index].strip() != '':
-                    # 如果要去重,则缓存该query
-                    if deduplicate:
-                        query_history.add(query_text)
-                    continue
-
-                # 对query数据进行预处理
-                if self.preprocessing and callable(self.preprocessing):
-                    query_text = self.preprocessing(query_text)
-                    row[query_index] = query_text
-
-                # 匹配关键字并获取结果
-                category, pattern_str = None, None
-                match_result = self.match_keyword(query_text)
-                if isinstance(match_result, Tuple):
-                    category, pattern_str = match_result
-                slot: str = ''
-
-                # 如果没有匹配结果，尝试使用兜底处理方法
-                if category is None and self.fallback_processor:
-                    fallback_result = self.process_with_fallback(query_text)
-
-                    # 如果没有匹配结果，跳过
-                    if isinstance(fallback_result, tuple):
-                        category, slot = fallback_result
-
-                if CommonUtil.isNoneOrBlank(category):
-                    continue
-
-                # 检查类别限制
-                if category_limit is not None:
-                    # 获取当前类别的计数
-                    count = category_counts.get(category, 0)
-
-                    # 如果已达到限制，则跳过
-                    if count >= category_limit:
-                        continue
-
-                    # 更新计数器
-                    category_counts[category] = count + 1
-
-                # 确保行有足够的列来存储结果
-                while len(row) <= result_index:
-                    row.append('')
-
-                # 设置结果值
-                row[result_index] = self.apply_secondary_processing(query_text, category, slot)
-                if self.common_tip is not None and self.common_tip not in row[result_index]:
-                    row[result_index] += self.common_tip
-
-                if append_pattern_info:
-                    row[result_index] += f"{pattern_prefix}{pattern_str}"
-
-                # 如果要去重,则缓存该query
-                if deduplicate:
+            # 跳过原有结果值的数据
+            if not CommonUtil.isNoneOrBlank(result_text):
+                if deduplicate:  # 如果要去重,则缓存该query
                     query_history.add(query_text)
+                continue
 
-            # 写入处理后的数据到输出文件，使用Excel兼容的编码
-            with open(output_file, 'w', encoding='utf-8-sig', newline='') as outfile:
-                writer = csv.writer(outfile)
-                writer.writerows(reader)
+            # 对query数据进行预处理
+            if self.preprocessing and callable(self.preprocessing):
+                query_text = self.preprocessing(query_text)
 
+            # 匹配关键字并获取结果
+            category, patter_str, slot = None, None, ''
+            match_result = self.match_keyword(query_text)
+            if isinstance(match_result, Tuple):
+                category, patter_str = match_result
+
+            # 如果没有匹配结果，尝试使用兜底处理方法
+            if category is None and self.fallback_processor:
+                fallback_result = self.process_with_fallback(query_text)
+
+                # 如果没有匹配结果，跳过
+                if isinstance(fallback_result, tuple):
+                    category, slot = fallback_result
+
+            if CommonUtil.isNoneOrBlank(category):
+                continue
+
+            # 检查类别限制
+            if category_limit is not None:
+                # 获取当前类别的计数
+                count = category_counts.get(category, 0)
+
+                # 如果已达到限制，则跳过
+                if count >= category_limit:
+                    continue
+
+                # 更新计数器
+                category_counts[category] = count + 1
+
+            # 设置结果值
+            row[result_column] = self.apply_secondary_processing(query_text, category, slot)
+            if self.common_tip is not None and self.common_tip not in row[result_column]:
+                row[result_column] += self.common_tip
+
+            if append_pattern_info:
+                row[result_column] += pattern_prefix + patter_str
+
+            # 更新会原df数据
+            df.at[index, result_column] = row[result_column]
+
+            # CommonUtil.printLog(f'match_result:{query_text}->\tresult={row[result_column]}')
+
+            # 如果要去重,则缓存该query
+            if deduplicate:
+                query_history.add(query_text)
+
+        CSVUtil.to_csv(df, output_file, encoding=input_encoding)
         return output_file
 
 

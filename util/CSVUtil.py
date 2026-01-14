@@ -132,8 +132,6 @@ class CSVUtil(object):
                 row = row_str.split(delimiter)
 
                 try:
-                    if '搜索历史记录' in row[0]:
-                        print(f'搜索历史记录')
                     obj = object_class.by_csv_row(row)
 
                     obj.config_path = file_path
@@ -268,6 +266,7 @@ class CSVUtil(object):
         """
         合并两个DataFrame，去重并解决冲突
         对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
+        若只是简单的拼接不同的df,无需去重等操作,可直接使用原始接口: df = pd.concat([df1, df2, df3], ignore_index=True)
 
         :param df_left: 左侧DataFrame
         :param df_right: 右侧DataFrame
@@ -531,7 +530,7 @@ class CSVUtil(object):
         Returns:
             dict: 统计信息字典，包含准确率、有效数据数、匹配数据数、总数据数等信息
         """
-        df = pd.read_csv(csv_path, encoding=encoding)
+        df = pd.read_csv(csv_path, encoding=encoding, dtype=str)
         return CSVUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col, enable_any_empty, enable_all_empty)
 
     @staticmethod
@@ -1006,7 +1005,10 @@ class CSVUtil(object):
     @staticmethod
     def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',
                          on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
-                         reverse_list: bool = False, deduplicate: bool = True, remove_converted_csv: bool = True) -> Optional[pd.DataFrame]:
+                         reverse_list: bool = False, deduplicate: bool = True,
+                         remove_converted_csv: bool = True,
+                         remove_converted_excel: bool = False,
+                         ) -> Optional[pd.DataFrame]:
         """
         合并指定目录下除 'output_name' 以及 'ignore_' 开头的所有 csv 文件, 并去重, 保存为 'output_name'.csv
         若当前目录下有excel文件,则会先转换为csv再做合并
@@ -1021,6 +1023,7 @@ class CSVUtil(object):
         :param skip_rows: 读取csv文件时, 要跳过的表头行数
         :param deduplicate: 合并后的数据是否要去重
         :param remove_converted_csv: 合并完成后是否要删除临时转换的csv文件
+        :param remove_converted_excel: 合并完成后是否要删除已转换过的excel文件
 
         比如对于微信对账单excel文件, 会先转化为csv, 然后合并csv(基于时间去重)
         微信对账单前16行为统计信息表头, 需要跳过
@@ -1031,6 +1034,7 @@ class CSVUtil(object):
         file_list: list = FileUtil.listAllFilePath(src_dir, depth=1)
 
         valid_csv_list = []
+        converted_excel_list = []  # 已进行了转换的excel文件
         converted_csv_list = []  # 通过转换生成的临时文件
         for file in file_list:
             full_name, name, ext = FileUtil.getFileName(file)
@@ -1041,6 +1045,7 @@ class CSVUtil(object):
             if ext in ['xls', 'xlsx']:
                 converted_csv = f'{src_dir}/{name}.csv'
                 CSVUtil.convert_excel(file, converted_csv)
+                converted_excel_list.append(file)
                 converted_csv_list.append(converted_csv)
                 valid_csv_list.append(converted_csv)
 
@@ -1054,11 +1059,17 @@ class CSVUtil(object):
             if df is None:
                 df = df_file
                 continue
-            df = CSVUtil.merge_dataframe(df, df_file, on_column=on_column, deduplicate=deduplicate)
+            df = pd.concat([df, df_file], ignore_index=True)  # 确保数据完整,与原始值保持一致
+            # df = CSVUtil.merge_dataframe(df, df_file, on_column=on_column, deduplicate=deduplicate)
 
         # 清除转换生成的临时文件
         if remove_converted_csv:
             for file in converted_csv_list:
+                FileUtil.deleteFile(file)
+
+        # 清除进行转换的excel文件
+        if remove_converted_excel:
+            for file in converted_excel_list:
                 FileUtil.deleteFile(file)
 
         if df is None:
@@ -1069,3 +1080,132 @@ class CSVUtil(object):
             CSVUtil.to_csv(df, output_csv)
             print(f'merge_csv_files success: {output_csv_name}.csv saved, total rows: {len(df)}')
         return df
+
+    @staticmethod
+    def statistics_multi_col(df: pd.DataFrame, cols: List[str], output_dir: str = None) -> pd.DataFrame:
+        index = []
+        sample_list, max_list, min_list, median_list, mean_list, std_list = [], [], [], [], [], []
+        img_list = []  # 正态分布图的保存路径
+
+        for col in cols:
+            index.append(col)
+            col_dict = CSVUtil.statistics_col(df, col, output_dir=output_dir, show_img=True)
+            sample_list.append(col_dict['sample_size'])
+            max_list.append(col_dict['max'])
+            min_list.append(col_dict['min'])
+            median_list.append(col_dict['median'])
+            mean_list.append(col_dict['mean'])
+            std_list.append(col_dict['std'])
+            img_list.append(col_dict['img_path'])
+
+        # 创建 DataFrame
+        data = {
+            'sample_size': sample_list,
+            'max': max_list,
+            'min': min_list,
+            'median': median_list,
+            'mean': mean_list,
+            'std': std_list,
+            '正态分布图': img_list
+        }
+        df = pd.DataFrame(data, index=index)
+
+        # 设置列名（如果需要）
+        df.columns = ['样本数', '极大值', '极小值', '中位数', '平均值', '标准差', '正态分布图']
+
+        # 将所有正态分布图合并为一张
+        # 过滤 img_list 非空的数据
+        img_list = [x for x in img_list if x]
+        img_size = len(img_list)
+        row_size = 2 if img_size >= 3 else 1
+        from util.ImageUtil import ImageUtil
+        merge_image = ImageUtil.merge_images(img_list, rows=row_size)
+        image_path = FileUtil.recookPath(f'{output_dir}/merged_image.png')
+        ImageUtil.save_img(image_path, merge_image)
+        CommonUtil.printLog(f'{cols}的正态分布图合并成功: {image_path}')
+        CommonUtil.printLog(f'{cols}的极大值极小值等统计信息如下: {df}')
+        return df
+
+    @staticmethod
+    def statistics_col(df: pd.DataFrame, col: str,
+                       x_label_name: str = '耗时',
+                       output_dir: str = None,
+                       show_img: bool = True) -> Dict[str, Union[float, int, str, None]]:
+        """
+        统计指定列的的各指标主句并绘制正态分布图
+        :param df: 待统计的DataFrame
+        :param col: 待统计的列名
+        :param x_label_name: 绘制正态分布图时, x轴的名称
+        :param output_dir: 输出目录, 用于存储图片, 若传空, 则不保存图片
+        :param show_img: 是否显示正则分布图
+        :return dict: 统计数据及正态分布图保存地址
+                key: max/min/median/mean/std/sample_size/img_path
+                含义: 极大值/极小值/中位数/平均值/标准差/样本数/正态分布图片保存地址
+        """
+        # 绘制正态分布图需要
+        import matplotlib.pyplot as plt
+        import matplotlib
+        from scipy import stats
+
+        result_keys = ['max', 'min', 'median', 'mean', 'std', 'sample_size', 'img_path']
+        result_dict: Dict[str, Union[float, int, str, None]] = {item: None for item in result_keys}
+
+        # 先转换为数值类型，处理字符串和空值
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+        df = df.dropna(subset=[col])
+        df = df[df[col] > 0]
+
+        if not df.empty:
+            # 计算统计数据
+            max_cost = df[col].max()  # 极大值
+            min_cost = df[col].min()  # 极小值
+            median_cost = df[col].median()  # 中位数
+            mean_cost = df[col].mean()  # 平均值
+            std_cost = df[col].std()  # 标准差
+
+            CommonUtil.printLog(f'📊 {col} 统计数据:')
+            CommonUtil.printLog(f'   极大值: {max_cost:.2f} ms')
+            CommonUtil.printLog(f'   极小值: {min_cost:.2f} ms')
+            CommonUtil.printLog(f'   中位数: {median_cost:.2f} ms')
+            CommonUtil.printLog(f'   平均值: {mean_cost:.2f} ms')
+            CommonUtil.printLog(f'   标准差: {std_cost:.2f} ms')
+            CommonUtil.printLog(f'   样本数: {len(df)}')
+
+            result_dict['max'] = max_cost  # 极大值
+            result_dict['min'] = min_cost  # 极小值
+            result_dict['median'] = median_cost  # 中位数
+            result_dict['mean'] = mean_cost  # 平均值
+            result_dict['std'] = std_cost  # 标准差
+            result_dict['sample_size'] = len(df)  # 样本数
+
+            matplotlib.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei']  # 支持中文
+            matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
+            fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+
+            # 绘制直方图
+            ax.hist(df[col], bins=50, density=True, alpha=0.7, color='skyblue', edgecolor='black')
+            ax.set_xlabel(x_label_name)
+            ax.set_ylabel('概率密度')
+            ax.set_title(f'{col}分布直方图')
+            ax.grid(True, alpha=0.3)
+
+            x = np.linspace(df[col].min(), df[col].max(), 100)
+            normal_dist = stats.norm.pdf(x, mean_cost, std_cost)
+            ax.plot(x, normal_dist, 'r-', linewidth=2, label=f'正态分布 (μ={mean_cost:.2f}, σ={std_cost:.2f})')
+            ax.legend()
+            plt.tight_layout()
+
+            # 保存图片
+            if not CommonUtil.isNoneOrBlank(output_dir):
+                plot_file = f'{output_dir}/distribution_{col}.png'
+                plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+                CommonUtil.printLog(f'📈 {col}分布图已保存至: {plot_file}')
+                result_dict['img_path'] = plot_file
+
+            # 显示图片（可选）
+            if show_img:
+                plt.show()
+        else:
+            CommonUtil.printLog(f'⚠️ 没有找到 {col} > 0 的数据')
+        return result_dict

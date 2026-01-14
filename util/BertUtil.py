@@ -168,7 +168,7 @@ class BertUtil:
         self.idx2data_label = None
 
         # train() 后生成的微调模型信息
-        self.predict_model_path = None
+        self.predict_model_path: Optional[str] = None
         self.predict_model = None
         self.predict_tokenizer = None
 
@@ -519,6 +519,7 @@ class BertUtil:
         model_path = model_path if model_path else f"{BertUtil._cache}/bert_base_model"
         if self.predict_model_path != model_path:
             self.predict_model_path = model_path
+
             # 加载模型 - 确保在正确的设备上加载
             self.predict_tokenizer = BertTokenizer.from_pretrained(model_path)
             self.predict_model = BertForSequenceClassification.from_pretrained(
@@ -861,6 +862,7 @@ if __name__ == "__main__":
         CommonUtil.printLog(f'从csv文件中获取训练数据, 追加到训练集中: {csv_manual}')
         df_csv = CSVUtil.read_csv(csv_manual, usecols=usecols)
         # df_csv["label_id"] = df_csv.apply(map_label_csv, axis=1)
+        CommonUtil.printLog(f'从 csv_manual 文件中获取训练数据, 追加到训练集中: {len(df_csv)}条数据')
 
         value_counts_dict = {'关键字搜': max_size, '周边搜': max_size, '简单导航': max_size}
         df_fz = CSVUtil.filter_and_replace(df_csv, {'manual_type': '复杂', 'manual_intent': r'^\s*$'})
@@ -874,6 +876,7 @@ if __name__ == "__main__":
         df_train = df
     CSVUtil.to_csv(df_train, f"{csv_dir}/sample.csv")
     df = df_train
+    CommonUtil.printLog(f'训练集共有{len(df)}条数据')
 
     # 初始化分类器（使用bert-base-chinese模型）
     bertUtil = BertUtil(
