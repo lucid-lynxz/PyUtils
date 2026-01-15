@@ -7,6 +7,11 @@
 # cnocr 是因为部分页面使用pocoui/airtest无法识别,需要文字识别
 pip install pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
 
+# 若pycryptdome不可用,可卸载重装
+# 导包若是: from Crypto.Cipher import AES  则改为: from Cryptodome.Cipher import AES
+pip uninstall pycryptodome
+pip install pycryptodomex
+
 # 使用 pybroker 进行回测需要安装以下库
 pip install lib-pybroker TA-Lib akshare matplotlib yfinance riskfolio-lib
 ```

@@ -42,10 +42,18 @@ class CSVUtil(object):
         以str格式读取CSV文件, 并将NaN值替换为空字符串
         :param src_path: csv源文件路径
         :param encoding: 编码
-        :param usecols: 要读取的列, None或[] 表示读取全部列, 请确保对应的列名存在
+        :param usecols: 要读取的列, None或[] 表示读取全部列,否则只会保留有定义的列(若列不存在, 会自动添加)
         :param skip_rows: 要跳过读取的行数
         """
-        df = pd.read_csv(src_path, encoding=encoding, dtype=str, usecols=usecols, skiprows=skip_rows)
+        df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+
+        if usecols:
+            for col in usecols:
+                if col not in df.columns:
+                    df[col] = ''  # 初始化为空字符
+                    CommonUtil.printLog(f'{col}列不存在, 添加')
+            df = df[usecols]  # 重排顺序
+
         return df.fillna('')
 
     @staticmethod
@@ -1082,14 +1090,33 @@ class CSVUtil(object):
         return df
 
     @staticmethod
-    def statistics_multi_col(df: pd.DataFrame, cols: List[str], output_dir: str = None) -> pd.DataFrame:
+    def statistics_multi_col(df: pd.DataFrame, cols: List[str],
+                             output_dir: str = None,
+                             generate_img: bool = True,
+                             show_img: bool = False,
+                             round_digits: int = 1,
+                             min_value: float = 1e-5) -> pd.DataFrame:
+        """
+        同时计算多列的统计数据并绘制各列的正态分布图, 然后将图合并成一张, 保存到 output_dir/merged_image_distribution.png
+        :param df: 待统计的DataFrame
+        :param cols: 待统计的列名列表
+        :param output_dir: 输出目录, 用于存储图片, 若传空, 则不保存图片
+        :param generate_img: 是否要绘制正则分布图
+        :param show_img: 所有正态分布图绘制完成后,是否要显示合并结果图 默认False,
+        :param round_digits: 极大值/极小值/中位数/平均值/标准差 这几个float数据四舍五入要保留几位小数, 默认1位
+        :param min_value: 统计列数据时, 允许的最小值, 只统计 >=min_value 的数据部分
+        :return 峰会各列的统计数据汇总表, 包含: '样本数', '极大值', '极小值', '中位数', '平均值', '标准差', '正态分布图'
+        """
         index = []
         sample_list, max_list, min_list, median_list, mean_list, std_list = [], [], [], [], [], []
         img_list = []  # 正态分布图的保存路径
 
         for col in cols:
             index.append(col)
-            col_dict = CSVUtil.statistics_col(df, col, output_dir=output_dir, show_img=True)
+            # 此处不显示,避免阻塞后续流程
+            col_dict = CSVUtil.statistics_col(df, col, output_dir=output_dir,
+                                              generate_img=generate_img, show_img=False,
+                                              min_value=min_value)
             sample_list.append(col_dict['sample_size'])
             max_list.append(col_dict['max'])
             min_list.append(col_dict['min'])
@@ -1113,6 +1140,12 @@ class CSVUtil(object):
         # 设置列名（如果需要）
         df.columns = ['样本数', '极大值', '极小值', '中位数', '平均值', '标准差', '正态分布图']
 
+        # 样本数列转为int型
+        df['样本数'] = df['样本数'].astype(int)
+
+        # 将极大值/极小值/中位数/平均值/标准差 float数据保留1位小数
+        df[['极大值', '极小值', '中位数', '平均值', '标准差']] = df[['极大值', '极小值', '中位数', '平均值', '标准差']].applymap(lambda x: round(x, round_digits))
+
         # 将所有正态分布图合并为一张
         # 过滤 img_list 非空的数据
         img_list = [x for x in img_list if x]
@@ -1120,40 +1153,41 @@ class CSVUtil(object):
         row_size = 2 if img_size >= 3 else 1
         from util.ImageUtil import ImageUtil
         merge_image = ImageUtil.merge_images(img_list, rows=row_size)
-        image_path = FileUtil.recookPath(f'{output_dir}/merged_image.png')
+        image_path = FileUtil.recookPath(f'{output_dir}/merged_image_distribution.png')
         ImageUtil.save_img(image_path, merge_image)
         CommonUtil.printLog(f'{cols}的正态分布图合并成功: {image_path}')
-        CommonUtil.printLog(f'{cols}的极大值极小值等统计信息如下: {df}')
+        # CommonUtil.printLog(f'{cols}的极大值极小值等统计信息如下: {df}')
+        if generate_img and show_img:
+            ImageUtil(merge_image).show()
         return df
 
     @staticmethod
     def statistics_col(df: pd.DataFrame, col: str,
                        x_label_name: str = '耗时',
                        output_dir: str = None,
-                       show_img: bool = True) -> Dict[str, Union[float, int, str, None]]:
+                       generate_img: bool = True,
+                       show_img: bool = True,
+                       min_value: float = 1e-5) -> Dict[str, Union[float, int, str, None]]:
         """
         统计指定列的的各指标主句并绘制正态分布图
         :param df: 待统计的DataFrame
         :param col: 待统计的列名
         :param x_label_name: 绘制正态分布图时, x轴的名称
         :param output_dir: 输出目录, 用于存储图片, 若传空, 则不保存图片
-        :param show_img: 是否显示正则分布图
+        :param generate_img: 是否要绘制正则分布图
+        :param show_img: 正态分布图绘制完成后,是否要直接显示
+        :param min_value: 统计列数据时, 允许的最小值, 只统计 >=min_value 的数据部分
         :return dict: 统计数据及正态分布图保存地址
                 key: max/min/median/mean/std/sample_size/img_path
                 含义: 极大值/极小值/中位数/平均值/标准差/样本数/正态分布图片保存地址
         """
-        # 绘制正态分布图需要
-        import matplotlib.pyplot as plt
-        import matplotlib
-        from scipy import stats
-
         result_keys = ['max', 'min', 'median', 'mean', 'std', 'sample_size', 'img_path']
         result_dict: Dict[str, Union[float, int, str, None]] = {item: None for item in result_keys}
 
         # 先转换为数值类型，处理字符串和空值
         df[col] = pd.to_numeric(df[col], errors='coerce')
         df = df.dropna(subset=[col])
-        df = df[df[col] > 0]
+        df = df[df[col] >= min_value]
 
         if not df.empty:
             # 计算统计数据
@@ -1178,34 +1212,39 @@ class CSVUtil(object):
             result_dict['std'] = std_cost  # 标准差
             result_dict['sample_size'] = len(df)  # 样本数
 
-            matplotlib.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei']  # 支持中文
-            matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+            if generate_img:  # 绘制正态分布图
+                import matplotlib.pyplot as plt
+                import matplotlib
+                from scipy import stats
 
-            fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+                matplotlib.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei']  # 支持中文
+                matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
-            # 绘制直方图
-            ax.hist(df[col], bins=50, density=True, alpha=0.7, color='skyblue', edgecolor='black')
-            ax.set_xlabel(x_label_name)
-            ax.set_ylabel('概率密度')
-            ax.set_title(f'{col}分布直方图')
-            ax.grid(True, alpha=0.3)
+                fig, ax = plt.subplots(1, 1, figsize=(12, 6))
 
-            x = np.linspace(df[col].min(), df[col].max(), 100)
-            normal_dist = stats.norm.pdf(x, mean_cost, std_cost)
-            ax.plot(x, normal_dist, 'r-', linewidth=2, label=f'正态分布 (μ={mean_cost:.2f}, σ={std_cost:.2f})')
-            ax.legend()
-            plt.tight_layout()
+                # 绘制直方图
+                ax.hist(df[col], bins=50, density=True, alpha=0.7, color='skyblue', edgecolor='black')
+                ax.set_xlabel(x_label_name)
+                ax.set_ylabel('概率密度')
+                ax.set_title(f'{col}分布直方图')
+                ax.grid(True, alpha=0.3)
 
-            # 保存图片
-            if not CommonUtil.isNoneOrBlank(output_dir):
-                plot_file = f'{output_dir}/distribution_{col}.png'
-                plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-                CommonUtil.printLog(f'📈 {col}分布图已保存至: {plot_file}')
-                result_dict['img_path'] = plot_file
+                x = np.linspace(df[col].min(), df[col].max(), 100)
+                normal_dist = stats.norm.pdf(x, mean_cost, std_cost)
+                ax.plot(x, normal_dist, 'r-', linewidth=2, label=f'正态分布 (μ={mean_cost:.2f}, σ={std_cost:.2f})')
+                ax.legend()
+                plt.tight_layout()
 
-            # 显示图片（可选）
-            if show_img:
-                plt.show()
+                # 保存图片
+                if not CommonUtil.isNoneOrBlank(output_dir):
+                    plot_file = f'{output_dir}/distribution_{col}.png'
+                    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+                    CommonUtil.printLog(f'📈 {col}分布图已保存至: {plot_file}')
+                    result_dict['img_path'] = plot_file
+
+                # 显示图片（可选）
+                if show_img:
+                    plt.show()
         else:
-            CommonUtil.printLog(f'⚠️ 没有找到 {col} > 0 的数据')
+            CommonUtil.printLog(f'⚠️ 没有找到 {col} >= {min_value} 的数据')
         return result_dict

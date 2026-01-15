@@ -23,10 +23,21 @@ class CommonUtil(object):
     #     return srcStr.decode(srcEncode).encode(toEncode)
     _redirect_log_fun = None
 
-    @classmethod
-    def redirect_print_log(cls, func):
+    @staticmethod
+    def redirect_print_log(func):
         """设置外部日志重定向函数, 函数包含一个字符串入参"""
-        cls._redirect_log_fun = func
+        CommonUtil._redirect_log_fun = func
+
+    @staticmethod
+    def redirect_file_log(log_name: str, log_dir: str):
+        """
+        启用默认的文件日志
+        :param log_name: 日志文件名也是logger名字
+        :param log_dir: 存储日志的目录
+        """
+        from util.log_handler import DefaultCustomLog
+        _logger = DefaultCustomLog.get_log(log_name, f'{log_dir}/{log_name}.log', use_file_handler=True)
+        CommonUtil._redirect_log_fun = _logger
 
     @staticmethod
     def updateStdOutEncoding(encoding: str = 'utf8'):
