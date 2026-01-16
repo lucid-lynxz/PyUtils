@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import csv
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Type, TypeVar, Union, Dict, Callable
@@ -46,15 +47,22 @@ class CSVUtil(object):
         :param skip_rows: 要跳过读取的行数
         """
         df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+        df = CSVUtil.reorder_cols(df, usecols)
+        return df.fillna('')
 
+    @staticmethod
+    def reorder_cols(df: pd.DataFrame, usecols: List[str]) -> pd.DataFrame:
+        """
+        重排并只保留指定的列数据
+        若要修改列名请自行调用接口: df=df.rename({'a':'b'}, inplace=False)
+        """
         if usecols:
             for col in usecols:
                 if col not in df.columns:
                     df[col] = ''  # 初始化为空字符
                     CommonUtil.printLog(f'{col}列不存在, 添加')
             df = df[usecols]  # 重排顺序
-
-        return df.fillna('')
+        return df
 
     @staticmethod
     def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n', mode: str = 'w') -> bool:
@@ -487,13 +495,13 @@ class CSVUtil(object):
             valid_df = df[(df[column_base].notna()) | (df[column_compare].notna())]
         else:
             # 不允许空值：两列都有值且不为空字符串
-            # valid_df = df[
-            #     (df[column_base].notna()) &
-            #     (df[column_compare].notna()) &
-            #     (df[column_base].astype(str).str.strip() != '') &
-            #     (df[column_compare].astype(str).str.strip() != '')
-            # ]
-            valid_df = df[df[column_base].notna() & df[column_compare].notna()]
+            valid_df = df[
+                (df[column_base].notna()) &
+                (df[column_compare].notna()) &
+                (df[column_base].astype(str).str.strip() != '') &
+                (df[column_compare].astype(str).str.strip() != '')
+            ]
+            # valid_df = df[df[column_base].notna() & df[column_compare].notna()]
 
         # 3. 如果提供了keyword和keyword_col参数，则进一步过滤keyword_col包含关键字的数据
         keyword_col = column_compare if keyword_col is None else keyword_col
@@ -556,20 +564,26 @@ class CSVUtil(object):
         else:
             n_df = dataframe
 
-        markdown_str = "| " + " | ".join(n_df.columns) + " |\n"
+        markdown_str = "| " + " | ".join(n_df.columns) + " |\n"  # 表头-列名
 
-        # 添加表格标题行（如果提供）
-        if title:
-            # 创建标题行，将标题放在第一列，其余列为空
-            title_row = f"| {title} "
-            for i in range(len(n_df.columns) - 1):
-                title_row += "| "
-            title_row += "|\n"
-            title_row += "| " + " | ".join([":---:"] * len(n_df.columns)) + " |\n"
-            markdown_str = title_row + markdown_str
+        # 添加分隔行（必须在表头之后、数据行之前）
+        markdown_str += "| " + " | ".join([":---:"] * len(n_df.columns)) + " |\n"
+
+        # # 添加表格标题行（如果提供）
+        # if title:
+        #     # 创建标题行，将标题放在第一列，其余列为空
+        #     title_row = f"| {title} "
+        #     for i in range(len(n_df.columns) - 1):
+        #         title_row += "| "
+        #     title_row += "|\n"
+        #     title_row += "| " + " | ".join([":---:"] * len(n_df.columns)) + " |\n"
+        #     markdown_str = title_row + markdown_str
 
         for _, row in n_df.iterrows():
             markdown_str += "| " + " | ".join(str(v) for v in row) + " |\n"
+
+        if not CommonUtil.isNoneOrBlank(title):
+            markdown_str = f'**{title}**\n\n' + markdown_str
 
         if output_file:
             FileUtil.write2File(output_file, markdown_str, encoding=encoding)
@@ -873,6 +887,27 @@ class CSVUtil(object):
         return result_df
 
     @staticmethod
+    def convert_dir_excels(src_dir: str, delete_src_excel: bool):
+        """
+        转换指定目录下的excel文件
+        :param src_dir: excel所在目录
+        :param delete_src_excel: 是否删除已转换的excel源文件
+        """
+        file_list: list = FileUtil.listAllFilePath(src_dir, depth=1)
+
+        for file in file_list:
+            full_name, name, ext = FileUtil.getFileName(file)
+
+            if ext not in ['xls', 'xlsx']:
+                continue
+
+            converted_csv = f'{src_dir}/{name}.csv'
+            CSVUtil.convert_excel(file, converted_csv)
+
+            if delete_src_excel:
+                FileUtil.deleteFile(file)
+
+    @staticmethod
     def convert_excel(input_file: str, temp_csv: Optional[str] = None, ignore_exist: bool = True) -> str:
         """
         如果输入是 Excel，则转为可分块读取的 CSV 文件, 否则直接返回原文件路径
@@ -1014,13 +1049,13 @@ class CSVUtil(object):
     def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',
                          on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
                          reverse_list: bool = False, deduplicate: bool = True,
-                         remove_converted_csv: bool = True,
-                         remove_converted_excel: bool = False,
+                         valid_name_pattern: str = '*.csv',
+                         exclude_name_pattern: str = r'^ignore_'
                          ) -> Optional[pd.DataFrame]:
         """
-        合并指定目录下除 'output_name' 以及 'ignore_' 开头的所有 csv 文件, 并去重, 保存为 'output_name'.csv
-        若当前目录下有excel文件,则会先转换为csv再做合并
-        要读取和保存的列名为由 'usecols' 定义, 请确保这些列名存在
+        合并指定目录下除 'output_name' 以及 'ignore_' 开头的 csv 文件, 并去重, 保存为 'output_name'.csv
+        若当前目录下有excel文件,请自行调用 convert_dir_excel() 转换成csv文件再调用本方法进行合并
+        要读取和保存的列名为由 'usecols' 定义, 请确保这些列名存在, 若不存在会自动创建一列空白列
         最后会新增一列: 'result_src' 用以记录当前数据来源于哪份文档
 
         :param src_dir: 源csv/xls/xlsx 文件所在目录, 输出文件也会存储在这个目录中, 比如脚本所在目录: os.path.dirname(os.path.abspath(__file__))
@@ -1030,8 +1065,8 @@ class CSVUtil(object):
         :param usecols: 读取csv文件时要读取的列数据, None表示全部读取
         :param skip_rows: 读取csv文件时, 要跳过的表头行数
         :param deduplicate: 合并后的数据是否要去重
-        :param remove_converted_csv: 合并完成后是否要删除临时转换的csv文件
-        :param remove_converted_excel: 合并完成后是否要删除已转换过的excel文件
+        :param valid_name_pattern: 要合并的csv文件名(包含后缀)要满足的正则表达式
+        :param exclude_name_pattern: 要剔除的csv文件名正则表达式
 
         比如对于微信对账单excel文件, 会先转化为csv, 然后合并csv(基于时间去重)
         微信对账单前16行为统计信息表头, 需要跳过
@@ -1042,20 +1077,12 @@ class CSVUtil(object):
         file_list: list = FileUtil.listAllFilePath(src_dir, depth=1)
 
         valid_csv_list = []
-        converted_excel_list = []  # 已进行了转换的excel文件
-        converted_csv_list = []  # 通过转换生成的临时文件
         for file in file_list:
             full_name, name, ext = FileUtil.getFileName(file)
 
-            if output_csv_name != name and ext == 'csv' and not name.startswith('ignore_'):
-                valid_csv_list.append(file)
-
-            if ext in ['xls', 'xlsx']:
-                converted_csv = f'{src_dir}/{name}.csv'
-                CSVUtil.convert_excel(file, converted_csv)
-                converted_excel_list.append(file)
-                converted_csv_list.append(converted_csv)
-                valid_csv_list.append(converted_csv)
+            if output_csv_name != name and ext == 'csv':
+                if re.search(valid_name_pattern, full_name) and not re.search(exclude_name_pattern, full_name):
+                    valid_csv_list.append(file)
 
         valid_csv_list = sorted(valid_csv_list, reverse=reverse_list)
         CommonUtil.printLog(f'待合并的csv文件列表为: {[FileUtil.getFileName(x)[0] for x in valid_csv_list]}')
@@ -1069,16 +1096,6 @@ class CSVUtil(object):
                 continue
             df = pd.concat([df, df_file], ignore_index=True)  # 确保数据完整,与原始值保持一致
             # df = CSVUtil.merge_dataframe(df, df_file, on_column=on_column, deduplicate=deduplicate)
-
-        # 清除转换生成的临时文件
-        if remove_converted_csv:
-            for file in converted_csv_list:
-                FileUtil.deleteFile(file)
-
-        # 清除进行转换的excel文件
-        if remove_converted_excel:
-            for file in converted_excel_list:
-                FileUtil.deleteFile(file)
 
         if df is None:
             print('merge_csv_files fail: df is None')
@@ -1094,8 +1111,11 @@ class CSVUtil(object):
                              output_dir: str = None,
                              generate_img: bool = True,
                              show_img: bool = False,
+                             merged_img_name: Optional[str] = 'merged_image_distribution.png',
                              round_digits: int = 1,
-                             min_value: float = 1e-5) -> pd.DataFrame:
+                             min_value: Union[float, int, str] = 1e-5,
+                             nan_replace_value: Union[float, int, str] = 1e-6,
+                             custom_index: List[str] = None) -> pd.DataFrame:
         """
         同时计算多列的统计数据并绘制各列的正态分布图, 然后将图合并成一张, 保存到 output_dir/merged_image_distribution.png
         :param df: 待统计的DataFrame
@@ -1103,20 +1123,29 @@ class CSVUtil(object):
         :param output_dir: 输出目录, 用于存储图片, 若传空, 则不保存图片
         :param generate_img: 是否要绘制正则分布图
         :param show_img: 所有正态分布图绘制完成后,是否要显示合并结果图 默认False,
+        :param merged_img_name: 合并所有正态分布图后生成的合并图片名称(带后缀), 非空时才会合并图片
         :param round_digits: 极大值/极小值/中位数/平均值/标准差 这几个float数据四舍五入要保留几位小数, 默认1位
         :param min_value: 统计列数据时, 允许的最小值, 只统计 >=min_value 的数据部分
+        :param nan_replace_value: nan数据替换为指定值
+        :param custom_index: 自定义列名, 若为空, 则使用 cols 作为最终返回的dataframe index名, 允许部分元素为空, 会使用 cols 替代
         :return 峰会各列的统计数据汇总表, 包含: '样本数', '极大值', '极小值', '中位数', '平均值', '标准差', '正态分布图'
         """
         index = []
         sample_list, max_list, min_list, median_list, mean_list, std_list = [], [], [], [], [], []
         img_list = []  # 正态分布图的保存路径
 
-        for col in cols:
-            index.append(col)
+        custom_index_size = 0 if CommonUtil.isNoneOrBlank(custom_index) else len(custom_index)
+        for i in range(len(cols)):
+            col = cols[i]
+            custom_col_name = col
+            if custom_index_size > 0 and i < custom_index_size:
+                custom_col_name = custom_index[i]
+            index.append(custom_col_name)
+
             # 此处不显示,避免阻塞后续流程
             col_dict = CSVUtil.statistics_col(df, col, output_dir=output_dir,
                                               generate_img=generate_img, show_img=False,
-                                              min_value=min_value)
+                                              min_value=min_value, custom_col_name=custom_col_name)
             sample_list.append(col_dict['sample_size'])
             max_list.append(col_dict['max'])
             min_list.append(col_dict['min'])
@@ -1141,24 +1170,28 @@ class CSVUtil(object):
         df.columns = ['样本数', '极大值', '极小值', '中位数', '平均值', '标准差', '正态分布图']
 
         # 样本数列转为int型
-        df['样本数'] = df['样本数'].astype(int)
+        df['样本数'] = df['样本数'].fillna(nan_replace_value).astype(int)
 
-        # 将极大值/极小值/中位数/平均值/标准差 float数据保留1位小数
-        df[['极大值', '极小值', '中位数', '平均值', '标准差']] = df[['极大值', '极小值', '中位数', '平均值', '标准差']].applymap(lambda x: round(x, round_digits))
+        # 将极大值/极小值/中位数/平均值/标准差 float数据保留1位小数（先填充 NaN 值为 0）
+        df[['极大值', '极小值', '中位数', '平均值', '标准差']] = (df[['极大值', '极小值', '中位数', '平均值', '标准差']]
+                                                                  .fillna(nan_replace_value)
+                                                                  .round(round_digits))
 
         # 将所有正态分布图合并为一张
         # 过滤 img_list 非空的数据
         img_list = [x for x in img_list if x]
         img_size = len(img_list)
-        row_size = 2 if img_size >= 3 else 1
-        from util.ImageUtil import ImageUtil
-        merge_image = ImageUtil.merge_images(img_list, rows=row_size)
-        image_path = FileUtil.recookPath(f'{output_dir}/merged_image_distribution.png')
-        ImageUtil.save_img(image_path, merge_image)
-        CommonUtil.printLog(f'{cols}的正态分布图合并成功: {image_path}')
-        # CommonUtil.printLog(f'{cols}的极大值极小值等统计信息如下: {df}')
-        if generate_img and show_img:
-            ImageUtil(merge_image).show()
+        if img_size >= 2 and not CommonUtil.isNoneOrBlank(merged_img_name):
+            mod = img_size % 2
+            row_size = img_size // 2 + mod # 每行2张图
+            from util.ImageUtil import ImageUtil
+            merge_image = ImageUtil.merge_images(img_list, rows=row_size)
+            image_path = FileUtil.recookPath(f'{output_dir}/{merged_img_name}')
+            ImageUtil.save_img(image_path, merge_image)
+            CommonUtil.printLog(f'{cols}的正态分布图合并成功: {image_path}')
+            # CommonUtil.printLog(f'{cols}的极大值极小值等统计信息如下: {df}')
+            if generate_img and show_img:
+                ImageUtil(merge_image).show()
         return df
 
     @staticmethod
@@ -1167,9 +1200,10 @@ class CSVUtil(object):
                        output_dir: str = None,
                        generate_img: bool = True,
                        show_img: bool = True,
-                       min_value: float = 1e-5) -> Dict[str, Union[float, int, str, None]]:
+                       min_value: float = 1e-5,
+                       custom_col_name: str = '') -> Dict[str, Union[float, int, str, None]]:
         """
-        统计指定列的的各指标主句并绘制正态分布图
+        统计指定列的的各指标主句并绘制正态分布图 (双Y轴设计:频率占比% + 概率密度)
         :param df: 待统计的DataFrame
         :param col: 待统计的列名
         :param x_label_name: 绘制正态分布图时, x轴的名称
@@ -1177,12 +1211,17 @@ class CSVUtil(object):
         :param generate_img: 是否要绘制正则分布图
         :param show_img: 正态分布图绘制完成后,是否要直接显示
         :param min_value: 统计列数据时, 允许的最小值, 只统计 >=min_value 的数据部分
+        :param custom_col_name: 自定义列名, 若为空, 则使用 col 作为正态分布图的标题名
         :return dict: 统计数据及正态分布图保存地址
                 key: max/min/median/mean/std/sample_size/img_path
                 含义: 极大值/极小值/中位数/平均值/标准差/样本数/正态分布图片保存地址
         """
         result_keys = ['max', 'min', 'median', 'mean', 'std', 'sample_size', 'img_path']
         result_dict: Dict[str, Union[float, int, str, None]] = {item: None for item in result_keys}
+        custom_col_name = col if CommonUtil.isNoneOrBlank(custom_col_name) else custom_col_name
+
+        # 避免 SettingWithCopyWarning
+        df = df.copy()
 
         # 先转换为数值类型，处理字符串和空值
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -1197,7 +1236,7 @@ class CSVUtil(object):
             mean_cost = df[col].mean()  # 平均值
             std_cost = df[col].std()  # 标准差
 
-            CommonUtil.printLog(f'📊 {col} 统计数据:')
+            CommonUtil.printLog(f'📊 {custom_col_name} 统计数据:')
             CommonUtil.printLog(f'   极大值: {max_cost:.2f} ms')
             CommonUtil.printLog(f'   极小值: {min_cost:.2f} ms')
             CommonUtil.printLog(f'   中位数: {median_cost:.2f} ms')
@@ -1215,36 +1254,110 @@ class CSVUtil(object):
             if generate_img:  # 绘制正态分布图
                 import matplotlib.pyplot as plt
                 import matplotlib
+                import matplotlib.ticker as mticker
                 from scipy import stats
 
                 matplotlib.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei']  # 支持中文
                 matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
-                fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+                fig, ax1 = plt.subplots(1, 1, figsize=(12, 7))
+                ax2 = ax1.twinx()
 
-                # 绘制直方图
-                ax.hist(df[col], bins=50, density=True, alpha=0.7, color='skyblue', edgecolor='black')
-                ax.set_xlabel(x_label_name)
-                ax.set_ylabel('概率密度')
-                ax.set_title(f'{col}分布直方图')
-                ax.grid(True, alpha=0.3)
+                # 提取数据列表
+                data_list = df[col].tolist()
+                data_count = len(data_list)
+                data_range = max_cost - min_cost
 
-                x = np.linspace(df[col].min(), df[col].max(), 100)
-                normal_dist = stats.norm.pdf(x, mean_cost, std_cost)
-                ax.plot(x, normal_dist, 'r-', linewidth=2, label=f'正态分布 (μ={mean_cost:.2f}, σ={std_cost:.2f})')
-                ax.legend()
+                # 动态计算 bins
+                if data_range == 0:
+                    # 如果所有数据点都相同，创建一个以该值为中心的单个bin
+                    single_value = min_cost
+                    bins = [single_value - 5, single_value + 5]
+                else:
+                    # 动态bin计算逻辑
+                    num_bins = max(1, min(15, int(np.sqrt(data_count))))
+                    bin_width = max(1, np.ceil(data_range / num_bins))
+                    start_bin = np.floor(min_cost / bin_width) * bin_width
+                    end_bin = np.ceil(max_cost / bin_width) * bin_width + bin_width
+                    bins = np.arange(start_bin, end_bin, bin_width)
+
+                # 使用 weights 参数将直方图转换为百分比
+                weights = np.ones_like(data_list) * 100. / data_count
+                _, _, hist_patches = ax1.hist(data_list, bins=bins, weights=weights, alpha=0.6,
+                                              color='#1f77b4', edgecolor='black')
+
+                # 收集图例元素
+                handles = [hist_patches[0]]
+                labels = ['频率分布直方图']
+
+                # 仅在标准差>0时绘制正态曲线
+                if std_cost > 0:
+                    x_curve = np.linspace(min_cost - std_cost, max_cost + std_cost, 200)
+                    p_curve = stats.norm.pdf(x_curve, mean_cost, std_cost)
+                    curve_line, = ax2.plot(x_curve, p_curve, 'r-', linewidth=2.5)
+                    handles.append(curve_line)
+                    labels.append('正态分布曲线')
+                else:
+                    # 如果不画曲线，隐藏右侧Y轴
+                    ax2.get_yaxis().set_visible(False)
+
+                # 绘制平均值和中位数虚线
+                mean_line = ax1.axvline(mean_cost, color='red', linestyle='dashed', linewidth=1.5)
+                median_line = ax1.axvline(median_cost, color='green', linestyle='dashed', linewidth=1.5)
+
+                handles.extend([mean_line, median_line])
+                labels.extend([
+                    f'平均值: {mean_cost:.2f}',
+                    f'中位数: {median_cost:.2f}'
+                ])
+
+                # 设置X轴刻度
+                ax1.set_xticks(bins)
+                ax1.xaxis.set_major_formatter(mticker.FormatStrFormatter('%d'))
+                plt.setp(ax1.get_xticklabels(), rotation=30, ha="right")
+
+                # 设置Y轴为百分比格式
+                ax1.yaxis.set_major_formatter(mticker.PercentFormatter())
+
+                # 设置标签和标题
+                ax1.set_xlabel(x_label_name, fontsize=11, fontweight='bold')
+                ax1.set_ylabel('频率占比 (%)', color='#1f77b4', fontweight='bold', fontsize=11)
+                ax2.set_ylabel('概率密度', color='red', fontweight='bold', fontsize=11)
+                ax1.tick_params(axis='y', labelcolor='#1f77b4', labelsize=10)
+                ax2.tick_params(axis='y', labelcolor='red', labelsize=10)
+                ax1.set_title(f'{custom_col_name}-正态分布', fontsize=16, weight='bold')
+
+                # 添加统计信息文本框
+                stats_text = (
+                    f"统计信息\n"
+                    f"----------------\n"
+                    f"数据点数: {data_count}\n"
+                    f"标准差: {std_cost:.2f} ms\n"
+                    f"最小值: {min_cost:.2f} ms\n"
+                    f"最大值: {max_cost:.2f} ms"
+                )
+                ax1.annotate(stats_text, xy=(0.85, 0.97), xycoords='axes fraction', ha='left', va='top',
+                             bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9, edgecolor='gray'),
+                             fontsize=10)
+
+                # 创建图例
+                ax1.legend(handles, labels, loc='upper left', fontsize=9)
+
+                # 设置网格
+                ax1.grid(True, linestyle='--', alpha=0.6)
+                ax2.grid(False)
                 plt.tight_layout()
 
                 # 保存图片
                 if not CommonUtil.isNoneOrBlank(output_dir):
-                    plot_file = f'{output_dir}/distribution_{col}.png'
+                    plot_file = f'{output_dir}/distribution_{custom_col_name}.png'
                     plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-                    CommonUtil.printLog(f'📈 {col}分布图已保存至: {plot_file}')
+                    CommonUtil.printLog(f'📈 {custom_col_name}分布图已保存至: {plot_file}')
                     result_dict['img_path'] = plot_file
 
                 # 显示图片（可选）
                 if show_img:
                     plt.show()
         else:
-            CommonUtil.printLog(f'⚠️ 没有找到 {col} >= {min_value} 的数据')
+            CommonUtil.printLog(f'⚠️ 没有找到 {custom_col_name} >= {min_value} 的数据')
         return result_dict
