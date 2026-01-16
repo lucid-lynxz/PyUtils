@@ -1,3 +1,4 @@
+import requests
 from typing import Optional, Dict, Any
 from util.CommonUtil import CommonUtil
 
@@ -123,7 +124,6 @@ class DingTalkBot:
         :param data: 构建好的消息数据
         :return: 响应结果
         """
-        import requests
         try:
             url = self._generate_url()
             response = requests.post(url, json=data, headers=self.headers)
