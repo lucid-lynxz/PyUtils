@@ -32,6 +32,10 @@ CSV/padans工具类
 * to_markdown(): 将DataFrame转换为Markdown格式的字符串, 并存储到指定的文件中
 
 * filter_and_replace_dataframe(): 过滤指定列的数据, 对结果进行行号二次过滤和指定数据替换
+
+其他常用api:
+重命名列名: df = df.rename(columns={'a': 'b'})
+拼接不同的df:  df = pd.concat([df1, df2, df3], ignore_index=True)
 """
 
 
@@ -81,7 +85,7 @@ class CSVUtil(object):
         try:
             FileUtil.createFile(output_path, False)
             df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode)
-            CommonUtil.printLog(f'to_csv 保存数据到: {output_path}')
+            CommonUtil.printLog(f'to_csv 保存数据到: {output_path}, total rows: {len(df)}')
             return True
         except Exception as e:
             CommonUtil.printLog(f'to_csv 保存数据到: {output_path} 失败: {e}')
@@ -500,7 +504,7 @@ class CSVUtil(object):
                 (df[column_compare].notna()) &
                 (df[column_base].astype(str).str.strip() != '') &
                 (df[column_compare].astype(str).str.strip() != '')
-            ]
+                ]
             # valid_df = df[df[column_base].notna() & df[column_compare].notna()]
 
         # 3. 如果提供了keyword和keyword_col参数，则进一步过滤keyword_col包含关键字的数据
@@ -1050,7 +1054,9 @@ class CSVUtil(object):
                          on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
                          reverse_list: bool = False, deduplicate: bool = True,
                          valid_name_pattern: str = '*.csv',
-                         exclude_name_pattern: str = r'^ignore_'
+                         exclude_name_pattern: str = r'^ignore_',
+                         src_encoding: str = 'utf-8-sig',
+                         save_encoding: str = 'utf-8-sig'
                          ) -> Optional[pd.DataFrame]:
         """
         合并指定目录下除 'output_name' 以及 'ignore_' 开头的 csv 文件, 并去重, 保存为 'output_name'.csv
@@ -1059,7 +1065,7 @@ class CSVUtil(object):
         最后会新增一列: 'result_src' 用以记录当前数据来源于哪份文档
 
         :param src_dir: 源csv/xls/xlsx 文件所在目录, 输出文件也会存储在这个目录中, 比如脚本所在目录: os.path.dirname(os.path.abspath(__file__))
-        :param output_csv_name: 最终合并生成的csv文件名(不包含 .csv 后缀)
+        :param output_csv_name: 最终合并生成的csv文件名(不包含 .csv 后缀), 传空表示不保存
         :param reverse_list: 获取到的csv文件是按名称自然排序的, 是否要倒序
         :param on_column: 合并和去重数据时的列依据, 非空
         :param usecols: 读取csv文件时要读取的列数据, None表示全部读取
@@ -1067,13 +1073,18 @@ class CSVUtil(object):
         :param deduplicate: 合并后的数据是否要去重
         :param valid_name_pattern: 要合并的csv文件名(包含后缀)要满足的正则表达式
         :param exclude_name_pattern: 要剔除的csv文件名正则表达式
+        :param src_encoding: 原csv所用编码, 用于读取
+        :param save_encoding: csv合并后保存时所用的编码
 
         比如对于微信对账单excel文件, 会先转化为csv, 然后合并csv(基于时间去重)
         微信对账单前16行为统计信息表头, 需要跳过
         微信对账单的详情列名为:
         交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注
         """
-        output_csv: str = f'{src_dir}/{output_csv_name}.csv'  # 最终生成的全量csv文件(已去重)
+        if CommonUtil.isNoneOrBlank(output_csv_name):
+            output_csv = ''
+        else:
+            output_csv: str = f'{src_dir}/{output_csv_name}.csv'  # 最终生成的全量csv文件(已去重)
         file_list: list = FileUtil.listAllFilePath(src_dir, depth=1)
 
         valid_csv_list = []
@@ -1089,7 +1100,7 @@ class CSVUtil(object):
         df = None
         for file in valid_csv_list:
             full_name, name, ext = FileUtil.getFileName(file)
-            df_file = CSVUtil.read_csv(file, usecols=usecols, skip_rows=skip_rows)
+            df_file = CSVUtil.read_csv(file, usecols=usecols, skip_rows=skip_rows, encoding=src_encoding)
             df_file['result_src'] = full_name  # 数据来源
             if df is None:
                 df = df_file
@@ -1102,7 +1113,8 @@ class CSVUtil(object):
         else:
             if deduplicate:
                 df = CSVUtil.deduplicate_dataframe(df, on_column)  # 去重
-            CSVUtil.to_csv(df, output_csv)
+            if not CommonUtil.isNoneOrBlank(output_csv):
+                CSVUtil.to_csv(df, output_csv, encoding=save_encoding)
             print(f'merge_csv_files success: {output_csv_name}.csv saved, total rows: {len(df)}')
         return df
 
@@ -1183,7 +1195,7 @@ class CSVUtil(object):
         img_size = len(img_list)
         if img_size >= 2 and not CommonUtil.isNoneOrBlank(merged_img_name):
             mod = img_size % 2
-            row_size = img_size // 2 + mod # 每行2张图
+            row_size = img_size // 2 + mod  # 2张图一行
             from util.ImageUtil import ImageUtil
             merge_image = ImageUtil.merge_images(img_list, rows=row_size)
             image_path = FileUtil.recookPath(f'{output_dir}/{merged_img_name}')
