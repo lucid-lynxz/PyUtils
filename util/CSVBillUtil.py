@@ -1,8 +1,10 @@
 import os
+import re
 import pandas as pd
 from typing import List, Optional, Dict
 from util.CSVUtil import CSVUtil
 from util.CommonUtil import CommonUtil
+from util.FileUtil import FileUtil
 
 """
 合并当前目录下除 output_name 以及 'ignore_' 开头的所有 csv 文件, 并去重, 保存为 output_name
@@ -91,18 +93,26 @@ class CSVBillUtil(object):
             self.df_zfb = _df_zfb
         return _df_zfb
 
-    def merge_all_csv(self, df_list: Optional[List[pd.DataFrame]] = None, output_csv_name: str = 'merge_bill_all') -> pd.DataFrame:
+    def merge_all_csv(self, df_list: Optional[List[pd.DataFrame]] = None, output_csv_name: str = 'merge_bill_all', force_merge: bool = False) -> pd.DataFrame:
         """
         :param df_list: 待合并的list列表, 若传空,默认合并的是 self.df_wx  和  self.df_zfb
         :param output_csv_name: 合并微信账单后生成的csv文件名, 若传空, 则不保存成文件
+        :param force_merge: 若 output_csv_name 文件已存在, 是否仍需要重新汇总统计
         """
+        output_csv_path = f'{self.csv_dir}/{output_csv_name}.csv'
+        need_save = not FileUtil.isFileExist(output_csv_path) or force_merge
         if CommonUtil.isNoneOrBlank(df_list):
-            if self.df_wx is None:
-                self.merge_wx_csv()
-            if self.df_zfb is None:
-                self.merge_zfb_csv()
+            if FileUtil.isFileExist(output_csv_path) and not force_merge:
+                CommonUtil.printLog(f'merge_all_csv 直接读取已汇总的数据文件: {output_csv_path}')
+                df_list = [CSVUtil.read_csv(output_csv_path)]
+            else:
+                if self.df_wx is None:
+                    self.merge_wx_csv()
+                if self.df_zfb is None:
+                    self.merge_zfb_csv()
 
-            df_list = [self.df_wx, self.df_zfb]
+                df_list = [self.df_wx, self.df_zfb]
+                CommonUtil.printLog(f'merge_all_csv 合并微信和支付宝账单数据: {len(df_list)} 个')
 
         df_list = [x for x in df_list if not CommonUtil.isNoneOrBlank(x)]
         if CommonUtil.isNoneOrBlank(df_list):
@@ -112,10 +122,33 @@ class CSVBillUtil(object):
             _df_all = pd.concat(df_list, ignore_index=True)
             _df_all['金额(元)'] = _df_all['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
             _df_all = CSVUtil.deduplicate_dataframe(_df_all, self.unique_col)
-            if not CommonUtil.isNoneOrBlank(output_csv_name):
+            if not CommonUtil.isNoneOrBlank(output_csv_name) and need_save:
                 CSVUtil.to_csv(_df_all, f'{self.csv_dir}/{output_csv_name}.csv', index=False)
         self.df_all = _df_all
         return self.df_all
+
+    @staticmethod
+    def find_matching_counterparties(df: pd.DataFrame, pattern: str, col: str = '交易对方') -> List[str]:
+        """
+        使用正则表达式匹配指定列(默认'交易对方'列)中的所有可能的名字
+
+        参数:
+        - df: 包含交易记录的数据框
+        - pattern: 用于匹配的正则表达式字符串
+
+        返回:
+        - 匹配到的交易对方名称列表（去重后）
+        """
+        # 获取所有唯一的交易对方名称
+        unique_names = df[col].unique()
+
+        # 编译正则表达式
+        regex = re.compile(pattern)
+
+        # 找出所有匹配的名称
+        matched_names = [name for name in unique_names if regex.search(name)]
+
+        return matched_names
 
     @staticmethod
     def analyze_by_counterparty(df: pd.DataFrame) -> pd.DataFrame:
@@ -145,30 +178,77 @@ class CSVBillUtil(object):
         }).fillna(0)
 
         result['净额'] = result['收入'] - result['支出']
+
+        # 重置索引，将"交易对方"变成普通列
+        result = result.reset_index()
+
         result = result.sort_values('支出', ascending=False)
         return result
 
     @staticmethod
     def query_counterparty_stats(df: pd.DataFrame, counterparty_names: List[str]) -> Dict:
         """
-        查询特定交易对方的统计信息
+        查询特定交易对方的统计信息，包括年度和月度统计
 
         参数:
         - df: 数据框
-        - counterparty_name: 交易对方名称
+        - counterparty_names: 交易对方名称列表, 若不确定, 可以通过 find_matching_counterparties(...) 方法正则匹配得到
 
         返回:
-        - 统计信息字典
+        - 包含总体、年度和月度统计信息的字典
         """
+        CommonUtil.printLog(f'query_counterparty_stats 查询交易方: {counterparty_names}')
         counterparty_name = counterparty_names[0]
-        party_transactions = df[df['交易对方'].isin(counterparty_names)]
+        party_transactions = df[df['交易对方'].isin(counterparty_names)].copy()
 
         if party_transactions.empty:
             return {"message": f"未找到与 {counterparty_name} 的交易记录"}
 
+        # 提取年份和月份
+        party_transactions['交易时间'] = pd.to_datetime(party_transactions['交易时间'])
+        party_transactions['年份'] = party_transactions['交易时间'].dt.year
+        party_transactions['月份'] = party_transactions['交易时间'].dt.month
+
+        # 总体统计
         income_amount = party_transactions[party_transactions['收/支'] == '收入']['金额(元)'].sum()
         expense_amount = party_transactions[party_transactions['收/支'] == '支出']['金额(元)'].sum()
         transaction_count = len(party_transactions)
+
+        # 年度统计
+        yearly_stats = party_transactions.groupby(['年份', '收/支'])['金额(元)'].agg(['sum', 'count']).unstack(fill_value=0)
+        # 获取实际的列数
+        col_count = len(yearly_stats.columns)
+        # 根据实际列数设置列名
+        if col_count == 4:
+            yearly_stats.columns = ['收入金额', '收入次数', '支出金额', '支出次数']
+        else:
+            # 如果列数不匹配，使用原始的多级列名
+            yearly_stats.columns = [f"{col[0]}_{col[1]}" for col in yearly_stats.columns]
+
+        yearly_stats = yearly_stats.reset_index()  # 将年份从索引转为列
+        if '收入金额' in yearly_stats.columns and '支出金额' in yearly_stats.columns:
+            yearly_stats['净额'] = yearly_stats['收入金额'] - yearly_stats['支出金额']
+        else:
+            yearly_stats['净额'] = yearly_stats.get('sum_收入', 0) - yearly_stats.get('sum_支出', 0)
+        yearly_stats = yearly_stats.sort_values('年份', ascending=False)
+
+        # 月度统计
+        monthly_stats = party_transactions.groupby(['年份', '月份', '收/支'])['金额(元)'].agg(['sum', 'count']).unstack(fill_value=0)
+        # 获取实际的列数
+        col_count = len(monthly_stats.columns)
+        # 根据实际列数设置列名
+        if col_count == 4:
+            monthly_stats.columns = ['收入金额', '收入次数', '支出金额', '支出次数']
+        else:
+            # 如果列数不匹配，使用原始的多级列名
+            monthly_stats.columns = [f"{col[0]}_{col[1]}" for col in monthly_stats.columns]
+
+        monthly_stats = monthly_stats.reset_index()  # 将年份和月份从索引转为列
+        if '收入金额' in monthly_stats.columns and '支出金额' in monthly_stats.columns:
+            monthly_stats['净额'] = monthly_stats['收入金额'] - monthly_stats['支出金额']
+        else:
+            monthly_stats['净额'] = monthly_stats.get('sum_收入', 0) - monthly_stats.get('sum_支出', 0)
+        monthly_stats = monthly_stats.sort_values(['年份', '月份'], ascending=False)
 
         return {
             '交易对方': counterparty_name,
@@ -176,7 +256,9 @@ class CSVBillUtil(object):
             '总支出': expense_amount,
             '净额': income_amount - expense_amount,
             '交易次数': transaction_count,
-            '详细记录': party_transactions  # 可以返回详细交易记录
+            '年度统计': yearly_stats,
+            '月度统计': monthly_stats,
+            '详细记录': party_transactions
         }
 
     @staticmethod
@@ -223,7 +305,7 @@ class CSVBillUtil(object):
 if __name__ == '__main__':
     target_csv_dir = './cache/wechat_zfb_bill'  # csv所在目录
     billUtil = CSVBillUtil(target_csv_dir)
-    df_all = billUtil.merge_all_csv()
+    df_all = billUtil.merge_all_csv(force_merge=False)
 
     stats_result = CSVBillUtil.analyze_by_counterparty(df_all)
     # print("\n简化版本统计结果:")
@@ -235,8 +317,26 @@ if __name__ == '__main__':
 
     # 查询指定人员的交易记录
     name = '小佛爷'
-    dict_special = CSVBillUtil.query_counterparty_stats(df_all, [name, '巧虹(**虹)'])
+    names = CSVBillUtil.find_matching_counterparties(df_all, name)
+    dict_special = CSVBillUtil.query_counterparty_stats(df_all, names)
 
     print(f'\n跟 {name} 的交易情况:')
-    exclude_keys = {'详细记录'}  # 用 set 提升查找效率
-    print({k: v for k, v in dict_special.items() if k not in exclude_keys})
+    exclude_keys = {'详细记录', '月度统计', '年度统计'}
+    # print({k: v for k, v in dict_special.items() if k not in exclude_keys})
+    # 格式化输出字典
+    import json
+
+    display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}
+    print(json.dumps(display_dict, ensure_ascii=False, indent=2, default=str))
+
+    # print(f'\n按月统计结果:\n{dict_special["月度统计"].to_string()}')
+    print(f'\n按年度计结果:\n{dict_special["年度统计"].to_string()}')
+    # # 打印年度统计
+    # print("\n年度统计:")
+    # pd.set_option('display.max_columns', None)  # 显示所有列
+    # pd.set_option('display.width', None)  # 不限制显示宽度
+    # print(dict_special['年度统计'].to_string())
+    #
+    # # 打印月度统计
+    # print("\n月度统计:")
+    # print(dict_special['月度统计'].to_string())
