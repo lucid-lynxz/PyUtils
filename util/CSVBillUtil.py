@@ -1,8 +1,9 @@
 import os
 import re
-import json
-import pandas as pd
 from typing import List, Optional, Dict
+
+import pandas as pd
+
 from util.CSVUtil import CSVUtil
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
@@ -21,9 +22,15 @@ from util.FileUtil import FileUtil
 微信对账单前16行为统计信息表头, 需要跳过
 微信对账单的详情列名为("微信 - 我 - 服务 - 钱包 - 账单 - 右上角... - 下载账单 - 用于个人对账"):
 交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注
+微信单次申请的时长跨度是3个月, 每次都需要进行人脸验证, 若下面则发送到邮箱, 每次都要输邮箱, 最终邮件附件压缩包会带有密码
 
 支付宝账单列名(“支付宝 - 我的 - 账单 - 右上角... - 开具交易流水证明"):
 交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,    收/付款方式,交易状态,交易订单号,商家订单号,备注,
+支付宝单次申请的时长跨度是1年
+
+招商银行列名("首页 - 收支明细 -右上角... - 打印流水"):
+记账日期,货币,交易金额,联机余额,交易摘要,对手信息
+招商银行单次申请的时长跨度最大是10年, 单次最大导出记录是2w条, 但只支持到处pdf文件,因此本脚本未对其进行适配
 """
 
 
@@ -394,42 +401,65 @@ class CSVBillUtil(object):
 
 
 if __name__ == '__main__':
-    target_csv_dir = './cache/wechat_zfb_bill'  # csv所在目录
-    billUtil = CSVBillUtil(target_csv_dir)
-    df_all = billUtil.merge_all_csv(force_merge=False)
+    target_csv_dir = os.path.dirname(os.path.abspath(__file__))  # 当前脚本所在目录
+    # target_csv_dir = './cache/wechat_zfb_bill'  # csv所在目录
 
-    # 设置pandas显示选项以改善表格对齐
-    pd.set_option('display.max_columns', None)  # 显示所有列
-    pd.set_option('display.width', None)  # 不限制显示宽度
-    pd.set_option('display.max_colwidth', 50)  # 设置列的最大宽度
-    pd.set_option('display.unicode.east_asian_width', True)  # 正确处理东亚字符宽度
-    pd.set_option('display.float_format', '{:,.2f}'.format)  # 设置浮点数显示格式
+    target_csv_dir = CommonUtil.get_input_info(f'请输入csv文件所在目录(默认{target_csv_dir}): ', target_csv_dir)
+    force_merge = CommonUtil.get_input_info('是否强制合并所有csv文件? y/n(默认): ', 'n') == 'y'
+
+    billUtil = CSVBillUtil(target_csv_dir)
+    df_all = billUtil.merge_all_csv(force_merge=force_merge)
+    md_stats_file = f'{billUtil.csv_dir}/bill_stats_result.md'  # 结果输出md文件路径
+
+    # # 设置pandas显示选项以改善表格对齐
+    # pd.set_option('display.max_columns', None)  # 显示所有列，不会出现列省略号...
+    # pd.set_option('display.max_rows', None)  # 最多显示多少行行,None表示显示所有行
+    # pd.set_option('display.width', None)  # 自动适配屏幕宽度，不限制总宽度
+    # pd.set_option('display.max_colwidth', 30)  # 显示单元格全部内容，None表示不截断、不省略
+    # pd.set_option('display.unicode.ambiguous_as_wide', True)  # 中文对齐专用：中文占2字符宽度
+    # pd.set_option('display.unicode.east_asian_width', True)  # 正确处理东亚字符宽度
+    # pd.set_option('display.float_format', '{:,.2f}'.format)  # 设置浮点数显示格式
 
     stats_result = CSVBillUtil.analyze_by_counterparty(df_all)
-    # print("\n简化版本统计结果:")
-    # print(stats_result.head(10))  # 显示前10个
 
     stats_result_sorted = stats_result.sort_values('支出', ascending=False)  # 降序排列
-    print("\n整体按支出降序排列:")
-    print(stats_result_sorted.head(10))
+    md_msg = f'## 微信&支付宝整体收支情况'
+    md_msg += f'\n### 整体按支出降序排列前10项:\n{stats_result_sorted.head(10).reset_index().to_markdown()}'
 
     # 整体按年/月统计收支情况
     overall_time_stats = CSVBillUtil.analyze_overall_by_time(df_all)
     yearly_stats = overall_time_stats['年度统计']
     monthly_stats = overall_time_stats['月度统计']
-    print(f'\n整体按年份统计结果:\n{yearly_stats}')
-    # print(f'\n整体按月份统计结果:\n{monthly_stats}')
+    md_msg += f'\n\n### 整体按年收支情况:\n{yearly_stats.to_markdown()}'
 
     # 查询指定人员的交易记录
-    name = '小佛爷'
-    names = CSVBillUtil.find_matching_counterparties(df_all, name)
-    dict_special = CSVBillUtil.query_counterparty_stats(df_all, names)
+    while True:
+        name = CommonUtil.get_input_info('请输入要查询的人员姓名(正则表达式),默认不查询并退出: ', '')  # 人员姓名正则表达式, 今年匹配出可能的变体
+        if CommonUtil.isNoneOrBlank(name):
+            break
 
-    print(f'\n跟 {name} 的交易情况:')
-    exclude_keys = {'详细记录', '月度统计', '年度统计'}
-    # print({k: v for k, v in dict_special.items() if k not in exclude_keys})
-    display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}  # 格式化输出字典
-    print(json.dumps(display_dict, ensure_ascii=False, indent=2, default=str))
+        names = CSVBillUtil.find_matching_counterparties(df_all, name)
+        names_str = names[0]
+        dict_special = CSVBillUtil.query_counterparty_stats(df_all, names)
 
-    # print(f'\n按月统计结果:\n{dict_special["月度统计"].to_string()}')
-    print(f'\n按年度计结果:\n{dict_special["年度统计"].to_string()}')
+        md_msg += f'\n\n## 跟 {names_str} 的交易情况:\n'
+        exclude_keys = {'详细记录', '月度统计', '年度统计'}
+        # print({k: v for k, v in dict_special.items() if k not in exclude_keys})
+        display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}  # 格式化输出字典
+        # md_msg += f'{json.dumps(display_dict, ensure_ascii=False, indent=2, default=str)}'
+
+        md_msg += "| 字段 | 值 |\n"
+        md_msg += "|----|----|\n"
+        for k, v in display_dict.items():
+            if isinstance(v, float):
+                v = '{:.2f}'.format(v)
+            md_msg += f"| {k} | {v} |\n"
+            # md_msg += f' - {k: <4}:\t{v}\n'
+
+        md_msg += f'\n\n### 按年度统计结果:\n{dict_special["年度统计"].to_markdown()}'
+        # print(f'\n按月统计结果:\n{dict_special["月度统计"].to_string()}')
+        # print(f'\n按年度计结果:\n{dict_special["年度统计"].to_string()}')
+
+    print(f'\n\n{md_msg}')
+    FileUtil.write2File(md_stats_file, md_msg)
+    CommonUtil.printLog(f'以上结果已保存到 {md_stats_file}', prefix='\n')
