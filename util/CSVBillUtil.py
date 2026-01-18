@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import pandas as pd
 from typing import List, Optional, Dict
 from util.CSVUtil import CSVUtil
@@ -204,8 +205,17 @@ class CSVBillUtil(object):
         if party_transactions.empty:
             return {"message": f"未找到与 {counterparty_name} 的交易记录"}
 
-        # 提取年份和月份
-        party_transactions['交易时间'] = pd.to_datetime(party_transactions['交易时间'])
+        # 提取年份和月份 - 修复日期转换警告
+        try:
+            party_transactions['交易时间'] = pd.to_datetime(party_transactions['交易时间'],
+                                                            format='%Y-%m-%d %H:%M:%S',
+                                                            errors='coerce')
+            # 如果上面的格式不匹配，则尝试自动推断
+            if party_transactions['交易时间'].isna().all():
+                party_transactions['交易时间'] = pd.to_datetime(party_transactions['交易时间'])
+        except:
+            party_transactions['交易时间'] = pd.to_datetime(party_transactions['交易时间'])
+
         party_transactions['年份'] = party_transactions['交易时间'].dt.year
         party_transactions['月份'] = party_transactions['交易时间'].dt.month
 
@@ -262,6 +272,87 @@ class CSVBillUtil(object):
         }
 
     @staticmethod
+    def analyze_overall_by_time(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """
+        统计整个数据集的总体收支情况，按年和按月进行汇总
+        返回结果包含两个部分：
+        - 年度统计: 按年份汇总的总体收支情况
+        - 月度统计: 按月份汇总的总体收支情况
+        """
+        # 首先转换日期列，指定日期格式以避免警告
+        df_with_date = df.copy()
+        try:
+            # 尝试常见的日期格式
+            df_with_date['交易时间'] = pd.to_datetime(df_with_date['交易时间'],
+                                                      format='%Y-%m-%d %H:%M:%S',
+                                                      errors='coerce')
+            # 如果上面的格式不匹配，则尝试自动推断
+            if df_with_date['交易时间'].isna().all():
+                df_with_date['交易时间'] = pd.to_datetime(df_with_date['交易时间'])
+        except:
+            df_with_date['交易时间'] = pd.to_datetime(df_with_date['交易时间'])
+
+        df_with_date['年份'] = df_with_date['交易时间'].dt.year
+        df_with_date['月份'] = df_with_date['交易时间'].dt.month
+
+        # 按年份统计
+        yearly_grouped = df_with_date.groupby(['年份', '收/支'])['金额(元)'].agg(['sum', 'count']).reset_index()
+        yearly_pivot_sum = yearly_grouped.pivot_table(
+            index='年份',
+            columns='收/支',
+            values='sum',
+            fill_value=0
+        ).fillna(0)
+        yearly_pivot_count = yearly_grouped.pivot_table(
+            index='年份',
+            columns='收/支',
+            values='count',
+            fill_value=0
+        ).fillna(0)
+
+        # 合并年度统计
+        yearly_stats = pd.DataFrame({
+            '总收入': yearly_pivot_sum.get('收入', pd.Series(0, index=yearly_pivot_sum.index)),
+            '总支出': yearly_pivot_sum.get('支出', pd.Series(0, index=yearly_pivot_sum.index)),
+            '总收入次数': yearly_pivot_count.get('收入', pd.Series(0, index=yearly_pivot_count.index)).astype(int),
+            '总支出次数': yearly_pivot_count.get('支出', pd.Series(0, index=yearly_pivot_count.index)).astype(int)
+        }).fillna(0)
+        yearly_stats['总净额'] = yearly_stats['总收入'] - yearly_stats['总支出']
+        yearly_stats = yearly_stats.reset_index()
+        yearly_stats = yearly_stats.sort_values('年份', ascending=False)
+
+        # 按月份统计
+        monthly_grouped = df_with_date.groupby(['年份', '月份', '收/支'])['金额(元)'].agg(['sum', 'count']).reset_index()
+        monthly_pivot_sum = monthly_grouped.pivot_table(
+            index=['年份', '月份'],
+            columns='收/支',
+            values='sum',
+            fill_value=0
+        ).fillna(0)
+        monthly_pivot_count = monthly_grouped.pivot_table(
+            index=['年份', '月份'],
+            columns='收/支',
+            values='count',
+            fill_value=0
+        ).fillna(0)
+
+        # 合并月度统计
+        monthly_stats = pd.DataFrame({
+            '总收入': monthly_pivot_sum.get('收入', pd.Series(0, index=monthly_pivot_sum.index)),
+            '总支出': monthly_pivot_sum.get('支出', pd.Series(0, index=monthly_pivot_sum.index)),
+            '总收入次数': monthly_pivot_count.get('收入', pd.Series(0, index=monthly_pivot_count.index)).astype(int),
+            '总支出次数': monthly_pivot_count.get('支出', pd.Series(0, index=monthly_pivot_count.index)).astype(int)
+        }).fillna(0)
+        monthly_stats['总净额'] = monthly_stats['总收入'] - monthly_stats['总支出']
+        monthly_stats = monthly_stats.reset_index()
+        monthly_stats = monthly_stats.sort_values(['年份', '月份'], ascending=[False, False])
+
+        return {
+            '年度统计': yearly_stats,
+            '月度统计': monthly_stats
+        }
+
+    @staticmethod
     def merge_counterparty_stats(stats_list):
         """
         合并多个交易对方的统计结果,主要用于同一个人但有多个名称的场景
@@ -307,13 +398,27 @@ if __name__ == '__main__':
     billUtil = CSVBillUtil(target_csv_dir)
     df_all = billUtil.merge_all_csv(force_merge=False)
 
+    # 设置pandas显示选项以改善表格对齐
+    pd.set_option('display.max_columns', None)  # 显示所有列
+    pd.set_option('display.width', None)  # 不限制显示宽度
+    pd.set_option('display.max_colwidth', 50)  # 设置列的最大宽度
+    pd.set_option('display.unicode.east_asian_width', True)  # 正确处理东亚字符宽度
+    pd.set_option('display.float_format', '{:,.2f}'.format)  # 设置浮点数显示格式
+
     stats_result = CSVBillUtil.analyze_by_counterparty(df_all)
     # print("\n简化版本统计结果:")
     # print(stats_result.head(10))  # 显示前10个
 
     stats_result_sorted = stats_result.sort_values('支出', ascending=False)  # 降序排列
-    print("\n按支出降序排列:")
+    print("\n整体按支出降序排列:")
     print(stats_result_sorted.head(10))
+
+    # 整体按年/月统计收支情况
+    overall_time_stats = CSVBillUtil.analyze_overall_by_time(df_all)
+    yearly_stats = overall_time_stats['年度统计']
+    monthly_stats = overall_time_stats['月度统计']
+    print(f'\n整体按年份统计结果:\n{yearly_stats}')
+    # print(f'\n整体按月份统计结果:\n{monthly_stats}')
 
     # 查询指定人员的交易记录
     name = '小佛爷'
@@ -323,20 +428,8 @@ if __name__ == '__main__':
     print(f'\n跟 {name} 的交易情况:')
     exclude_keys = {'详细记录', '月度统计', '年度统计'}
     # print({k: v for k, v in dict_special.items() if k not in exclude_keys})
-    # 格式化输出字典
-    import json
-
-    display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}
+    display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}  # 格式化输出字典
     print(json.dumps(display_dict, ensure_ascii=False, indent=2, default=str))
 
     # print(f'\n按月统计结果:\n{dict_special["月度统计"].to_string()}')
     print(f'\n按年度计结果:\n{dict_special["年度统计"].to_string()}')
-    # # 打印年度统计
-    # print("\n年度统计:")
-    # pd.set_option('display.max_columns', None)  # 显示所有列
-    # pd.set_option('display.width', None)  # 不限制显示宽度
-    # print(dict_special['年度统计'].to_string())
-    #
-    # # 打印月度统计
-    # print("\n月度统计:")
-    # print(dict_special['月度统计'].to_string())
