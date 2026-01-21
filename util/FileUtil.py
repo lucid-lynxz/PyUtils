@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import shutil
+import inspect
 from typing import Optional, List, Type, TypeVar, Union, Dict
 from util.CommonUtil import CommonUtil
 
@@ -705,6 +706,9 @@ class FileUtil(object):
             if backup2dir is None:
                 backup2dir = FileUtil.getParentPath(src_path)
 
+            backup2dir = FileUtil.recookPath(f'{backup2dir}/')  # 规范化路径，处理末尾斜杠
+            FileUtil.createFile(backup2dir, False)
+
             _, name, ext = FileUtil.getFileName(src_path)
             bak_file_name = f'{name}_bak_{TimeUtil.getTimeStr(fmt="%Y%m%d_%H%M%S")}.{ext}'
             bak_file = FileUtil.recookPath(f'{backup2dir}/{bak_file_name}')
@@ -712,6 +716,21 @@ class FileUtil(object):
             CommonUtil.printLog(f'backup_file: {bak_file}')
             return bak_file
         return None
+
+    @staticmethod
+    def current_dir() -> str:
+        """
+        获取调用本接口的py脚本所在的目录路径
+
+        Returns:
+            str: 调用脚本所在的目录路径
+        """
+        # 获取调用栈中的上一帧
+        frame = inspect.currentframe().f_back
+        # 获取调用者的文件路径
+        caller_file = inspect.getfile(frame)
+        # 返回文件所在目录的绝对路径
+        return os.path.dirname(os.path.abspath(caller_file))
 
 
 if __name__ == '__main__':

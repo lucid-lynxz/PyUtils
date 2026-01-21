@@ -445,7 +445,8 @@ if __name__ == '__main__':
     billUtil = CSVBillUtil(target_csv_dir, ignore_family_card=ignore_family_card)
     df_all = billUtil.merge_all_csv(force_merge=force_merge)
     md_stats_file = f'{billUtil.csv_dir}/bill_stats_result.md'  # 结果输出md文件路径
-    FileUtil.backup_file(md_stats_file)
+    backup_dir = f'{billUtil.csv_dir}/backup/'
+    FileUtil.backup_file(md_stats_file, backup_dir)
 
     # # 设置pandas显示选项以改善表格对齐
     # pd.set_option('display.max_columns', None)  # 显示所有列，不会出现列省略号...
