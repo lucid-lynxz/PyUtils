@@ -693,6 +693,26 @@ class FileUtil(object):
                 return ""
         return "".join(extracted_lines)
 
+    @staticmethod
+    def backup_file(src_path: str, backup2dir: Optional[str] = None) -> Optional[str]:
+        """
+        备份文件到指定目录下
+        :param src_path: 待备份的文件路径
+        :param backup2dir: 备份文件存储的目录, 默认是与 src_path 同一目录
+        """
+        if FileUtil.isFileExist(src_path):
+            from util.TimeUtil import TimeUtil
+            if backup2dir is None:
+                backup2dir = FileUtil.getParentPath(src_path)
+
+            _, name, ext = FileUtil.getFileName(src_path)
+            bak_file_name = f'{name}_bak_{TimeUtil.getTimeStr(fmt="%Y%m%d_%H%M%S")}.{ext}'
+            bak_file = FileUtil.recookPath(f'{backup2dir}/{bak_file_name}')
+            FileUtil.copy(src_path, bak_file)
+            CommonUtil.printLog(f'backup_file: {bak_file}')
+            return bak_file
+        return None
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"

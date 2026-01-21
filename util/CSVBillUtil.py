@@ -45,10 +45,11 @@ from util.FileUtil import FileUtil
 
 
 class CSVBillUtil(object):
-    def __init__(self, csv_dir: str, delete_src_excel: bool = True):
+    def __init__(self, csv_dir: str, delete_src_excel: bool = True, ignore_family_card: bool = False):
         """
         :param csv_dir: excel/csv文件所在目录路径, 若为空, 则表示当前py脚本所在目录
         :param delete_src_excel: excel转为csv后是否自动删除excel源文件
+        :param ignore_family_card: 是否忽略亲属卡支付数据
         """
         # 微信账单的列名
         cols_str = '交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注'
@@ -59,7 +60,7 @@ class CSVBillUtil(object):
 
         self.csv_dir = csv_dir
         CSVUtil.convert_dir_excels(csv_dir, delete_src_excel)  # 转换目录下所有excel文件为csv
-
+        self.ignore_family_card = ignore_family_card
         self.unique_col = '交易时间'  # 微信和支付宝合并和去重依据的列, 确保唯一性, 如: '交易时间'  请使用二者共有的字段
         self.df_wx = None  # 微信账单合并后的总dataframe
         self.df_zfb = None  # 支付宝账单合并后的总dataframe
@@ -73,6 +74,8 @@ class CSVBillUtil(object):
         # 合并所有微信的账单记录
         _df_wx = CSVUtil.merge_csv_in_dir(self.csv_dir, '', self.unique_col, usecols=self.usecols, skip_rows=16, valid_name_pattern=valid_name_pattern)
         _df_wx['金额(元)'] = _df_wx['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
+        if self.ignore_family_card:
+            _df_wx = _df_wx[~_df_wx['支付方式'].str.contains('亲属卡|亲情卡', na=False)]  # na=False表示将NaN值视为不包含
         if not CommonUtil.isNoneOrBlank(output_csv_name):
             CSVUtil.to_csv(_df_wx, f'{self.csv_dir}/{output_csv_name}.csv')
 
@@ -101,6 +104,9 @@ class CSVBillUtil(object):
                                 '商家订单号': '商户单号'}, inplace=True)
         _df_zfb = CSVUtil.reorder_cols(_df_zfb, self.usecols)
         _df_zfb['金额(元)'] = _df_zfb['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
+        if self.ignore_family_card:
+            _df_zfb = _df_zfb[~_df_zfb['支付方式'].str.contains('亲属卡|亲情卡', na=False)]  # na=False表示将NaN值视为不包含
+
         if not CommonUtil.isNoneOrBlank(output_csv_name):
             CSVUtil.to_csv(_df_zfb, f'{self.csv_dir}/{output_csv_name}.csv')
 
@@ -199,8 +205,13 @@ class CSVBillUtil(object):
 
         # 重置索引，将"交易对方"变成普通列
         result = result.reset_index()
-
         result = result.sort_values('支出', ascending=False)
+
+        # # 对除'交易对方' 外的各列数据进行汇总求和
+        # summary = result.loc[:, result.columns != '交易对方'].sum()  # 计算除'交易对方'外其他列的和
+        # summary_row = pd.DataFrame([['合计'] + summary.tolist()], columns=['交易对方'] + list(summary.index))  # 创建汇总行
+        # result = pd.concat([result, summary_row], ignore_index=True)  # 将汇总行添加到原DataFrame
+
         return result
 
     @staticmethod
@@ -320,6 +331,7 @@ class CSVBillUtil(object):
             values='sum',
             fill_value=0
         ).fillna(0)
+
         yearly_pivot_count = yearly_grouped.pivot_table(
             index='年份',
             columns='收/支',
@@ -337,6 +349,11 @@ class CSVBillUtil(object):
         yearly_stats['总净额'] = yearly_stats['总收入'] - yearly_stats['总支出']
         yearly_stats = yearly_stats.reset_index()
         yearly_stats = yearly_stats.sort_values('年份', ascending=False)
+
+        # 对除'年份' 外的各列数据进行汇总求和
+        summary = yearly_stats.loc[:, yearly_stats.columns != '年份'].sum()  # 计算除'年份'外其他列的和
+        summary_row = pd.DataFrame([['合计'] + summary.tolist()], columns=['年份'] + list(summary.index))  # 创建汇总行
+        yearly_stats = pd.concat([yearly_stats, summary_row], ignore_index=True)  # 将汇总行添加到原DataFrame
 
         # 按月份统计
         monthly_grouped = df_with_date.groupby(['年份', '月份', '收/支'])['金额(元)'].agg(['sum', 'count']).reset_index()
@@ -363,6 +380,13 @@ class CSVBillUtil(object):
         monthly_stats['总净额'] = monthly_stats['总收入'] - monthly_stats['总支出']
         monthly_stats = monthly_stats.reset_index()
         monthly_stats = monthly_stats.sort_values(['年份', '月份'], ascending=[False, False])
+
+        # 对除'年份'/'月份' 外的各列数据进行汇总求和
+        summary = pd.DataFrame({'年份': ['合计'], '月份': ['']})  # 创建汇总行
+        for col in monthly_stats.columns:
+            if col not in ['年份', '月份']:  # 对除'年份'和'月份'外的列求和
+                summary[col] = [monthly_stats[col].sum()]
+        monthly_stats = pd.concat([monthly_stats, summary], ignore_index=True)  # 将汇总行添加到原DataFrame
 
         return {
             '年度统计': yearly_stats,
@@ -415,11 +439,13 @@ if __name__ == '__main__':
     # target_csv_dir = './cache/wechat_zfb_bill'  # csv所在目录
 
     target_csv_dir = CommonUtil.get_input_info(f'请输入csv文件所在目录(默认{target_csv_dir}): ', target_csv_dir)
-    force_merge = CommonUtil.get_input_info('是否强制合并所有csv文件? y/n(默认): ', 'n') == 'y'
+    force_merge = CommonUtil.get_input_info('是否强制重新合并所有csv文件? y/n(默认): ', 'n') == 'y'
+    ignore_family_card = CommonUtil.get_input_info('是否忽略亲情卡数据? y/n(默认): ', 'n') == 'y'
 
-    billUtil = CSVBillUtil(target_csv_dir)
+    billUtil = CSVBillUtil(target_csv_dir, ignore_family_card=ignore_family_card)
     df_all = billUtil.merge_all_csv(force_merge=force_merge)
     md_stats_file = f'{billUtil.csv_dir}/bill_stats_result.md'  # 结果输出md文件路径
+    FileUtil.backup_file(md_stats_file)
 
     # # 设置pandas显示选项以改善表格对齐
     # pd.set_option('display.max_columns', None)  # 显示所有列，不会出现列省略号...
@@ -434,13 +460,20 @@ if __name__ == '__main__':
 
     stats_result_sorted = stats_result.sort_values('支出', ascending=False)  # 降序排列
     md_msg = f'## 微信&支付宝整体收支情况'
-    md_msg += f'\n### 整体按支出降序排列前10项:\n{stats_result_sorted.head(10).reset_index().to_markdown()}'
+    md_msg += f'\n> 强制重新合并={force_merge},忽略亲情卡:{ignore_family_card}\n'
+
+    df_headN = stats_result_sorted.head(10).reset_index()
+    summary = df_headN.loc[:, df_headN.columns != '交易对方'].sum()  # 计算除'交易对方'外其他列的和
+    summary_row = pd.DataFrame([['合计'] + summary.tolist()], columns=['交易对方'] + list(summary.index))  # 创建汇总行
+    df_headN = pd.concat([df_headN, summary_row], ignore_index=True)  # 将汇总行添加到原DataFrame
+    md_msg += f'\n### 整体按支出降序排列前10项:\n{df_headN.to_markdown()}'
 
     # 整体按年/月统计收支情况
     overall_time_stats = CSVBillUtil.analyze_overall_by_time(df_all)
     yearly_stats = overall_time_stats['年度统计']
-    monthly_stats = overall_time_stats['月度统计']
     md_msg += f'\n\n### 整体按年收支情况:\n{yearly_stats.to_markdown()}'
+    # monthly_stats = overall_time_stats['月度统计']
+    # md_msg += f'\n\n### 整体按月收支情况:\n{monthly_stats.to_markdown()}'
 
     # 查询指定人员的交易记录
     while True:
@@ -452,7 +485,7 @@ if __name__ == '__main__':
         names_str = names[0]
         dict_special = CSVBillUtil.query_counterparty_stats(df_all, names)
 
-        md_msg += f'\n\n## 跟 {names_str} 的交易情况:\n'
+        md_msg += f'\n\n## 跟 {names_str} 的交易情况:\n> 包含的别名:{"|".join(names)}\n\n'
         exclude_keys = {'详细记录', '月度统计', '年度统计'}
         # print({k: v for k, v in dict_special.items() if k not in exclude_keys})
         display_dict = {k: v for k, v in dict_special.items() if k not in exclude_keys}  # 格式化输出字典
