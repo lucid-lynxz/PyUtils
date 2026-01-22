@@ -5,7 +5,7 @@
 # 其中 airtest pocoui 必装
 # psutil是检测笔记本电脑电量以及是否插电,用于提醒用户,避免挂机失败
 # cnocr 是因为部分页面使用pocoui/airtest无法识别,需要文字识别
-pip install pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install chardet pycryptodome airtest pocoui psutil cnocr zstd pillow pyperclip pandas pydantic schedule longport akshare openpyxl pyautogui Crypto wmi pillow pywin32 paramiko onnxruntime -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 若pycryptdome不可用,可卸载重装
 # 导包若是: from Crypto.Cipher import AES  则改为: from Cryptodome.Cipher import AES
