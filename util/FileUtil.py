@@ -732,6 +732,24 @@ class FileUtil(object):
         # 返回文件所在目录的绝对路径
         return os.path.dirname(os.path.abspath(caller_file))
 
+    @staticmethod
+    def detect_encoding(file_path: str, default_encoding: str = 'utf-8') -> str:
+        """
+        检测文件编码, 需要安装chardet库: pip install chardet
+        :param file_path: 文件路径
+        :param default_encoding: 检测失败时, 默认返回的白龙马
+        """
+        if not CommonUtil.is_library_installed('chardet'):
+            CommonUtil.printLog(f'detect_encoding fail, please install chardet, default_encoding={default_encoding},file_path={file_path}')
+            return default_encoding
+
+        import chardet
+        with open(file_path, 'rb') as f:
+            result = chardet.detect(f.read())
+            result_encoding = result['encoding']
+        CommonUtil.printLog(f'detect_encoding: {result_encoding}, file_path:{file_path}')
+        return result_encoding
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"

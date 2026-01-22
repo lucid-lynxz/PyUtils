@@ -81,7 +81,7 @@ class CSVBillUtil(object):
 
         if self.df_wx is not None:
             self.df_wx = pd.concat([self.df_wx, _df_wx], ignore_index=True)
-            CSVUtil.deduplicate_dataframe(self.df_wx, self.unique_col)
+            CSVUtil.deduplicate(self.df_wx, self.unique_col)
         else:
             self.df_wx = _df_wx
         return _df_wx
@@ -112,7 +112,7 @@ class CSVBillUtil(object):
 
         if self.df_zfb is not None:
             self.df_zfb = pd.concat([self.df_zfb, _df_zfb], ignore_index=True)
-            self.df_zfb = CSVUtil.deduplicate_dataframe(self.df_zfb, self.unique_col)
+            self.df_zfb = CSVUtil.deduplicate(self.df_zfb, self.unique_col)
         else:
             self.df_zfb = _df_zfb
         return _df_zfb
@@ -145,7 +145,7 @@ class CSVBillUtil(object):
             # 合并微信和支付宝数据, 得到总支出表
             _df_all = pd.concat(df_list, ignore_index=True)
             _df_all['金额(元)'] = _df_all['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
-            _df_all = CSVUtil.deduplicate_dataframe(_df_all, self.unique_col)
+            _df_all = CSVUtil.deduplicate(_df_all, self.unique_col)
             if not CommonUtil.isNoneOrBlank(output_csv_name) and need_save:
                 CSVUtil.to_csv(_df_all, f'{self.csv_dir}/{output_csv_name}.csv', index=False)
         self.df_all = _df_all
@@ -175,9 +175,10 @@ class CSVBillUtil(object):
         return matched_names
 
     @staticmethod
-    def analyze_by_counterparty(df: pd.DataFrame) -> pd.DataFrame:
+    def analyze_by_counterparty(df: pd.DataFrame, decimals: int = 0) -> pd.DataFrame:
         """
         根据交易方名称和收支关系进行分类和统计, 汇总所有数据
+        :param decimals: 金额要保留的小数位数
         输出结果:
             交易对方: 商家或个人名称
             总收入: 从该对方获得的收入总额
@@ -212,16 +213,21 @@ class CSVBillUtil(object):
         # summary_row = pd.DataFrame([['合计'] + summary.tolist()], columns=['交易对方'] + list(summary.index))  # 创建汇总行
         # result = pd.concat([result, summary_row], ignore_index=True)  # 将汇总行添加到原DataFrame
 
+        result['收入'] = result['收入'].round(decimals)
+        result['支出'] = result['支出'].round(decimals)
+        result['净额'] = result['净额'].round(decimals)
+
         return result
 
     @staticmethod
-    def query_counterparty_stats(df: pd.DataFrame, counterparty_names: List[str]) -> Dict:
+    def query_counterparty_stats(df: pd.DataFrame, counterparty_names: List[str], decimals: int = 0) -> Dict:
         """
         查询特定交易对方的统计信息，包括年度和月度统计
 
         参数:
         - df: 数据框
         - counterparty_names: 交易对方名称列表, 若不确定, 可以通过 find_matching_counterparties(...) 方法正则匹配得到
+        - param decimals: 金额要保留的小数位数
 
         返回:
         - 包含总体、年度和月度统计信息的字典
@@ -288,11 +294,18 @@ class CSVBillUtil(object):
             monthly_stats['净额'] = monthly_stats.get('sum_收入', 0) - monthly_stats.get('sum_支出', 0)
         monthly_stats = monthly_stats.sort_values(['年份', '月份'], ascending=False)
 
+        # 只保留整数, 四舍五入
+        pending_cols = ['收入金额', '支出金额', '净额', 'sum_不计收支', 'sum_支出', 'sum_收入']
+        for df_item in [yearly_stats, monthly_stats]:
+            for col in pending_cols:
+                if col in df_item.columns:
+                    df_item[col] = df_item[col].round(decimals)
+
         return {
             '交易对方': counterparty_name,
-            '总收入': income_amount,
-            '总支出': expense_amount,
-            '净额': income_amount - expense_amount,
+            '总收入': income_amount.round(decimals),
+            '总支出': expense_amount.round(decimals),
+            '净额': (income_amount - expense_amount).round(decimals),
             '交易次数': transaction_count,
             '年度统计': yearly_stats,
             '月度统计': monthly_stats,
@@ -300,9 +313,11 @@ class CSVBillUtil(object):
         }
 
     @staticmethod
-    def analyze_overall_by_time(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    def analyze_overall_by_time(df: pd.DataFrame, decimals: int = 0) -> Dict[str, pd.DataFrame]:
         """
         统计整个数据集的总体收支情况，按年和按月进行汇总
+        :param df: 数据源
+        :param decimals: 总收入/总支出/总净额 要保留几位小数,默认只保留整数
         返回结果包含两个部分：
         - 年度统计: 按年份汇总的总体收支情况
         - 月度统计: 按月份汇总的总体收支情况
@@ -387,6 +402,12 @@ class CSVBillUtil(object):
             if col not in ['年份', '月份']:  # 对除'年份'和'月份'外的列求和
                 summary[col] = [monthly_stats[col].sum()]
         monthly_stats = pd.concat([monthly_stats, summary], ignore_index=True)  # 将汇总行添加到原DataFrame
+
+        # 只保留整数, 四舍五入
+        for df_item in [yearly_stats, monthly_stats]:
+            df_item['总收入'] = df_item['总收入'].round(decimals)
+            df_item['总支出'] = df_item['总支出'].round(decimals)
+            df_item['总净额'] = df_item['总净额'].round(decimals)
 
         return {
             '年度统计': yearly_stats,
@@ -496,7 +517,7 @@ if __name__ == '__main__':
         md_msg += "|----|----|\n"
         for k, v in display_dict.items():
             if isinstance(v, float):
-                v = '{:.2f}'.format(v)
+                v = '{:.0f}'.format(v)
             md_msg += f"| {k} | {v} |\n"
             # md_msg += f' - {k: <4}:\t{v}\n'
 

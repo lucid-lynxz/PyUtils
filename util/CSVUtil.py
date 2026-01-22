@@ -50,7 +50,12 @@ class CSVUtil(object):
         :param usecols: 要读取的列, None或[] 表示读取全部列,否则只会保留有定义的列(若列不存在, 会自动添加)
         :param skip_rows: 要跳过读取的行数
         """
-        df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+        try:
+            df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+        except UnicodeDecodeError:
+            encoding = FileUtil.detect_encoding(src_path, 'utf-8-sig')
+            df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+
         df = CSVUtil.reorder_cols(df, usecols)
         return df.fillna('')
 
@@ -281,8 +286,8 @@ class CSVUtil(object):
             return pd.DataFrame()
 
     @staticmethod
-    def merge_dataframe(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True,
-                        deduplicate: bool = False):
+    def merge(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True,
+              deduplicate: bool = False):
         """
         合并两个DataFrame，去重并解决冲突
         对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准
@@ -298,8 +303,8 @@ class CSVUtil(object):
         """
         # 如果需要去重，则先对两个DataFrame按on_column去重，保留第一条记录
         if deduplicate:
-            df_left = CSVUtil.deduplicate_dataframe(df_left, on_column)
-            df_right = CSVUtil.deduplicate_dataframe(df_right, on_column)
+            df_left = CSVUtil.deduplicate(df_left, on_column)
+            df_right = CSVUtil.deduplicate(df_right, on_column)
         else:
             # 如果不去重但仍希望避免笛卡尔积效应，需要预处理重复记录
             # 当keep_both=False时，我们只保留一侧的数据，避免重复记录导致的笛卡尔积
@@ -453,13 +458,13 @@ class CSVUtil(object):
         df1 = CSVUtil.read_csv(csv1, encoding=encoding)
         df2 = CSVUtil.read_csv(csv2, encoding=encoding)
 
-        merged_df = CSVUtil.merge_dataframe(df1, df2, on_column, priority_left, keep_both, deduplicate)
+        merged_df = CSVUtil.merge(df1, df2, on_column, priority_left, keep_both, deduplicate)
         CSVUtil.to_csv(merged_df, output_csv, encoding=encoding, index=False)
         return merged_df
 
     @staticmethod
-    def calc_dataframe_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None,
-                                keyword_col: Optional[str] = None, enable_any_empty: bool = False, enable_all_empty: bool = False) -> dict:
+    def calc_accuracy(df: pd.DataFrame, column_base: str, column_compare: str, keyword: Optional[str] = None,
+                      keyword_col: Optional[str] = None, enable_any_empty: bool = False, enable_all_empty: bool = False) -> dict:
         """
         计算指定列的准确率统计信息:
         1. 过滤 column_base 和 column_compare 均有值的数据
@@ -551,27 +556,29 @@ class CSVUtil(object):
             dict: 统计信息字典，包含准确率、有效数据数、匹配数据数、总数据数等信息
         """
         df = pd.read_csv(csv_path, encoding=encoding, dtype=str)
-        return CSVUtil.calc_dataframe_accuracy(df, column_base, column_compare, keyword, keyword_col, enable_any_empty, enable_all_empty)
+        return CSVUtil.calc_accuracy(df, column_base, column_compare, keyword, keyword_col, enable_any_empty, enable_all_empty)
 
     @staticmethod
-    def to_markdown(dataframe, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig', title: Optional[str] = None) -> str:
+    def to_markdown(df: pd.DataFrame, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig',
+                    title: Optional[str] = None, align_flag: str = ':---:') -> str:
         """
         将 DataFrame 转换为 Markdown 表格字符串,并按需存储到文件中
-        :param dataframe: 输入的 DataFrame
+        :param df: 输入的 DataFrame
         :param include_index: 是否包含索引列（默认为 True）
         :param output_file: 输出的 Markdown 文件路径（可选）
         :param encoding: 文件编码（默认为 'utf-8-sig'）
         :param title: 表格标题（可选），如果提供则在表格第一行添加标题行
+        :param align_flag: 对齐方式 居中: ':---:'   左对齐: ':---' 右对齐: '---:'
         """
         if include_index:
-            n_df = dataframe.reset_index()  # 将index变成数据列,并返回一个行的df
+            n_df = df.reset_index()  # 将index变成数据列,并返回一个行的df
         else:
-            n_df = dataframe
+            n_df = df
 
         markdown_str = "| " + " | ".join(n_df.columns) + " |\n"  # 表头-列名
 
         # 添加分隔行（必须在表头之后、数据行之前）
-        markdown_str += "| " + " | ".join([":---:"] * len(n_df.columns)) + " |\n"
+        markdown_str += "| " + " | ".join([align_flag] * len(n_df.columns)) + " |\n"
 
         # # 添加表格标题行（如果提供）
         # if title:
@@ -721,7 +728,7 @@ class CSVUtil(object):
             return pd.DataFrame()
 
     @staticmethod
-    def deduplicate_dataframe(df: pd.DataFrame, subset: Union[str, List[str]], keep: str = 'first') -> pd.DataFrame:
+    def deduplicate(df: pd.DataFrame, subset: Union[str, List[str]], keep: str = 'first') -> pd.DataFrame:
         """
         基于指定列对DataFrame进行去重操作, 返回去重后的DataFrame (不修改原DataFrame)
         P.S. 如果需要修改原DataFrame, 请使用: df.drop_duplicates(subset=subset, keep=keep, inplace=True)
@@ -1053,7 +1060,7 @@ class CSVUtil(object):
     def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',
                          on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
                          reverse_list: bool = False, deduplicate: bool = True,
-                         valid_name_pattern: str = '*.csv',
+                         valid_name_pattern: str = '.*.csv',
                          exclude_name_pattern: str = r'^ignore_',
                          src_encoding: str = 'utf-8-sig',
                          save_encoding: str = 'utf-8-sig'
@@ -1069,7 +1076,7 @@ class CSVUtil(object):
         :param reverse_list: 获取到的csv文件是按名称自然排序的, 是否要倒序
         :param on_column: 合并和去重数据时的列依据, 非空
         :param usecols: 读取csv文件时要读取的列数据, None表示全部读取
-        :param skip_rows: 读取csv文件时, 要跳过的表头行数
+        :param skip_rows: 读取csv文件时, 要跳过的表头行数, 注意若跳过后读取到的df不存在 on_column 列, 则会取消跳过,重新读取文件
         :param deduplicate: 合并后的数据是否要去重
         :param valid_name_pattern: 要合并的csv文件名(包含后缀)要满足的正则表达式
         :param exclude_name_pattern: 要剔除的csv文件名正则表达式
@@ -1100,7 +1107,11 @@ class CSVUtil(object):
         df = None
         for file in valid_csv_list:
             full_name, name, ext = FileUtil.getFileName(file)
-            df_file = CSVUtil.read_csv(file, usecols=usecols, skip_rows=skip_rows, encoding=src_encoding)
+            df_file = CSVUtil.read_csv(file, skip_rows=skip_rows, encoding=src_encoding)
+            if on_column not in df_file.columns:
+                df_file = CSVUtil.read_csv(file, encoding=src_encoding)
+
+            df_file = CSVUtil.reorder_cols(df_file, usecols)
             df_file['result_src'] = full_name  # 数据来源
             if df is None:
                 df = df_file
@@ -1112,7 +1123,7 @@ class CSVUtil(object):
             print('merge_csv_files fail: df is None')
         else:
             if deduplicate:
-                df = CSVUtil.deduplicate_dataframe(df, on_column)  # 去重
+                df = CSVUtil.deduplicate(df, on_column)  # 去重
             if not CommonUtil.isNoneOrBlank(output_csv):
                 CSVUtil.to_csv(df, output_csv, encoding=save_encoding)
             print(f'merge_csv_files success: {output_csv_name}.csv saved, total rows: {len(df)}')
