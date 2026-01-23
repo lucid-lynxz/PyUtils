@@ -42,7 +42,7 @@ CSV/padans工具类
 class CSVUtil(object):
 
     @staticmethod
-    def read_csv(src_path: str, encoding: str = 'utf-8-sig', usecols: List[str] = None, skip_rows: int = 0) -> pd.DataFrame:
+    def read_csv(src_path: str, usecols: Optional[Union[pd.Index, List[str]]] = None, skip_rows: int = 0, encoding: str = 'utf-8-sig') -> pd.DataFrame:
         """
         以str格式读取CSV文件, 并将NaN值替换为空字符串
         :param src_path: csv源文件路径
@@ -51,7 +51,7 @@ class CSVUtil(object):
         :param skip_rows: 要跳过读取的行数
         """
         try:
-            df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
+            df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows, on_bad_lines='skip')
         except UnicodeDecodeError:
             encoding = FileUtil.detect_encoding(src_path, 'utf-8-sig')
             df = pd.read_csv(src_path, encoding=encoding, dtype=str, skiprows=skip_rows)
@@ -60,18 +60,47 @@ class CSVUtil(object):
         return df.fillna('')
 
     @staticmethod
-    def reorder_cols(df: pd.DataFrame, usecols: List[str]) -> pd.DataFrame:
+    def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> pd.DataFrame:
         """
         重排并只保留指定的列数据
         若要修改列名请自行调用接口: df=df.rename({'a':'b'}, inplace=False)
+        注意返回的新的df 不影响入参的源df, 请按需重新赋值
         """
-        if usecols:
+        df = CSVUtil.add_cols(df, usecols)
+        if df is not None and not CommonUtil.isNoneOrBlank(usecols):
+            df = df[usecols]  # 重排顺序
+        return df
+
+    @staticmethod
+    def add_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> Optional[pd.DataFrame]:
+        """
+        按需添加列
+        若要修改列名请自行调用接口: df=df.rename({'a':'b'}, inplace=False)
+        """
+        if df is None:
+            return None
+
+        if not CommonUtil.isNoneOrBlank(usecols):
             for col in usecols:
                 if col not in df.columns:
                     df[col] = ''  # 初始化为空字符
                     CommonUtil.printLog(f'{col}列不存在, 添加')
-            df = df[usecols]  # 重排顺序
         return df
+
+    @staticmethod
+    def contains_cols(df: pd.DataFrame, cols: List[str], all_match: bool = True) -> bool:
+        """
+        检查DataFrame中是否包含指定的列
+        :param df: DataFrame
+        :param cols: 列名列表
+        :param all_match: 是否全部匹配, True-全部匹配, False-只要有一个匹配即可
+        :return: 是否包含
+        """
+        if df is None or CommonUtil.isNoneOrBlank(cols):
+            return False
+        columns = df.columns.tolist()
+        match_result = [col in columns for col in cols]
+        return all(match_result) if all_match else any(match_result)
 
     @staticmethod
     def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n', mode: str = 'w') -> bool:
@@ -560,7 +589,7 @@ class CSVUtil(object):
 
     @staticmethod
     def to_markdown(df: pd.DataFrame, include_index: bool = True, output_file: Optional[str] = None, encoding: str = 'utf-8-sig',
-                    title: Optional[str] = None, align_flag: str = ':---:') -> str:
+                    title: Optional[str] = None, append: bool = False, align_flag: str = ':---:') -> str:
         """
         将 DataFrame 转换为 Markdown 表格字符串,并按需存储到文件中
         :param df: 输入的 DataFrame
@@ -568,6 +597,7 @@ class CSVUtil(object):
         :param output_file: 输出的 Markdown 文件路径（可选）
         :param encoding: 文件编码（默认为 'utf-8-sig'）
         :param title: 表格标题（可选），如果提供则在表格第一行添加标题行
+        :param append: 是否追加到文件末尾（默认为 False）
         :param align_flag: 对齐方式 居中: ':---:'   左对齐: ':---' 右对齐: '---:'
         """
         if include_index:
@@ -597,7 +627,10 @@ class CSVUtil(object):
             markdown_str = f'**{title}**\n\n' + markdown_str
 
         if output_file:
-            FileUtil.write2File(output_file, markdown_str, encoding=encoding)
+            if append:
+                FileUtil.append2File(output_file, markdown_str, encoding=encoding)
+            else:
+                FileUtil.write2File(output_file, markdown_str, encoding=encoding)
 
         return markdown_str
 
@@ -939,7 +972,7 @@ class CSVUtil(object):
                 CommonUtil.printLog(f"🔄 正在将 Excel 转换为 CSV 文件: {full_name}")
                 try:
                     df = pd.read_excel(input_file, dtype=str)
-                    df.to_csv(temp_csv, index=False, encoding='utf-8')
+                    CSVUtil.to_csv(df, temp_csv)
                     CommonUtil.printLog(f"✅ Excel 已成功转换为: {temp_csv}")
                 except Exception as e:
                     CommonUtil.printLog(f"❌ Excel 转换失败: {e}")
@@ -954,6 +987,7 @@ class CSVUtil(object):
     def batch_concurrency_process(csv_file: str, output_file: str,
                                   process_row_data: Callable[[pd.Series], None],
                                   col_keyword: str = 'query',
+                                  filter_columns_dict: Optional[Dict[str, str]] = None,
                                   chunk_size: int = 1000,
                                   max_concurrent: int = 30,
                                   on_chunk_finished: Callable[[str, pd.DataFrame], None] = None) -> pd.DataFrame:
@@ -965,6 +999,8 @@ class CSVUtil(object):
                             若文件已存在, 会读取其 col_keyword 列信息,去重, 并跳过相关行数据的处理
         :param process_row_data: 行数据处理函数, 输入是原始行对象pd.Series, 直接在其上修改即可
         :param col_keyword: 在input/output文件中都要存在的列名, 用于去重, 处理新行数据时, 若检测到该列数据已有处理过的缓存,则实际使用缓存值
+                            filter_columns_dict为空时,默认是检测 output_file 该存在该列数据时, 就认为这条数据 已处理过, 会跳过
+        :param filter_columns_dict: 已处理数据的过滤条件，格式为 { 列名: 正则表达式 }，支持多列过滤, 被过滤条件命中的数据才表示已处理过
         :param chunk_size: 每次读取的行数
         :param max_concurrent: 批次内部数据处理的并发数
         :param on_chunk_finished: 每批次的数据处理完成后的回调函数, 输入为: 结果信息, 处理后的DataFrame
@@ -979,7 +1015,15 @@ class CSVUtil(object):
         processed_queries = set()
         if FileUtil.isFileExist(output_file):
             try:
-                df_done = pd.read_csv(output_file, usecols=[col_keyword], dtype=str)
+                if CommonUtil.isNoneOrBlank(filter_columns_dict):
+                    filter_columns_dict = {}
+
+                if col_keyword not in filter_columns_dict.keys():
+                    filter_columns_dict[col_keyword] = r'\S+'  # 非空
+                keys = filter_columns_dict.keys()
+                usecols = list(keys)
+                df_done = CSVUtil.read_csv(output_file, usecols=usecols)
+                df_done = CSVUtil.filter_and_replace(df_done, filter_columns_dict)
                 processed_queries = set(df_done[col_keyword].dropna())
                 CommonUtil.printLog(f"✅ 检测到已有结果文件，跳过 {len(processed_queries)} 条已处理数据")
             except Exception as e:
