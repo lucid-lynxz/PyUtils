@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import shutil
+import hashlib
 import inspect
 from typing import Optional, List, Type, TypeVar, Union, Dict
 from util.CommonUtil import CommonUtil
@@ -168,11 +169,12 @@ class FileUtil(object):
         return path.endswith("/") or path.endswith("\\")
 
     @staticmethod
-    def copy(src: str, dst: str):
+    def copy(src: str, dst: str, keep_metadata: bool = False):
         """
         复制文件到指定位置
         :param src: 源文件, 要求文件存在, 若是目录, 则 dst 也必须是目录, 且目录本身不会复制
         :param dst: 目标位置
+        :param keep_metadata: 是否保留元数据(原时间戳/修改记录/文件权限属性等), 默认为False
         """
         if not FileUtil.isFileExist(src):
             return
@@ -191,10 +193,14 @@ class FileUtil(object):
                     else:
                         shutil.copy(fileItem, FileUtil.recookPath('%s/%s' % (dst, fileName)))
             else:
-                shutil.copytree(src, dst)  # dst目录不存在时, 直接使用copytree复制即可
+                # dst目录不存在时, 直接使用copytree复制即可
+                shutil.copytree(src, dst)
             pass
         else:  # 普通文件, 直接复制
-            shutil.copy(src, dst)
+            if keep_metadata:
+                shutil.copy2(src, dst)
+            else:
+                shutil.copy(src, dst)
 
     @staticmethod
     def deleteFile(path: str, printLog: bool = False):
@@ -695,24 +701,43 @@ class FileUtil(object):
         return "".join(extracted_lines)
 
     @staticmethod
-    def backup_file(src_path: str, backup2dir: Optional[str] = None) -> Optional[str]:
+    def backup_file(src_path: str, backup_dir: Optional[str] = None) -> Optional[str]:
         """
-        备份文件到指定目录下
+        备份文件到backup_dir，如果文件内容与现有备份不同
+        如果创建了备份或者命中了现有备份文件, 则返备份文件路径, 否则返回None
         :param src_path: 待备份的文件路径
-        :param backup2dir: 备份文件存储的目录, 默认是与 src_path 同一目录
+        :param backup_dir: 备份文件存储的目录, 默认是与 src_path 同一目录
         """
         if FileUtil.isFileExist(src_path):
             from util.TimeUtil import TimeUtil
-            if backup2dir is None:
-                backup2dir = FileUtil.getParentPath(src_path)
+            if backup_dir is None:
+                backup_dir = FileUtil.getParentPath(src_path)
 
-            backup2dir = FileUtil.recookPath(f'{backup2dir}/')  # 规范化路径，处理末尾斜杠
-            FileUtil.createFile(backup2dir, False)
+            backup_dir = FileUtil.recookPath(f'{backup_dir}/')  # 规范化路径，处理末尾斜杠
+            FileUtil.createFile(backup_dir, False)
 
+            # 截取当前文件名
             _, name, ext = FileUtil.getFileName(src_path)
+
+            # 计算源文件的哈希值
+            src_hash = FileUtil.calculate_file_hash(src_path)
+
+            # 检查所有现有备份
+            for filename in os.listdir(backup_dir):
+                if not filename.startswith(f'{name}_bak_') and filename.endswith(ext):
+                    continue
+
+                backup_path = os.path.join(backup_dir, filename)
+                if os.path.isfile(backup_path):
+                    backup_hash = FileUtil.calculate_file_hash(backup_path)  # 比较哈希值
+                    if backup_hash == src_hash:
+                        CommonUtil.printLog(f"文件已备份为 {filename}")
+                        return backup_path
+
+            # 未命中缓存,则创建新的备份文件
             bak_file_name = f'{name}_bak_{TimeUtil.getTimeStr(fmt="%Y%m%d_%H%M%S")}.{ext}'
-            bak_file = FileUtil.recookPath(f'{backup2dir}/{bak_file_name}')
-            FileUtil.copy(src_path, bak_file)
+            bak_file = FileUtil.recookPath(f'{backup_dir}/{bak_file_name}')
+            FileUtil.copy(src_path, bak_file, True)
             CommonUtil.printLog(f'backup_file: {bak_file}')
             return bak_file
         return None
@@ -749,6 +774,16 @@ class FileUtil(object):
             result_encoding = result['encoding']
         CommonUtil.printLog(f'detect_encoding: {result_encoding}, file_path:{file_path}')
         return result_encoding
+
+    @staticmethod
+    def calculate_file_hash(file_path: str) -> str:
+        """计算文件的SHA256哈希值"""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            # 每次读取4KB内容来更新哈希值
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
 
 
 if __name__ == '__main__':
