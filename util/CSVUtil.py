@@ -119,10 +119,10 @@ class CSVUtil(object):
         try:
             FileUtil.createFile(output_path, False)
             df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode)
-            CommonUtil.printLog(f'to_csv 保存数据到: {output_path}, total rows: {len(df)}')
+            CommonUtil.printLog(f'to_csv success: total rows={len(df)}, 保存数据到: {output_path}')
             return True
         except Exception as e:
-            CommonUtil.printLog(f'to_csv 保存数据到: {output_path} 失败: {e}')
+            CommonUtil.printLog(f'to_csv fail: {e}\n保存数据到: {output_path}')
             return False
 
     @staticmethod
@@ -674,11 +674,8 @@ class CSVUtil(object):
         if not replace_columns_dict:
             return filtered_df
 
-        # 验证要替换的列是否存在
-        missing_columns = [col for col in replace_columns_dict.keys() if col not in filtered_df.columns]
-        if missing_columns:
-            CommonUtil.printLog(f"警告: 列 {missing_columns} 不存在于DataFrame中")
-            return filtered_df
+        # 确保要替换的列存在
+        filtered_df = CSVUtil.add_cols(filtered_df, list(replace_columns_dict.keys()))
 
         # 确定要替换的行索引
         if row_ranges is None:

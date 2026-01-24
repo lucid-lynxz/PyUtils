@@ -701,12 +701,13 @@ class FileUtil(object):
         return "".join(extracted_lines)
 
     @staticmethod
-    def backup_file(src_path: str, backup_dir: Optional[str] = None) -> Optional[str]:
+    def backup_file(src_path: str, backup_dir: Optional[str] = None, extra_suffix: str = '') -> Optional[str]:
         """
         备份文件到backup_dir，如果文件内容与现有备份不同
         如果创建了备份或者命中了现有备份文件, 则返备份文件路径, 否则返回None
         :param src_path: 待备份的文件路径
         :param backup_dir: 备份文件存储的目录, 默认是与 src_path 同一目录
+        :param extra_suffix: 备份文件的额外后缀信息(位于扩展名前)
         """
         if FileUtil.isFileExist(src_path):
             from util.TimeUtil import TimeUtil
@@ -731,14 +732,15 @@ class FileUtil(object):
                 if os.path.isfile(backup_path):
                     backup_hash = FileUtil.calculate_file_hash(backup_path)  # 比较哈希值
                     if backup_hash == src_hash:
-                        CommonUtil.printLog(f"文件已备份为 {filename}")
+                        CommonUtil.printLog(f"find exist backup_file: {filename}")
                         return backup_path
 
             # 未命中缓存,则创建新的备份文件
-            bak_file_name = f'{name}_bak_{TimeUtil.getTimeStr(fmt="%Y%m%d_%H%M%S")}.{ext}'
+            suffix_tip = '' if CommonUtil.isNoneOrBlank(extra_suffix) else f'_{extra_suffix}'
+            bak_file_name = f'{name}_bak_{TimeUtil.getTimeStr(fmt="%Y%m%d_%H%M%S")}{suffix_tip}.{ext}'
             bak_file = FileUtil.recookPath(f'{backup_dir}/{bak_file_name}')
             FileUtil.copy(src_path, bak_file, True)
-            CommonUtil.printLog(f'backup_file: {bak_file}')
+            CommonUtil.printLog(f'create new backup_file: {bak_file}')
             return bak_file
         return None
 
