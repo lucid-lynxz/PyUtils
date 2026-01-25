@@ -1099,7 +1099,8 @@ class CSVUtil(object):
 
     @staticmethod
     def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',
-                         on_column: str = 'query', usecols: List[str] = None, skip_rows: int = 0,
+                         on_column: str = 'query', rename_cols: Optional[Dict] = None,
+                         usecols: List[str] = None, skip_rows: int = 0,
                          reverse_list: bool = False, deduplicate: bool = True,
                          valid_name_pattern: str = '.*.csv',
                          exclude_name_pattern: str = r'^ignore_',
@@ -1115,7 +1116,8 @@ class CSVUtil(object):
         :param src_dir: 源csv/xls/xlsx 文件所在目录, 输出文件也会存储在这个目录中, 比如脚本所在目录: os.path.dirname(os.path.abspath(__file__))
         :param output_csv_name: 最终合并生成的csv文件名(不包含 .csv 后缀), 传空表示不保存
         :param reverse_list: 获取到的csv文件是按名称自然排序的, 是否要倒序
-        :param on_column: 合并和去重数据时的列依据, 非空
+        :param on_column: 合并和去重数据时的列依据, 非空, 若 rename_cols 非空, 则要求 on_column存在于重命名后的列名中
+        :param rename_cols: 读取csv后, 对列名进行重命名, 格式为: { 原列名: 新列名 }
         :param usecols: 读取csv文件时要读取的列数据, None表示全部读取
         :param skip_rows: 读取csv文件时, 要跳过的表头行数, 注意若跳过后读取到的df不存在 on_column 列, 则会取消跳过,重新读取文件
         :param deduplicate: 合并后的数据是否要去重
@@ -1149,8 +1151,14 @@ class CSVUtil(object):
         for file in valid_csv_list:
             full_name, name, ext = FileUtil.getFileName(file)
             df_file = CSVUtil.read_csv(file, skip_rows=skip_rows, encoding=src_encoding)
+            if not CommonUtil.isNoneOrBlank(rename_cols):
+                df_file = df_file.rename(columns=rename_cols)
+
             if on_column not in df_file.columns:
                 df_file = CSVUtil.read_csv(file, encoding=src_encoding)
+
+                if not CommonUtil.isNoneOrBlank(rename_cols):
+                    df_file = df_file.rename(columns=rename_cols)
 
             df_file = CSVUtil.reorder_cols(df_file, usecols)
             df_file['result_src'] = full_name  # 数据来源
