@@ -61,7 +61,7 @@ class CSVBillUtil(object):
         self.csv_dir = csv_dir
         CSVUtil.convert_dir_excels(csv_dir, delete_src_excel)  # 转换目录下所有excel文件为csv
         self.ignore_family_card = ignore_family_card
-        self.unique_col = '交易时间'  # 微信和支付宝合并和去重依据的列, 确保唯一性, 如: '交易时间'  请使用二者共有的字段
+        self.unique_col = '交易单号'  # 微信和支付宝合并和去重依据的列, 确保唯一性, 如: '交易时间'  请使用二者共有的字段
         self.df_wx = None  # 微信账单合并后的总dataframe
         self.df_zfb = None  # 支付宝账单合并后的总dataframe
         self.df_all = None  # 微信 & 支付宝 账单最终合并后的总dataframe
@@ -92,17 +92,18 @@ class CSVBillUtil(object):
         :param output_csv_name: 合并微信账单后生成的csv文件名(不行 .csv 后缀), 若传空, 则不保存成文件
         :param valid_name_pattern: 要合并的csv文件名(包含后缀)要满足的正则表达式
         """
-        # 合并所有微信的账单记录
-        _df_zfb = CSVUtil.merge_csv_in_dir(self.csv_dir, '', self.unique_col, skip_rows=24, valid_name_pattern=valid_name_pattern, src_encoding='GBK')
         # 将支付宝的列名改为跟微信一致
-        _df_zfb.rename(columns={'交易分类': '交易类型',
-                                '商品说明': '商品',
-                                '金额': '金额(元)',
-                                '收/付款方式': '支付方式',
-                                '交易状态': '当前状态',
-                                '交易订单号': '交易单号',
-                                '商家订单号': '商户单号'}, inplace=True)
-        _df_zfb = CSVUtil.reorder_cols(_df_zfb, self.usecols)
+        rename_cols = {'交易分类': '交易类型',
+                       '商品说明': '商品',
+                       '金额': '金额(元)',
+                       '收/付款方式': '支付方式',
+                       '交易状态': '当前状态',
+                       '交易订单号': '交易单号',
+                       '商家订单号': '商户单号'}
+
+        # 合并所有微信的账单记录
+        _df_zfb = CSVUtil.merge_csv_in_dir(self.csv_dir, '', self.unique_col, rename_cols=rename_cols, usecols=self.usecols,
+                                           skip_rows=24, valid_name_pattern=valid_name_pattern, src_encoding='GBK')
         _df_zfb['金额(元)'] = _df_zfb['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
         if self.ignore_family_card:
             _df_zfb = _df_zfb[~_df_zfb['支付方式'].str.contains('亲属卡|亲情卡', na=False)]  # na=False表示将NaN值视为不包含
