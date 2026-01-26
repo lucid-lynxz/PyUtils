@@ -2,13 +2,14 @@
 # -*- coding:utf-8 -*-
 
 import csv
+import hashlib
+import inspect
 import os
 import platform
 import re
 import shutil
-import hashlib
-import inspect
-from typing import Optional, List, Type, TypeVar, Union, Dict
+from typing import Optional, List, Type, TypeVar, Union, Dict, Tuple
+
 from util.CommonUtil import CommonUtil
 
 T = TypeVar('T')  # 泛型类型
@@ -743,6 +744,45 @@ class FileUtil(object):
             CommonUtil.printLog(f'create new backup_file: {bak_file}')
             return bak_file
         return None
+
+    @staticmethod
+    def get_backup_file(src_path: str, backup_dir: Optional[str] = None) -> Tuple[str, str]:
+        """
+        获取最新/最大的备份文件路径
+        :param src_path: 源文件路径或者文件名, 主要用于匹配缓存文件
+        :param backup_dir: 备份文件存储的目录, 默认是与 src_path 同一目录
+        :return tuple(str,str) 第一个元素是最新修改的文件路径, 第二元素是最大的文件路径
+        """
+        if backup_dir is None:
+            backup_dir = FileUtil.getParentPath(src_path)
+
+        backup_dir = FileUtil.recookPath(f'{backup_dir}/')  # 规范化路径，处理末尾斜杠
+        if not FileUtil.isDirFile(backup_dir):
+            return '', ''
+
+        # 截取当前文件名
+        src_full_name, src_name, src_ext = FileUtil.getFileName(src_path)
+
+        all_files = FileUtil.listAllFilePath(backup_dir)
+        latest_file = ''  # 最新修改的文件路径
+        latest_file_mtime = 0  # 文件修改时间
+
+        largest_file = ''  # 最大文件路径
+        largest_file_size = 0  # 最大文件大小
+        for filePath in all_files:
+            full_name, name, ext = FileUtil.getFileName(filePath)
+            if full_name != src_full_name and ext == src_ext and name.startswith(f'{src_name}_bak_'):
+                mtime = os.path.getmtime(filePath)  # 获取指定文件最后修改时间（modification time）
+                fsize = os.path.getsize(filePath)  # 返回的是字节大小
+
+                if mtime > latest_file_mtime:
+                    latest_file = filePath
+                    latest_file_mtime = mtime
+
+                if fsize > largest_file_size:
+                    largest_file = filePath
+                    largest_file_size = fsize
+        return latest_file, largest_file
 
     @staticmethod
     def current_dir() -> str:
