@@ -535,7 +535,7 @@ class CommonUtil(object):
         return bytes_data.decode('utf-8', errors='replace')
 
     @staticmethod
-    def find_system_chinese_font():
+    def find_system_chinese_font() -> Optional[str]:
         """
         自动查找系统中支持中文的字体
 
