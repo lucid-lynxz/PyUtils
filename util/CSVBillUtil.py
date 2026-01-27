@@ -1,14 +1,16 @@
 import os
 import re
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 import pandas as pd
-
+import numpy as np
 from util.CSVUtil import CSVUtil
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 
 """
+依赖库: pip install pdfplumber matplotlib pillow numpy
+
 合并当前目录下除 output_name 以及 'ignore_' 开头的所有 csv 文件, 并去重, 保存为 output_name
 要读取和保存的列名为由 usecols 定义, 请确保这些列名存在
 最后会新增一列: result_src 用以记录当前数据来源于哪份文档
@@ -455,8 +457,253 @@ class CSVBillUtil(object):
 
         return merged
 
+    @staticmethod
+    def visualize_crop_area(pdf_path, crop_box=(0, 150, 0, 0), save_img_path="crop_preview.png", resolution=150):
+        """
+        可视化PDF裁剪区域（精准调整裁剪参数）
+        1. 生成第一页的截图，标注所有文本的坐标
+        2. 绘制裁剪区域的红色边框，直观展示裁剪范围
+        3. 保存预览图到本地，可根据预览图调整裁剪参数
+        打开生成的 crop_preview.png，你会看到：
+        🟥 红色半透明区域：当前裁剪范围
+        🟨 黄色标注框：关键文本（日期 / 金额）的坐标
+        📝 预览图标题：当前裁剪参数
+        📜 控制台：裁剪后的文本预览（能看到是否只保留了表格）
+        :param pdf_path: 招行流水PDF路径
+        :param crop_box: 待测试的裁剪参数 (left, top, right, bottom)
+                         对于right和bottom尺寸, 若小于0, 则表示以页面边界内缩指定尺寸
+        :param save_img_path: 预览图保存路径
+        :param resolution: 预览图分辨率（dpi），不影响裁剪精度
+        """
+        import pdfplumber
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+        import matplotlib.font_manager as fm
+        from PIL import Image
 
-if __name__ == '__main__':
+        # 方案A：使用系统自带的中文字体（无需额外安装）
+        font_path = CommonUtil.find_system_chinese_font()
+        font_prop = None
+        if font_path:
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.sans-serif'] = [font_prop.get_name()]
+
+        # 解决负号显示问题
+        plt.rcParams['axes.unicode_minus'] = False
+
+        # 1. 打开PDF并获取第一页
+        with pdfplumber.open(pdf_path) as pdf:
+            page = pdf.pages[0]
+            # PDF原始尺寸（pt）：width=页面宽度，height=页面高度
+            pdf_width_pt = page.width
+            pdf_height_pt = page.height
+
+            # 补全裁剪框的right和bottom（默认用页面宽高）
+            left = crop_box[0]
+            top = crop_box[1]
+            right = crop_box[2] if crop_box[2] > 0 else page.width + crop_box[2]
+            bottom = crop_box[3] if crop_box[3] > 0 else page.height + crop_box[3]
+            # right = crop_box[2] if crop_box[2] != 0 else page.width
+            # bottom = crop_box[3] if crop_box[3] != 0 else page.height - 50
+
+            crop_box_pt = (left, top, right, bottom)
+
+            # ========== 3. 生成预览图并计算像素/pt换算比例（核心校准） ==========
+            # 生成预览图（resolution仅影响图片清晰度，不影响坐标）
+            img = page.to_image(resolution=resolution)
+            img_array = np.array(img.original)
+            # 预览图像素尺寸
+            img_width_px = img_array.shape[1]
+            img_height_px = img_array.shape[0]
+            # 计算换算比例：1pt = 多少px
+            px_per_pt_x = img_width_px / pdf_width_pt
+            px_per_pt_y = img_height_px / pdf_height_pt
+
+            # ========== 4. 将PDF裁剪坐标（pt）换算为预览图坐标（px） ==========
+            crop_box_px = (
+                crop_box_pt[0] * px_per_pt_x,  # left (px)
+                crop_box_pt[1] * px_per_pt_y,  # top (px)
+                crop_box_pt[2] * px_per_pt_x,  # right (px)
+                crop_box_pt[3] * px_per_pt_y  # bottom (px)
+            )
+
+            # ========== 5. 绘制预览图（精准对齐） ==========
+            fig, ax = plt.subplots(1, figsize=(15, 10))
+            ax.imshow(img_array)
+
+            # 绘制裁剪区域（红色边框，半透明）
+            rect = patches.Rectangle(
+                (crop_box_px[0], crop_box_px[1]),  # 左上角（px）
+                crop_box_px[2] - crop_box_px[0],  # 宽度（px）
+                crop_box_px[3] - crop_box_px[1],  # 高度（px）
+                linewidth=3,
+                edgecolor='red',
+                facecolor='red',
+                alpha=0.2
+            )
+            ax.add_patch(rect)
+
+            # ========== 6. 标注关键文本（PDF原始坐标+预览图像素坐标） ==========
+            for word in page.extract_words():
+                if any(key in word['text'] for key in ['Date', 'Balance', 'Party']):
+                    # 文本的PDF坐标（pt）→ 预览图坐标（px）
+                    word_x_px = word['x0'] * px_per_pt_x
+                    word_y_px = word['top'] * px_per_pt_y
+                    # 标注文本（同时显示PDF原始坐标和预览图像素坐标）
+                    ax.text(
+                        word_x_px, word_y_px,
+                        f"{word['text']}\nPDF坐标：({word['x0']:.0f},{word['top']:.0f}pt)\n像素坐标：({word_x_px:.0f},{word_y_px:.0f}px)",
+                        fontsize=8,
+                        color='blue',
+                        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
+                        fontproperties=font_prop
+                    )
+
+            # ========== 7. 保存预览图 + 打印关键信息 ==========
+            ax.axis('off')
+            plt.title(
+                f"PDF Crop Preview (分辨率={resolution}dpi | 裁剪框PDF坐标：{crop_box_pt})",
+                fontsize=14,
+                fontproperties=font_prop
+            )
+            plt.tight_layout()
+            plt.savefig(save_img_path, dpi=resolution, bbox_inches='tight')
+            plt.close()
+
+            # 打印校准信息
+            print("=" * 60)
+            print(f"✅ 精准预览图已保存：{save_img_path}")
+            print(f"📏 PDF原始尺寸：{pdf_width_pt:.0f}pt × {pdf_height_pt:.0f}pt")
+            print(f"🖼️ 预览图尺寸：{img_width_px}px × {img_height_px}px")
+            print(f"🔍 换算比例：1pt = {px_per_pt_x:.4f}px（水平） | 1pt = {px_per_pt_y:.4f}px（垂直）")
+            print(f"🎯 实际裁剪参数（PDF坐标）：left={crop_box_pt[0]}pt, top={crop_box_pt[1]}pt, right={crop_box_pt[2]}pt, bottom={crop_box_pt[3]}pt")
+            print("=" * 60)
+
+            # 验证：打印裁剪后的文本（实际裁剪结果）
+            cropped_page = page.crop(crop_box_pt)
+            cropped_text = cropped_page.extract_text()[:500]
+            print("\n📝 实际裁剪后的文本预览（前500字符）：")
+            print("-" * 50)
+            print(cropped_text if cropped_text else "无文本")
+            print("-" * 50)
+
+    @staticmethod
+    def cmb_pdf_to_csv(pdf_path, csv_path: Optional[str] = None, crop_box: Tuple[int] = (0, 0, 0, 0)):
+        """
+        纯Python适配招行无框线流水PDF转CSV（英文列名）
+        :param pdf_path: 招行PDF流水路径
+        :param csv_path: 输出CSV路径, 非空时有效
+        :param crop_box: 首页pdf的裁剪区域,格式:left top right bottom, 只识别裁剪区域内的信息
+                         其中: 对于right和bottom尺寸, 若小于0, 则表示以页面边界内缩指定尺寸
+        """
+        if not CommonUtil.is_library_installed('pdfplumber'):
+            CommonUtil.printLog(f'cmb_pdf_to_csv fail, please do: pip install pdfplumber')
+            return None
+
+        import pdfplumber
+        all_data = []
+        # 🌟 按要求修改的表头（含空格的英文命名）
+        header = [
+            "Date",  # 记账日期
+            "Currency",  # 货币
+            "Transaction Amount",  # 交易金额
+            "Balance",  # 联机余额
+            "Transaction Type",  # 交易摘要
+            "Counter Party"  # 对手信息
+        ]
+
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_idx, page in enumerate(pdf.pages):
+                # ========== 核心：第一页裁剪（避开标题/账户信息干扰） ==========
+                if page_idx == 0:
+                    left = crop_box[0]
+                    top = crop_box[1]
+                    right = crop_box[2] if crop_box[2] > 0 else page.width + crop_box[2]
+                    bottom = crop_box[3] if crop_box[3] > 0 else page.height + crop_box[3]
+
+                    # 裁剪参数可根据你的PDF微调：(左, 上, 右, 下)
+                    page = page.crop((left, top, right, bottom))
+
+                # ========== 无框线表格精准识别 ==========
+                table = page.extract_table(table_settings={
+                    "vertical_strategy": "text",  # 按文本对齐识别列
+                    "horizontal_strategy": "text",  # 按文本行间距识别行
+                    "text_y_tolerance": 2,  # 缩小垂直容忍度，避免行合并
+                    "text_x_tolerance": 4,  # 按文本水平间隔识别列
+                    "intersection_tolerance": 5,  # 放宽交叉点容忍度
+                    "min_words_vertical": 2,  # 垂直方向最小有效词数	判定「一列有效」的最小文本数量→ 只有当一列中至少包含 N 个有效文本（非空 / 非空
+                    "min_words_horizontal": 3  # 水平方向最小有效词数
+                })
+
+                if table:
+                    for row in table:
+                        # 清洗空值和空格
+                        cleaned_row = [cell.strip() if cell and cell.strip() else "" for cell in row]
+                        # 过滤无效行（至少3个有效字段+非表头）
+                        if len([c for c in cleaned_row if c]) >= 3 and cleaned_row != header:
+                            all_data.append(cleaned_row)
+
+        # ========== 数据清洗与CSV导出 ==========
+        # 在创建DataFrame之前添加数据验证
+        if all_data:
+            # 获取实际数据的列数
+            actual_cols = len(all_data[0])
+            print(f"实际提取的列数: {actual_cols}: {all_data[0]}")
+
+            # 如果实际列数与header不匹配，调整header
+            if actual_cols != len(header):
+                # 根据实际列数调整header
+                if actual_cols > len(header):
+                    # 如果实际列数更多，添加额外的列名
+                    header.extend([f"Extra_{i}" for i in range(actual_cols - len(header))])
+                else:
+                    # 如果实际列数更少，截取相应数量的header
+                    header = header[:actual_cols]
+
+            # 用指定表头创建DataFrame
+            df = pd.DataFrame(all_data, columns=header)
+
+            # 金额字段转为数值型（适配Pandas统计）
+            for col in ["Transaction Amount", "Balance"]:
+                df[col] = df[col].astype(str).str.replace(",", "").str.strip()
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            # 日期字段标准化为datetime格式
+            # 日期字段标准化为datetime格式
+            # 尝试常见的日期格式
+            date_formats = [
+                '%Y-%m-%d',  # 2023-12-25
+                '%Y/%m/%d',  # 2023/12/25
+                '%Y%m%d',  # 20231225
+                '%d-%m-%Y',  # 25-12-2023
+                '%d/%m/%Y',  # 25/12/2023
+                '%Y年%m月%d日',  # 2023年12月25日
+            ]
+
+            # 尝试不同的日期格式
+            for fmt in date_formats:
+                try:
+                    df["Date"] = pd.to_datetime(df["Date"], format=fmt, errors='raise')
+                    break  # 如果成功解析，跳出循环
+                except:
+                    continue  # 如果失败，尝试下一个格式
+            else:
+                # 如果所有格式都失败，使用原始方法
+                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
+            # 过滤全空行
+            df = df.dropna(how="all")
+
+            # 保存CSV（UTF-8编码避免乱码）
+            CSVUtil.to_csv(df, csv_path)
+            print(f"✅ 转换完成！CSV已保存到：{csv_path}")
+            return df
+        else:
+            print("❌ 未解析到有效表格数据，请检查PDF格式")
+            return None
+
+
+def main():
     target_csv_dir = os.path.dirname(os.path.abspath(__file__))  # 当前脚本所在目录
     # target_csv_dir = './cache/wechat_zfb_bill'  # csv所在目录
 
@@ -529,3 +776,37 @@ if __name__ == '__main__':
     print(f'\n\n{md_msg}')
     FileUtil.write2File(md_stats_file, md_msg)
     CommonUtil.printLog(f'以上结果已保存到 {md_stats_file}', prefix='\n')
+
+
+def main2():
+    CommonUtil.printLog('开始转换招商银行账单PDF为CSV...')
+    target_csv_dir = os.path.dirname(os.path.abspath(__file__))  # 当前脚本所在目录
+    pdf_dir = f'{target_csv_dir}/cache/wechat_zfb_bill_lynxz'
+    pdf_path = f'{pdf_dir}/招商银行交易流水_20260118.pdf'
+
+    crop_box = (0, 260, 0, -60)
+    CSVBillUtil.visualize_crop_area(pdf_path, crop_box=crop_box, save_img_path=f'{pdf_dir}/crop_preview.png')
+
+    csv_path = f'{pdf_path[:-4]}.csv'
+    df = CSVBillUtil.cmb_pdf_to_csv(pdf_path, csv_path)
+    # CSVUtil.to_csv(df, csv_path)
+    # 验证：Pandas统计示例
+    if df is not None:
+        CommonUtil.printLog("\n=== 流水统计结果 ===")
+        total_income = df[df["Transaction Amount"] > 0]["Transaction Amount"].sum()  # 交易金额
+        total_expense = df[df["Transaction Amount"] < 0]["Transaction Amount"].sum()
+        CommonUtil.printLog(f"总收入：{total_income:.2f} 元")
+        CommonUtil.printLog(f"总支出：{total_expense:.2f} 元")
+        CommonUtil.printLog(f"净收支：{total_income + total_expense:.2f} 元")
+
+        # 按日期分组统计
+        daily_summary = df.groupby(df["Date"].dt.date)["Transaction Amount"].sum()
+        print("\nDaily Transaction Summary:")
+        print(daily_summary)
+    else:
+        CommonUtil.printLog("没有找到有效的流水数据")
+
+
+if __name__ == '__main__':
+    main()
+    # main2()
