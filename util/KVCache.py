@@ -98,13 +98,14 @@ class KVCache(Generic[T]):
         # 使用线程锁保护共享资源
         with self.lock:
             key = self.recook_key(key) if self.recook_key else key
-            if key not in self.cache:
+            if self.save_batch is not None and key not in self.cache:
                 self._new_key_cnt += 1
-            self.cache[key] = value
+                # 每save_batch次请求保存一次缓存，避免频繁写文件
+                if self._new_key_cnt % self.save_batch == 0:
+                    self._save_cache()
+                    self._new_key_cnt = 0
 
-            # 每save_batch次请求保存一次缓存，避免频繁写文件
-            if self.save_batch is not None and self._new_key_cnt % self.save_batch == 0:
-                self._save_cache()
+            self.cache[key] = value
 
     def save(self):
         """保存缓存到文件"""
