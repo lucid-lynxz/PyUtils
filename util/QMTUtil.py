@@ -5,12 +5,13 @@ from typing_extensions import Self
 from util.TimeUtil import TimeUtil
 from util.qmt.market_bean import StockData, MarketData
 from util.CommonUtil import CommonUtil, singleton
+from xtquant.xttype import StockAccount
 
 
 @singleton
 class QmtUtil:
     """
-    miniQM%量化工具类, 提供一些常用的工具函数, 单例默默是
+    miniQMT量化工具类, 提供一些常用的工具函数, 单例默默是
     创建对象: qmt_util = QmtUtil()
     注册行情数据获取回调函数: qmt_util.register(on_data_callback)
     立即订阅单股行情: qmt_util.subscribe_quote(stock_code, period='1d', start_time='', end_time='')
@@ -18,17 +19,19 @@ class QmtUtil:
     添加待订阅的股票: qmt_util.register_pending_subscribe_stock(stock_code)
     开始订阅所有待订阅的股票: qmt_util.start_subscribe()
     """
+    _TAG = 'QmtUtil'
 
     # 创建交易回调类对象，并声明接收回调
     class MyXtQuantTraderCallback(XtQuantTraderCallback):
         def on_connected(self):
             pass
 
-    def __init__(self, print_log: bool = False, activate: bool = True, userdata_mini_path: str = None):
+    def __init__(self, print_log: bool = False, activate: bool = True, userdata_mini_path: str = None, account: str = None):
         self.on_data_callback_list: List[Callable[[Dict], None]] = []
         self._monitor_code_set = set()  # 已订阅的股票代码集合, 用于去重
         self.print_log: bool = print_log  # 是否打印 on_data 回调
         self.activate: bool = activate  # 是否可用, 启用后才能收到回调信息
+        self.account: StockAccount = StockAccount(account)  # 资金账号,主要用于查询新股申购额度等
         self._pending_subscribe_stock_set = set()  # 待订阅的股票代码集合, 用于去重
 
         self.xt_trader: Union[XtQuantTrader, None] = None  # 交易对象
@@ -39,13 +42,13 @@ class QmtUtil:
         """
         https://dict.thinktrader.net/nativeApi/xttrader.html#%E5%88%9B%E5%BB%BAapi%E5%AE%9E%E4%BE%8B
         """
-        # if not CommonUtil.isNoneOrBlank(userdata_mini_path):
-        #     # session_id为会话编号，策略使用方对于不同的Python策略需要使用不同的会话编号
-        #     self.xt_trader = XtQuantTrader(userdata_mini_path, TimeUtil.currentTimeMillis())
-        #     self.xt_trader.register_callback(self._default_on_data)
-        #     self.xt_trader.start()  # 启动交易线程，准备交易所需的环境
-        #     connect_result = self.xt_trader.connect()  # 连接MiniQMT, 连接结果信息，连接成功返回0，失败返回非0
-        #     CommonUtil.printLog(f'connect_result={connect_result}')
+        if not CommonUtil.isNoneOrBlank(userdata_mini_path):
+            # session_id为会话编号，策略使用方对于不同的Python策略需要使用不同的会话编号
+            self.xt_trader = XtQuantTrader(userdata_mini_path, TimeUtil.currentTimeMillis())
+            self.xt_trader.register_callback(self._default_on_data)
+            self.xt_trader.start()  # 启动交易线程，准备交易所需的环境
+            connect_result = self.xt_trader.connect()  # 连接MiniQMT, 连接结果信息，连接成功返回0，失败返回非0
+            CommonUtil.printLog(f'connect_result={connect_result}')
         return self
 
     def _default_on_data(self, datas: dict):
@@ -165,6 +168,37 @@ class QmtUtil:
         req_id = xtdata.subscribe_whole_quote(result_code_list, callback=self._default_on_data)
         CommonUtil.printLog(f'QmtUtil subscribe_whole_quote({result_code_list}) req_id={req_id}')
         return req_id
+
+    def query_ipo_data(self) -> Dict:
+        """
+        查询当日新股新债信息
+        新股申购额度查询: https://dict.thinktrader.net/nativeApi/xttrader.html#%E6%96%B0%E8%82%A1%E7%94%B3%E8%B4%AD%E9%A2%9D%E5%BA%A6%E6%9F%A5%E8%AF%A2
+        返回: dict 新股申购额度数据集
+            { type1: number1, type2: number2, ... }
+            type - str 品种类型
+            KCB - 科创板，SH - 上海，SZ - 深圳
+            number - int 可申购股数
+
+        当日新股信息查询: https://dict.thinktrader.net/nativeApi/xttrader.html#%E6%96%B0%E8%82%A1%E7%94%B3%E8%B4%AD%E9%A2%9D%E5%BA%A6%E6%9F%A5%E8%AF%A2
+        返回: dict 新股新债信息数据集
+            { stock1: info1, stock2: info2, ... }
+            stock - str 品种代码，例如 '301208.SZ'
+            info - dict 新股信息
+            name - str 品种名称
+            type - str 品种类型
+            STOCK - 股票，BOND - 债券
+            minPurchaseNum / maxPurchaseNum - int 最小 / 最大申购额度
+            单位为股（股票）/ 张（债券）
+            purchaseDate - str 申购日期
+            issuePrice - float 发行价
+        """
+        ipo_data = self.xt_trader.query_ipo_data()
+        # print(f'ipo_data: {CommonUtil.format_dict(ipo_data)}')
+
+        if self.account is not None:
+            ipo_limit = self.xt_trader.query_new_purchase_limit(self.account)
+            print(f'ipo_limit: {ipo_limit}')
+        return ipo_data
 
 
 if __name__ == '__main__':
