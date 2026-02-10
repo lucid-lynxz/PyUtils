@@ -53,7 +53,13 @@ if __name__ == '__main__':
     NetUtil.push_to_robot(f'condition_order_manager 开始工作', printLog=True)
     ConditionOrder.mailUtil = MailUtil(configParser.getSectionItems('mail'))  # 邮箱工具
 
-    QmtUtil.activate = configParser.getSecionValue('QMT', 'activate', 'False') == 'True'  # 是否启用QMT
+    _qmt_activate = configParser.getSecionValue('QMT', 'activate', 'False') == 'True'  # 是否启用QMT
+    _qmt_mini_data_path = configParser.getSecionValue('QMT', 'mini_data_path')  # qmt userdata_mini 文件夹路径
+    _qmt_account = configParser.getSecionValue('QMT', 'account')  # qmt资金账号
+    qmtUtil: QmtUtil = QmtUtil(activate=_qmt_activate, userdata_mini_path=_qmt_mini_data_path, account=_qmt_account)
+    ipo_dict = qmtUtil.query_ipo_data()
+    if not CommonUtil.isNoneOrBlank(ipo_dict):
+        NetUtil.push_to_robot(f'cn ipo data:{CommonUtil.format_dict(ipo_dict)}', printLog=True)
 
     # 创建同花顺工具类
     ths_trader = THSTrader(cacheDir=_cache_dir)
@@ -307,7 +313,7 @@ if __name__ == '__main__':
              # .add_task("get_sh_index", get_sh_index, interval=4, unit='hours')
              .stop_when_time_reaches(end_time, lambda: CommonUtil.set_windows_brightness(60))
              # .start(start_time, lambda: CommonUtil.set_windows_brightness(1))  # 启动调度器
-             .start(start_time, lambda: QmtUtil().toggle_activate().start_subscribe())  # 启动调度器
+             .start(start_time, lambda: qmtUtil.start_subscribe())  # 启动调度器
              # .start(start_time, task_condition_orders_hk)  # 启动调度器
              # .start(start_time)  # 启动调度器
              .wait_exit_event()  # 等待按下q推出

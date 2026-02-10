@@ -1,5 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
+import json
 import functools
 import importlib.util
 import os, sys, threading, time, re
@@ -615,6 +616,29 @@ class CommonUtil(object):
             if print_exclude_set:
                 CommonUtil.printLog(f"排除的数字集合: {set(range(min_val, max_val + 1)) - result_set}")
             return result_set
+
+    @staticmethod
+    def format_dict(data: dict, json_mode: bool = True, json_indent: int = 2, kv_sep_flag: str = ', ') -> str:
+        """
+        格式化dict, 支持两种结果:
+        1. json格式, 并根据指定的缩进字符排列
+        2. key:value 格式, 不同kv之间通过  kv_sep_flag 进行连接
+        如:  {'name': 'lynxz', 'age': '38'}, 可输出以下:
+        {
+            'name': 'lynxz',
+            'age': '38'
+        }
+
+        或者: name:lynxz, age:38
+
+        @param data 待格式化的dict数据
+        @param json_mode 是否数据json数据
+        @param json_indent json缩进字符数
+        @param kv_sep_flag  key-value连接符, json_mode=False时使用
+        """
+        if json_mode:
+            return json.dumps(data, indent=json_indent)
+        return kv_sep_flag.join(f"{k}: {v}" for k, v in data.items())
 
 
 # 配置日志

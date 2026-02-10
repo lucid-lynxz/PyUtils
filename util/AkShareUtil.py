@@ -12,6 +12,7 @@ import pandas as pd
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
 from util.NetUtil import NetUtil
+from util.CSVUtil import CSVUtil
 from util.TimeUtil import log_time_consume, TimeUtil
 from wool_tasks.ths_trade.bean.stock_position import StockPosition
 
@@ -28,6 +29,7 @@ class AkShareUtil:
     cache_dir: str = FileUtil.create_cache_dir(None, __file__, clear=False)  # 缓存目录, 默认为当前目录, 会存储请求的都得所有股票名称和代码数据信息
     stock_summary_dict: dict = {}  # 获取过的股票摘要信息, 接口: get_stock_summary()
     _has_update_name_by_net: bool = False  # 是否已经从网络更新了股票名称
+    print(f"akshare 版本：{ak.__version__}")
 
     @staticmethod
     # @log_time_consume()
@@ -1146,6 +1148,51 @@ class AkShareUtil:
             print(f'stock_zh_a_spot_em: {e}')
         return pd.DataFrame()
 
+    @staticmethod
+    def stock_new_ipo_cninfo() -> pd.DataFrame:
+        """
+        stock_new_ipo_cninfo 限量: 单次获取近三年所有新股发行的数据
+        https://akshare.akfamily.xyz/data/stock/stock.html#id326
+        列名: 证劵代码	证券简称	上市日期	申购日期	发行价	总发行数量	发行市盈率	上网发行中签率	摇号结果公告日	中签公告日	中签缴款日	网上申购上限	上网发行数量
+        """
+        # # 列出所有包含 "ipo" 或 "hk" 的接口，筛选港股新股相关
+        # hk_ipo_related = []
+        # for attr in dir(ak):
+        #     if "ipo" in attr.lower() or '_hk_' in attr.lower():
+        #         hk_ipo_related.append(attr)
+        #
+        # print("你当前 akshare 版本支持的港股IPO相关接口：")
+        # print(hk_ipo_related if hk_ipo_related else "未找到直接的港股IPO接口")
+
+        # 缓存文件, 首行表示更新日期, 每天只更新一次
+        ipo_cache = f'{AkShareUtil.cache_dir}/stock_new_ipo_cninfo.csv'
+        content_list = FileUtil.readFile(ipo_cache)
+        last_update_date = '2025-05-05'
+        if not CommonUtil.isNoneOrBlank(content_list):
+            last_update_date = content_list[0]
+
+        if TimeUtil.dateDiff(last_update_date, TimeUtil.getTimeStr('%Y-%m-%d'), '%Y-%m-%d') <= 0:
+            return CSVUtil.read_csv(ipo_cache, skip_rows=1)
+
+        try:
+            cn_new_stock_df = ak.stock_new_ipo_cninfo()
+
+            # 数据清洗：过滤空值，格式化日期
+            cn_new_stock_df = cn_new_stock_df.dropna(subset=['申购日期'])
+            # 转换日期格式（可选，根据需求调整）
+            cn_new_stock_df['申购日期'] = pd.to_datetime(cn_new_stock_df['申购日期'], errors='coerce')
+            cn_new_stock_df['上市日期'] = pd.to_datetime(cn_new_stock_df['上市日期'], errors='coerce')
+            cn_new_stock_df['中签公告日'] = pd.to_datetime(cn_new_stock_df['中签公告日'], errors='coerce')
+            cn_new_stock_df['中签缴款日'] = pd.to_datetime(cn_new_stock_df['中签缴款日'], errors='coerce')
+
+            CSVUtil.to_csv(cn_new_stock_df, ipo_cache)
+            print(cn_new_stock_df)
+
+            return cn_new_stock_df
+        except Exception as e:
+            print(f"获取港股新股数据失败：{e}")
+            return pd.DataFrame()
+
 
 if __name__ == '__main__':
     # df = AkShareUtil.get_market_data('002651')
@@ -1213,4 +1260,5 @@ if __name__ == '__main__':
     # print(f'20250929-true: {AkShareUtil.is_today_can_trade(target_date="20250929", fmt=fmt)}')
 
     # 下载今日A股全部数据,并存储到本地文件中
-    print(AkShareUtil.stock_zh_a_spot_em())
+    # print(AkShareUtil.stock_zh_a_spot_em())
+    print(AkShareUtil.stock_new_ipo_cninfo())
