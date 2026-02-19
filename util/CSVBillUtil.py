@@ -68,13 +68,17 @@ class CSVBillUtil(object):
         self.df_zfb = None  # 支付宝账单合并后的总dataframe
         self.df_all = None  # 微信 & 支付宝 账单最终合并后的总dataframe
 
-    def merge_wx_csv(self, output_csv_name: str = 'merge_bill_wx', valid_name_pattern=r'微信支付') -> pd.DataFrame:
+    def merge_wx_csv(self, output_csv_name: str = 'merge_bill_wx', valid_name_pattern=r'微信支付') -> Optional[pd.DataFrame]:
         """
         :param output_csv_name: 合并微信账单后生成的csv文件名, 若传空, 则不保存成文件
         :param valid_name_pattern: 要合并的csv文件名(包含后缀)要满足的正则表达式
         """
         # 合并所有微信的账单记录
         _df_wx = CSVUtil.merge_csv_in_dir(self.csv_dir, '', self.unique_col, usecols=self.usecols, skip_rows=16, valid_name_pattern=valid_name_pattern)
+        if _df_wx is None or _df_wx.empty:
+            print('微信账单为空')
+            return _df_wx
+
         _df_wx['金额(元)'] = _df_wx['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
         if self.ignore_family_card:
             _df_wx = _df_wx[~_df_wx['支付方式'].str.contains('亲属卡|亲情卡', na=False)]  # na=False表示将NaN值视为不包含
@@ -84,11 +88,13 @@ class CSVBillUtil(object):
         if self.df_wx is not None:
             self.df_wx = pd.concat([self.df_wx, _df_wx], ignore_index=True)
             CSVUtil.deduplicate(self.df_wx, self.unique_col)
+            # 按照 '交易时间' 列进行升序排序
+            self.df_wx = self.df_wx.sort_values(by='交易时间', ascending=True)
         else:
             self.df_wx = _df_wx
         return _df_wx
 
-    def merge_zfb_csv(self, output_csv_name: str = 'merge_bill_zfb', valid_name_pattern=r'支付宝') -> pd.DataFrame:
+    def merge_zfb_csv(self, output_csv_name: str = 'merge_bill_zfb', valid_name_pattern=r'支付宝') -> Optional[pd.DataFrame]:
         """
         合并支付宝对账单, 并将其列名改为与微信一致后, 保存为 merge_bill_zfb.csv
         :param output_csv_name: 合并微信账单后生成的csv文件名(不行 .csv 后缀), 若传空, 则不保存成文件
@@ -106,6 +112,10 @@ class CSVBillUtil(object):
         # 合并所有微信的账单记录
         _df_zfb = CSVUtil.merge_csv_in_dir(self.csv_dir, '', self.unique_col, rename_cols=rename_cols, usecols=self.usecols,
                                            skip_rows=24, valid_name_pattern=valid_name_pattern, src_encoding='GBK')
+        if _df_zfb is None or _df_zfb.empty:
+            print('支付宝账单为空')
+            return _df_zfb
+
         _df_zfb['金额(元)'] = _df_zfb['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
         if self.ignore_family_card:
             _df_zfb = _df_zfb[~_df_zfb['支付方式'].str.contains('亲属卡|亲情卡', na=False)]  # na=False表示将NaN值视为不包含
@@ -116,6 +126,9 @@ class CSVBillUtil(object):
         if self.df_zfb is not None:
             self.df_zfb = pd.concat([self.df_zfb, _df_zfb], ignore_index=True)
             self.df_zfb = CSVUtil.deduplicate(self.df_zfb, self.unique_col)
+            # 按照 '交易时间' 列进行升序排序
+            self.df_zfb = self.df_zfb.sort_values(by='交易时间', ascending=True)
+
         else:
             self.df_zfb = _df_zfb
         return _df_zfb
@@ -149,6 +162,9 @@ class CSVBillUtil(object):
             _df_all = pd.concat(df_list, ignore_index=True)
             _df_all['金额(元)'] = _df_all['金额(元)'].apply(lambda x: float(str(x).replace('¥', '').replace(',', '')))  # 去掉 ¥ 符号并转换为浮点数
             _df_all = CSVUtil.deduplicate(_df_all, self.unique_col)
+            # 按照 '交易时间' 列进行升序排序
+            _df_all = _df_all.sort_values(by='交易时间', ascending=True)
+
             if not CommonUtil.isNoneOrBlank(output_csv_name) and need_save:
                 CSVUtil.to_csv(_df_all, f'{self.csv_dir}/{output_csv_name}.csv', index=False)
         self.df_all = _df_all
@@ -752,6 +768,9 @@ def main():
             break
 
         names = CSVBillUtil.find_matching_counterparties(df_all, name)
+        if len(names) == 0:
+            print(f'未找到匹配的别名！请检查输入的姓名是否正确！')
+            continue
         names_str = names[0]
         dict_special = CSVBillUtil.query_counterparty_stats(df_all, names)
 
