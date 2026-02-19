@@ -279,38 +279,42 @@ class CSVBillUtil(object):
 
         # 年度统计
         yearly_stats = party_transactions.groupby(['年份', '收/支'])['金额(元)'].agg(['sum', 'count']).unstack(fill_value=0)
-        # 获取实际的列数
-        col_count = len(yearly_stats.columns)
-        # 根据实际列数设置列名
-        if col_count == 4:
-            yearly_stats.columns = ['收入金额', '收入次数', '支出金额', '支出次数']
-        else:
-            # 如果列数不匹配，使用原始的多级列名
-            yearly_stats.columns = [f"{col[0]}_{col[1]}" for col in yearly_stats.columns]
-
-        yearly_stats = yearly_stats.reset_index()  # 将年份从索引转为列
-        if '收入金额' in yearly_stats.columns and '支出金额' in yearly_stats.columns:
+        # 处理多级列名
+        yearly_stats.columns = [f"{col[1]}_{col[0]}" for col in yearly_stats.columns]  # 交换层级顺序
+        # 重命名列
+        yearly_stats = yearly_stats.rename(columns={
+            '收入_sum': '收入金额',
+            '收入_count': '收入次数',
+            '支出_sum': '支出金额',
+            '支出_count': '支出次数'
+        })
+        # 确保列重命名完成后再计算净额
+        if all(col in yearly_stats.columns for col in ['收入金额', '支出金额']):
             yearly_stats['净额'] = yearly_stats['收入金额'] - yearly_stats['支出金额']
         else:
-            yearly_stats['净额'] = yearly_stats.get('sum_收入', 0) - yearly_stats.get('sum_支出', 0)
+            # 如果列名不匹配，使用原始列名计算
+            yearly_stats['净额'] = yearly_stats.get('收入_sum', 0) - yearly_stats.get('支出_sum', 0)
+        yearly_stats = yearly_stats.reset_index()  # 将年份从索引转为列
         yearly_stats = yearly_stats.sort_values('年份', ascending=False)
 
         # 月度统计
         monthly_stats = party_transactions.groupby(['年份', '月份', '收/支'])['金额(元)'].agg(['sum', 'count']).unstack(fill_value=0)
-        # 获取实际的列数
-        col_count = len(monthly_stats.columns)
-        # 根据实际列数设置列名
-        if col_count == 4:
-            monthly_stats.columns = ['收入金额', '收入次数', '支出金额', '支出次数']
-        else:
-            # 如果列数不匹配，使用原始的多级列名
-            monthly_stats.columns = [f"{col[0]}_{col[1]}" for col in monthly_stats.columns]
-
-        monthly_stats = monthly_stats.reset_index()  # 将年份和月份从索引转为列
-        if '收入金额' in monthly_stats.columns and '支出金额' in monthly_stats.columns:
+        # 处理多级列名
+        monthly_stats.columns = [f"{col[0]}_{col[1]}" for col in monthly_stats.columns]  # 保持原始顺序
+        # 重命名列
+        monthly_stats = monthly_stats.rename(columns={
+            '收入_sum': '收入金额',
+            '收入_count': '收入次数',
+            '支出_sum': '支出金额',
+            '支出_count': '支出次数'
+        })
+        # 确保列重命名完成后再计算净额
+        if all(col in monthly_stats.columns for col in ['收入金额', '支出金额']):
             monthly_stats['净额'] = monthly_stats['收入金额'] - monthly_stats['支出金额']
         else:
-            monthly_stats['净额'] = monthly_stats.get('sum_收入', 0) - monthly_stats.get('sum_支出', 0)
+            # 如果列名不匹配，使用原始列名计算
+            monthly_stats['净额'] = monthly_stats.get('收入_sum', 0) - monthly_stats.get('支出_sum', 0)
+        monthly_stats = monthly_stats.reset_index()  # 将年份和月份从索引转为列
         monthly_stats = monthly_stats.sort_values(['年份', '月份'], ascending=False)
 
         # 只保留整数, 四舍五入
