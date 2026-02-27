@@ -5,7 +5,7 @@
 自动更新指定目录及下一级目录下的git仓库代码
 具体以 config.ini 文件配置信息为准
 """
-import getopt
+import argparse
 import os
 import sys
 from abc import abstractmethod
@@ -21,7 +21,6 @@ from util.CommonUtil import CommonUtil
 from base.Interfaces import Runnable, TagGenerator
 from util.FileUtil import FileUtil
 from base.TaskManager import TaskManager, TaskParam, TaskLifeCycle
-from extra_tasks.import_all import *  # 用于触发装饰器
 
 
 class BaseConfig(Runnable, TagGenerator):
@@ -59,19 +58,26 @@ class BaseConfig(Runnable, TagGenerator):
         sectionItemValues = list()
         if not CommonUtil.isNoneOrBlank(configLongOpt):
             try:
-                opts, args = getopt.getopt(sys.argv[1:], '%s:%s:' % (configShortOpt, configItemShortOpt),
-                                           ['%s=' % configLongOpt, '%s=' % configItemLongOpt])
-                if opts is None or len(opts) == 0:
-                    print("opts is none, use default config path=%s" % configPath)
+                # 使用 argparse，自动忽略未知参数
+                parser = argparse.ArgumentParser(add_help=False)
+                parser.add_argument(f'-{configShortOpt}', f'--{configLongOpt}', dest='config')
+                parser.add_argument(f'-{configItemShortOpt}', f'--{configItemLongOpt}', 
+                                   dest='param', action='append')
+                # parse_known_args 会自动忽略未知参数
+                args, _ = parser.parse_known_args()
+                
+                if args.config:
+                    optPath = args.config
+                    print(f"config parameter found: {optPath}")
                 else:
-                    for name, value in opts:
-                        if name in ['-%s' % configShortOpt, '--%s' % configLongOpt]:
-                            optPath = value
-                        elif name in ['-%s' % configItemShortOpt, '--%s' % configItemLongOpt]:
-                            if splitFlag in value:
-                                sectionItemValues.append(value)
-            except getopt.GetoptError as e:
-                print("getopt error %s" % e)
+                    print(f"no config parameter found, use default config path={configPath}")
+                
+                if args.param:
+                    for value in args.param:
+                        if splitFlag in value:
+                            sectionItemValues.append(value)
+            except Exception as e:
+                print(f"parse argv error: {e}")
 
         if CommonUtil.isNoneOrBlank(optPath):
             optPath = configPath
@@ -81,7 +87,7 @@ class BaseConfig(Runnable, TagGenerator):
 
         self.configPath = optPath if optFirst else configPath
 
-        print('\nconfigPath=%s' % configPath)
+        print(f'\nconfigPath={self.configPath}')
         print(''.join(FileUtil.readFile(self.configPath)))
         self.configParser = NewConfigParser(allow_no_value=True, delimiters=delimiters).initPath(self.configPath)
 
@@ -174,7 +180,7 @@ class BaseConfig(Runnable, TagGenerator):
             return
 
         if len(printSectionSet) == 0:  # 返回空列表表示打印全部内容
-            # print('all config content is:\n%s' % ''.join(allLines))
+            # print(f'all config content:\n{"".join(allLines)}')
             printSectionSet = set(self.configParser.sections())
 
         shouldPrint = False  # 当前section西西里是否需要打印
@@ -194,12 +200,12 @@ class BaseConfig(Runnable, TagGenerator):
                 if not hasPrintTip:
                     print('\n# 其他动态新增的参数如下:')
                     hasPrintTip = True
-                print('%s=%s' % (key, lastSectonDict.get(key, '')))
+                print(f'{key}={lastSectonDict.get(key, "")}')
             if hasPrintTip:
                 print('')
 
         for index in range(lineCount):
-            line = ('%s' % allLines[index]).strip()
+            line = f'{allLines[index]}'.strip()
             # 检测当前行信息是 section
             curLineIsASectionName = line.startswith('[') and line.endswith(']') and len(line) > 3
 
@@ -222,7 +228,7 @@ class BaseConfig(Runnable, TagGenerator):
                     arr = line.split('=')
                     key = arr[0].strip()
                     value = self.configParser.getSectionItems(curSectionName).get(key, '')
-                    print('%s=%s' % (key, value))
+                    print(f'{key}={value}')
                     hashPrintKeySet.add(key)
 
                 # 当前已是最后一行,则打印动态传入本section的其他参数信息

@@ -5,8 +5,9 @@ import os
 import stat
 import traceback
 from pathlib import Path
-from util.FileUtil import FileUtil
+
 from util.CommonUtil import CommonUtil
+from util.FileUtil import FileUtil
 
 
 class SSHUtil(object):

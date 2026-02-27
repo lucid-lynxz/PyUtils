@@ -4,11 +4,11 @@
 import asyncio
 import threading
 import time
-from typing import Callable, Union, List, Set
+from typing import Callable, Union, List
 
 
 class DelayedTaskManager:
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         # 存储待执行的任务，键为任务ID，值为Timer对象
         self.tasks = {}  # 同步任务
         self.asyncTasks = {}  # 异步任务
@@ -19,6 +19,8 @@ class DelayedTaskManager:
         self.dependents = {}  # {task_id: set of dependent task ids}    存储每个任务被哪些任务依赖
         self.completed_tasks = set()  # 已完成的任务
         self.pending_tasks = {}  # 等待依赖满足的任务 {task_id: task_info}
+
+        self.debug: bool = debug  # 是否打印调试信息
 
     def addTask(self, delay_seconds: int, func: Callable, *args, **kwargs) -> int:
         """
@@ -127,7 +129,8 @@ class DelayedTaskManager:
             timer = self.tasks[task_id]
             timer.cancel()
             del self.tasks[task_id]
-            print(f"同步任务 {task_id} 已取消")
+            if self.debug:
+                print(f"同步任务 {task_id} 已取消")
             return True
         return False
 
@@ -178,7 +181,8 @@ class DelayedTaskManager:
                 else:
                     func(*args, **kwargs)
             except asyncio.CancelledError:
-                print(f"任务 {task_id} 被取消")
+                if self.debug:
+                    print(f"任务 {task_id} 被取消")
                 raise
             finally:
                 self._mark_task_completed(task_id)
@@ -217,7 +221,8 @@ class DelayedTaskManager:
             task = self.asyncTasks[task_id]
             task.cancel()
             del self.asyncTasks[task_id]
-            print(f"异步任务 {task_id} 已取消")
+            if self.debug:
+                print(f"异步任务 {task_id} 已取消")
             return True
         return False
 

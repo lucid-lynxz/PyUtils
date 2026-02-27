@@ -101,7 +101,7 @@ class GetLogImpl(BaseConfig):
 
         # 创建本机中日志保存子目录
         # 要提取保存在本机中的路径
-        timeFormat = self.configParser.getSecionValue(sectionName, keytimeFormat,"%Y%m%d_%H%M%S")
+        timeFormat = self.configParser.getSecionValue(sectionName, keytimeFormat, "%Y%m%d_%H%M%S")
         timeInfo = TimeUtil.getTimeStr(timeFormat)
         saveDirPath = FileUtil.recookPath('%s/%s/' % (save_parent_dir, timeInfo))
         FileUtil.makeDir(saveDirPath)
@@ -122,8 +122,9 @@ class GetLogImpl(BaseConfig):
             if FileUtil.isDirPath(localLogPath):
                 FileUtil.makeDir(localLogPath)
 
-            print('正在提取日志:%s' % logPath)
-            adbUtil.pull(logPath, localLogPath, targetDeviceId, printCmdInfo=print_log)
+            if adbUtil.isFileExist(logPath, su=True):
+                print('正在提取日志:%s' % logPath)
+                adbUtil.pull(logPath, localLogPath, targetDeviceId, printCmdInfo=print_log)
 
         print('提取anr日志')
         adbUtil.pullANRFile(saveDirPath, targetDeviceId, printCmdInfo=print_log)

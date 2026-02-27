@@ -117,6 +117,12 @@ if [ -z "$finalPythonCmd" ]; then
 fi
 echo "final python3 command:$finalPythonCmd"
 
+# 非内聚的python3时,按需安装必要的依赖
+# 主要是 extra_tasks/ 中的脚本都会被导入,相关依赖需要安装
+if [[ $finalPythonCmd != $python3CmdInner ]]; then
+  $finalPythonCmd -m pip install pycryptodome zstd -i https://pypi.tuna.tsinghua.edu.cn/simple
+fi
+
 # 获取其他参数(剔除有特定含义的参数1和2)并透传到python脚本中
 otherParams=${@/$1/}
 otherParams=${otherParams/$2/}
@@ -131,13 +137,23 @@ fi
 
 # 执行命令
 echo "$finalPythonCmd $cmdContent"
-which $finalPythonCmd
-#$finalPythonCmd --version
-
 $finalPythonCmd $cmdContent
 
 #$SHELL
-secs=10
-echo will exit after $secs secs
-sleep $secs
+# 从参数中获取等待退出时间，默认为5秒
+# 参数格式：--exit-secs=0 或 --exit-secs=10
+exit_secs=5
+# 检查参数中是否包含 --exit-secs=
+for param in "$@"; do
+  if [[ $param == --exit-secs=* ]]; then
+    exit_secs=${param#--exit-secs=}
+    break
+  fi
+done
+
+# 只有当 exit_secs > 0 时才进行 echo 和 sleep
+if [ $exit_secs -gt 0 ]; then
+  echo will exit after $exit_secs secs
+  sleep $exit_secs
+fi
 exit

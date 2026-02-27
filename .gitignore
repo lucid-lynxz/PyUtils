@@ -5,3 +5,5 @@ test.py
 **/espressoAutoCmd.bat
 **/__pycache__
 assets/imgCache/*
+d:/
+**/ignore_*
