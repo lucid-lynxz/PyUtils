@@ -57,8 +57,8 @@ class ClearLogImpl(BaseConfig):
                 regularPathList.append(rPath)
                 continue
             print('正在删除日志:%s' % logPath)
-            if adbUtil.isFileExist(logPath):
-                adbUtil.exeShellCmds(['su', 'rm -r %s' % logPath], targetDeviceId, printCmdInfo=False)
+            if adbUtil.isFileExist(logPath, su=True):
+                adbUtil.deleteFromPhone(logPath, targetDeviceId)
 
         # 根据正则路径,删除相关日志
         subRegularFileList = list()
@@ -72,7 +72,7 @@ class ClearLogImpl(BaseConfig):
             stdout, stderr = adbUtil.exeShellCmds(['ls %s' % parentDirPath],
                                                   deviceId=targetDeviceId,
                                                   printCmdInfo=False)
-            if stderr is not None:
+            if not CommonUtil.isNoneOrBlank(stderr):
                 print('获取子文件名列表失败 stderr=%s' % stderr)
                 break
 

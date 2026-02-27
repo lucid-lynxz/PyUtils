@@ -170,7 +170,7 @@ class FileUtil(object):
         return path.endswith("/") or path.endswith("\\")
 
     @staticmethod
-    def copy(src: str, dst: str, keep_metadata: bool = False):
+    def copy(src: str, dst: str, keep_metadata: bool = False, printLog: bool = False):
         """
         复制文件到指定位置
         :param src: 源文件, 要求文件存在, 若是目录, 则 dst 也必须是目录, 且目录本身不会复制
@@ -189,15 +189,20 @@ class FileUtil(object):
             if FileUtil.isFileExist(dst):
                 for fileItem in FileUtil.listAllFilePath(src):
                     fileName, _, _ = FileUtil.getFileName(fileItem)
+                    dst_path = FileUtil.recookPath('%s/%s' % (dst, fileName))
                     if FileUtil.isDirFile(fileItem):
-                        FileUtil.copy(fileItem, FileUtil.recookPath('%s/%s/' % (dst, fileName)))
-                    else:
-                        shutil.copy(fileItem, FileUtil.recookPath('%s/%s' % (dst, fileName)))
+                        dst_path = f'{dst_path}/'
+                    if printLog:
+                        CommonUtil.printLog(f"copy: {fileItem} --> {dst_path}")
+                    shutil.copy(fileItem, dst_path)
             else:
                 # dst目录不存在时, 直接使用copytree复制即可
+                if printLog:
+                    CommonUtil.printLog(f"copytree: {src} --> {dst}")
                 shutil.copytree(src, dst)
-            pass
         else:  # 普通文件, 直接复制
+            if printLog:
+                CommonUtil.printLog(f"copy: {src} --> {dst}")
             if keep_metadata:
                 shutil.copy2(src, dst)
             else:
@@ -441,6 +446,19 @@ class FileUtil(object):
         if system == 'Windows':
             # cmd = CommonUtil.changeSep('start %s' % picFolder)
             cmd = CommonUtil.changeSep('explorer.exe %s' % path)
+        else:
+            cmd = CommonUtil.changeSep('open %s' % path)
+        CommonUtil.exeCmd(cmd, printCmdInfo=False)
+
+    @staticmethod
+    def open_file(path: str):
+        """
+        打开给定路径的普通文件
+        :param path: 文件路径(目录无效)
+        """
+        system = platform.system()
+        if system == 'Windows':
+            cmd = CommonUtil.changeSep('start %s' % path)
         else:
             cmd = CommonUtil.changeSep('open %s' % path)
         CommonUtil.exeCmd(cmd, printCmdInfo=False)

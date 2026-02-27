@@ -96,30 +96,61 @@ class AdbUtil(object):
         :param deviceId:  设备号,若为空，则使用 adbUtil对象默认的 defaultDeviceId
         """
         deviceId = self.defaultDeviceId if CommonUtil.isNoneOrBlank(deviceId) else deviceId
-        return '' if CommonUtil.isNoneOrBlank(deviceId) else '-s %s' % deviceId
+        return '' if CommonUtil.isNoneOrBlank(deviceId) else f'-s {deviceId}'
 
-    def exeShellCmds(self, cmdArr: list, deviceId: str = None, printCmdInfo: bool = False) -> tuple:
+    def exeShellCmds(self, cmdArr: list, deviceId: str = None, printCmdInfo: bool = False, autoRetryWithRoot: bool = True, force_su: bool = False) -> tuple:
         """
         在 adb shell 中执行cmd列表命令
         :param cmdArr: 命令列表,如 ["su","ls","exit"], 会自动拼接成 adb -s deviceId shell ***
         :param deviceId: 若同时连接多台设备,则需要给出设备id
         :param printCmdInfo:执行命令时是否打印命令内容
+        :param autoRetryWithRoot: 当遇到权限错误时,是否自动尝试使用root权限重试
+        :param force_su: 是否直接使用su模式执行命令,默认False,失败后按需重试
         :return: tuple(stdout,stderr)
         """
+        # 如果 force_su=True，直接在命令前添加 su -c
+        # 需要检查是否已经包含 su -c，避免重复添加
+        if force_su:
+            # 检查是否已经以 su 开头，避免重复添加
+            if len(cmdArr) >= 2 and cmdArr[0] == 'su' and cmdArr[1] == '-c':
+                # 已经包含 su -c，不需要重复添加
+                pass
+            else:
+                # 将原命令包装在 su -c 中
+                cmdArr = ['su', '-c'] + [' '.join(cmdArr)]
+
         cmd_adb_shell = '%s %s shell' % (self.adbPath, self._getDeviceIdOpt(deviceId))
         ori_cmd = '%s %s' % (cmd_adb_shell, ' '.join(cmdArr))
         cmdArr.append('exit')
-        pipe = subprocess.Popen(cmd_adb_shell, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
+        pipe = subprocess.Popen(cmd_adb_shell, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         cmds_str = '\n'.join(cmdArr)
         cmds_str = '%s\n' % cmds_str
         if printCmdInfo:
             print('exeAdbCmd: %s' % ori_cmd)
         stdout, stderr = pipe.communicate(cmds_str.encode())
-        stdout = None if stdout is None else stdout.decode().strip()
-        stderr = None if stderr is None else stderr.decode().strip()
+        stdout = None if CommonUtil.isNoneOrBlank(stdout) else stdout.decode().strip()
+        stderr = None if CommonUtil.isNoneOrBlank(stderr) else stderr.decode().strip()
         result: str = stderr if CommonUtil.isNoneOrBlank(stdout) else stdout
+        result = '' if result is None else result
         if printCmdInfo and not CommonUtil.isNoneOrBlank(result):
             print(result)
+
+        # 如果启用了自动重试,且遇到权限错误,则尝试使用root权限重试
+        # 注意：Permission denied 可能出现在 stdout 或 stderr 中
+        permission_denied = 'Permission denied' in result
+        if not force_su and autoRetryWithRoot and permission_denied:
+            # 检查是否已经有su命令,避免重复添加
+            if cmdArr[0] != 'su' or (len(cmdArr) > 1 and cmdArr[1] != '-c'):
+                # 判断设备是否有root权限
+                if self.hasRoot(deviceId):
+                    if printCmdInfo:
+                        print('检测到权限错误,设备有root权限,使用su命令重试')
+                    # 移除之前添加的exit
+                    cmdArr = cmdArr[:-1]
+                    # 添加su命令
+                    newCmdArr = ['su'] + cmdArr
+                    return self.exeShellCmds(newCmdArr, deviceId, printCmdInfo, autoRetryWithRoot=False)
+
         return stdout, stderr
 
     def pull(self, src: str, dst: str = ".", deviceId: str = None, printCmdInfo: bool = True):
@@ -241,17 +272,42 @@ class AdbUtil(object):
         #     print('getLogcatInfo try get tombstone info fail: %s' % e)
         return self
 
-    def isFileExist(self, pathInPhone: str, deviceId: str = None) -> bool:
+    def isFileExist(self, pathInPhone: str, deviceId: str = None, su: bool = False) -> bool:
         """
         判断手机中的文件是否存在
+        @param pathInPhone: 手机中的文件路径
+        @param deviceId: 手机设备序列号
+        @param su: 是否使用su权限
         """
         if CommonUtil.isNoneOrBlank(pathInPhone):
             return False
-        # '2>&1' 表示把标准错误 stderr 重定向到标准输出 stdout
-        cmd = "%s %s shell ls %s 2>&1" % (self.adbPath, self._getDeviceIdOpt(deviceId), pathInPhone)
-        result = CommonUtil.exeCmd(cmd, printCmdInfo=False)
-        # print('isFileExist %s' % result)
+
+        stdout, stderr = self.exeShellCmds(['ls', pathInPhone], deviceId, printCmdInfo=False, force_su=su)
+
+        # 检查返回结果
+        result = stderr if CommonUtil.isNoneOrBlank(stdout) else stdout
         return not CommonUtil.isNoneOrBlank(result) and 'No such file or directory' not in result
+
+    def hasRoot(self, deviceId: str = None) -> bool:
+        """
+        判断手机是否具有root权限
+        :param deviceId: 手机设备序列号
+        :return: True表示有root权限，False表示无root权限
+        """
+        try:
+            # 尝试执行 su -c "id" 命令，如果成功返回包含 uid=0 的信息，说明有root权限
+            stdout, stderr = self.exeShellCmds(['su', '-c', 'id'], deviceId, printCmdInfo=False)
+            # 检查返回结果中是否包含 uid=0(root)
+            if not CommonUtil.isNoneOrBlank(stdout) and 'uid=0' in stdout:
+                return True
+            # 检查stderr，如果包含 "not found" 或 "permission denied" 说明没有root权限
+            if not CommonUtil.isNoneOrBlank(stderr):
+                if 'not found' in stderr.lower() or 'permission denied' in stderr.lower():
+                    return False
+            return False
+        except Exception as e:
+            CommonUtil.printLog(f'hasRoot exception: {e}')
+            return False
 
     def getFileList(self, parentPathInPhone: str, regexFileName: str = None, deviceId: str = None) -> list:
         """
@@ -345,18 +401,17 @@ class AdbUtil(object):
         self.exeShellCmds(cmd_delete, deviceId, printCmdInfo=printCmdInfo)
         return self
 
-    def deleteFromPhone(self, absPath: str, deviceId: str = None) -> str:
+    def deleteFromPhone(self, absPath: str, deviceId: str = None, printCmdInfo: bool = False) -> str:
         """
         删除手机指定的文件/目录
         :param absPath: 待删除的文件路径(可以是目录)
         :param deviceId: 设备id,当前有多台设备连接时需要指定
         :return:
         """
-        if self.isFileExist(absPath, deviceId):
-            cmd = "%s %s shell rm -r %s" % (self.adbPath, self._getDeviceIdOpt(deviceId), absPath)
-            return CommonUtil.exeCmd(cmd, printCmdInfo=False)
-        else:
-            return '文件不存在 %s' % absPath
+        stdout, stderr = self.exeShellCmds([f'rm -r {absPath}'], deviceId, printCmdInfo=printCmdInfo)
+        if CommonUtil.isNoneOrBlank(stdout):
+            return stderr
+        return stdout
 
     def installApk(self, apkPath: str, deviceId: str = None, onlyForTest: bool = False) -> bool:
         """

@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
 import json
-import functools
+import functools, logging
 import importlib.util
 import os, sys, threading, time, re
 import platform, random
@@ -22,6 +22,7 @@ class CommonUtil(object):
     #     :return:
     #     """
     #     return srcStr.decode(srcEncode).encode(toEncode)
+
     _redirect_log_fun = None
 
     @staticmethod
@@ -140,8 +141,8 @@ class CommonUtil(object):
         异步执行shell命令, 可得到进程信息, 如pid (_process.pid)
         :param cmd: 待执行的命令, 对于单个命令, 可以直接传入字符串, 对于带参命令, 需要传入列表
             比如直接传入 'scrcpy' 可以运行该命令
-            但若有带参, 如: 'scrcpy --audio-source=output --audio-codec=aac --record abc.mp4' 在需要传入list, 以空格进行切分,最终如下:
-            ['scrcpy', '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4']
+            但若有带参, 如: 'scrcpy  --serial xxx --audio-source=output --audio-codec=aac --record abc.mp4' 在需要传入list, 以空格进行切分,最终如下:
+            ['scrcpy', '--serial', 'xxx',  '--audio-source=output', '--audio-codec=aac', '--record', 'abc.mp4']
         """
         # _process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         _process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
@@ -171,7 +172,7 @@ class CommonUtil(object):
             return -1, f"Error getting command result: {str(e)}"
 
     @staticmethod
-    def stopProcess(process):
+    def stopProcess(process, print_log: bool = True):
         try:
             if sys.platform == 'win32':
                 # Windows approach
@@ -179,18 +180,18 @@ class CommonUtil(object):
             else:
                 # Unix/Linux approach
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            CommonUtil.printLog(f"killPid success:{process.pid}")
+            CommonUtil.printLog(f"killPid success:{process.pid}", print_log)
         except Exception as e:
             print(f"Error stopping process: {e}")
             return False
         return True
 
     @staticmethod
-    def killPid(pid: int) -> bool:
+    def killPid(pid: int, print_log: bool = True) -> bool:
         try:
             # 发送终止信号
             os.killpg(os.getpgid(pid), signal.SIGTERM)
-            CommonUtil.printLog(f"killPid success:{pid}")
+            CommonUtil.printLog(f"killPid success:{pid}", print_log)
             return True
         except Exception as e:
             CommonUtil.printLog(f"killPid exception:{pid}\n{e}".strip())
@@ -640,11 +641,137 @@ class CommonUtil(object):
             return json.dumps(data, indent=json_indent)
         return kv_sep_flag.join(f"{k}: {v}" for k, v in data.items())
 
+    @staticmethod
+    def starts_with_chinese(text) -> bool:
+        """检测文本是否以中文字符开头"""
+        if not text:
+            return False
+        first_char = text[0]
+        # 中文字符的 Unicode 范围
+        return '\u4e00' <= first_char <= '\u9fff'
+
+    @staticmethod
+    def contains_chinese(text) -> bool:
+        """检测文本是否包含中文字符"""
+        if not text:
+            return False
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':
+                return True
+        return False
+
+    @staticmethod
+    def is_lon_lat(text) -> bool:
+        """判断字符串是否为经纬度格式"""
+        # 匹配模式：数字.数字,数字.数字 或 数字,数字
+        pattern = r'^-?\d+\.?\d*,\s*-?\d+\.?\d*$'
+        return bool(re.match(pattern, text))
+
+    _logger = None  # 即写入日志文件也打印到控制台
+    _file_only_logger = None  # 只写入到文件
+    _console_only_logger = None  # 只输出到控制台的 logger
+
+    @staticmethod
+    def setup_logging(log_dir: str, log_name: str, fmt: str = '%(asctime)s %(message)s'):
+        """
+        设置日志记录器
+        @param log_dir: 日志目录
+        @param log_name: 日志文件名, 会自动追加 .log 后缀
+        @param fmt: 日志格式
+        """
+        if CommonUtil._logger is not None:
+            return CommonUtil._logger
+
+        # 使用点号而不是逗号的 formatter
+        # formatter = logging.Formatter(fmt)
+        class DotMillisecondFormatter(logging.Formatter):
+            def formatTime(self, record, datefmt=None):
+                if datefmt:
+                    s = time.strftime(datefmt, self.converter(record.created))
+                else:
+                    t = time.strftime(self.default_time_format, self.converter(record.created))
+                    s = "%s.%03d" % (t, record.msecs)  # 使用点号
+                return s
+
+        formatter = DotMillisecondFormatter(fmt)
+
+        # 创建共享的 FileHandler
+        file_handler = logging.FileHandler(f'{log_dir}/{log_name}.log', encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+
+        # 创建只输出到控制台的 StreamHandler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+
+        # 配置主 logger，同时输出到文件和控制台
+        logging.basicConfig(level=logging.INFO, format=fmt, handlers=[file_handler, console_handler])
+        CommonUtil._logger = logging.getLogger(log_name)
+
+        # 创建一个只写入文件的日志记录器，用于需要静默记录的日志
+        CommonUtil._file_only_logger = logging.getLogger(f'{log_name}_file_only')
+        CommonUtil._file_only_logger.setLevel(logging.INFO)
+        CommonUtil._file_only_logger.addHandler(file_handler)  # 共享同一个 FileHandler
+        CommonUtil._file_only_logger.propagate = False  # 不传播到父日志记录器
+
+        # 创建一个只输出到控制台的日志记录器，不写入文件
+        CommonUtil._console_only_logger = logging.getLogger(f'{log_name}_console_only')
+        CommonUtil._console_only_logger.setLevel(logging.INFO)
+        CommonUtil._console_only_logger.addHandler(console_handler)  # 只添加 StreamHandler
+        CommonUtil._console_only_logger.propagate = False  # 不传播到父日志记录器
+
+        def redirect_log(msg):
+            try:
+                CommonUtil._logger.info(msg)
+            except Exception as e:
+                CommonUtil.printLog(f'redirect_log 出错:{e}', prefer_redirect_log=False)
+
+        CommonUtil.redirect_print_log(redirect_log)
+
+        # 重定向 sys.stdout 使所有 print() 语句都写入日志
+        class StdoutRedirector:
+            def __init__(self, original_stdout):
+                self.original_stdout = original_stdout
+                self.logger = CommonUtil._logger
+
+            def write(self, text):
+                if text.strip():  # 忽略空行
+                    self.logger.warning(text.rstrip('\n'))
+                self.original_stdout.write(text)
+
+            def flush(self):
+                self.original_stdout.flush()
+
+        sys.stdout = StdoutRedirector(sys.stdout)
+        return CommonUtil._logger
+
+    @staticmethod
+    def print(msg: str, target: int = 0):
+        """
+        打印日志
+        @param msg: 打印内容
+        @param target: 打印目标
+                    0: 全部, 既输出到控制台, 也写入到文件
+                    1: 只输出到控制台
+                    2: 只写入到文件
+                    注意: 需要先触发 setup_logging() 后才支持
+        """
+        if CommonUtil._logger is None or target == 0:
+            CommonUtil.printLog(msg)
+            return
+
+        if target == 1:  # 只输出到控制台
+            CommonUtil._console_only_logger.info(msg)
+        elif target == 2:  # 只写入到文件
+            CommonUtil._file_only_logger.info(msg)
+        else:
+            CommonUtil.printLog(msg)
+
 
 # 配置日志
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 # default_logger = logging.getLogger(__name__)
-
 
 def catch_exceptions(max_retries=0, retry_interval=1, logger=None):
     """
