@@ -33,6 +33,7 @@ class GetLogImpl(BaseConfig):
         keyExcludeDecrypt = 'auto_decrypt_log'  # 是否解密日志
         keyExcludeCompressFileLimitSize = 'compress_file_limit'  # 压缩包大小限制
         keyPrintLog = 'print_log'  # 是否打印日志
+        keyPreferId = 'prefer_id'  # 优先使用的设备序列号, 有多台手机设备存在, 且该序列号的手机是其中之一, 则直接使用该手机, 无需用户进行选择
 
         # 非待提取的日志路径参数
         notLogPathKeyList = list()
@@ -46,7 +47,9 @@ class GetLogImpl(BaseConfig):
         notLogPathKeyList.append(keyExcludeCompressFileLimitSize)
         notLogPathKeyList.append(keyExcludeDecrypt)
         notLogPathKeyList.append(keyPrintLog)
+        notLogPathKeyList.append(keyPreferId)
         print_log = 'True' == self.configParser.get(sectionName, keyPrintLog)
+        prefer_id = self.configParser.get(sectionName, keyPreferId)
 
         save_parent_dir = self.configParser.get(sectionName, keySaveDir)
         if CommonUtil.isNoneOrBlank(save_parent_dir):
@@ -84,7 +87,7 @@ class GetLogImpl(BaseConfig):
 
         # 对正则路径进行识别, 转化为待提取的绝对路径信息并追加到 pendingPullLogList 中
         adbUtil = AdbUtil()
-        targetDeviceId = adbUtil.choosePhone()  # 选择目标手机
+        targetDeviceId = adbUtil.choosePhone(prefer_id=prefer_id)  # 选择目标手机
         if len(pendingPullLogRegexList) > 0:
             for itemTuple in pendingPullLogRegexList:
                 logPath, localLogPath = itemTuple
