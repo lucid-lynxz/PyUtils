@@ -406,6 +406,37 @@ class CommonUtil(object):
         return _result
 
     @staticmethod
+    def get_input_with_timeout(prompt: str, default: str = "", timeout: int = 5) -> str:
+        """
+        获取用户输入，支持超时机制
+        注意：由于 Python 的 input() 限制，超时后用户仍需按回车键才能继续
+        :param prompt: 提示信息
+        :param default: 超时或输入为空时的默认值
+        :param timeout: 超时时间（秒）
+        :return: 用户输入或默认值
+        """
+        import threading
+        result = [default]
+
+        def input_thread_func():
+            try:
+                user_input = input(prompt)
+                result[0] = user_input.strip() if user_input.strip() else default
+            except:
+                pass
+
+        thread = threading.Thread(target=input_thread_func)
+        thread.daemon = True
+        thread.start()
+
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            print(f"\n[超时 {timeout}秒，使用默认值: {default}]")
+            print("提示: 请按回车键继续...")
+        return result[0]
+
+    @staticmethod
     def parse_number(
             s: str,
             target_type: Type[Number] = float,

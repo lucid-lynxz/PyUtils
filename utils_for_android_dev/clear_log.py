@@ -25,14 +25,21 @@ class ClearLogImpl(BaseConfig):
     def onRun(self):
         sectionName = 'clear_log'
         keyParentLogDirInPhone = 'parent_log_dir_in_phone'  # 手机中的日志父目录路径key
+        keyPreferId = 'prefer_id'  # 优先使用的设备序列号, 有多台手机设备存在, 且该序列号的手机是其中之一, 则直接使用该手机, 无需用户进行选择
+
+        # 非待提取的日志路径参数
+        notLogPathKeyList = list()
+        notLogPathKeyList.append(keyParentLogDirInPhone)
+        notLogPathKeyList.append(keyPreferId)
 
         parent_log_dir_in_phone = self.configParser.get(sectionName, keyParentLogDirInPhone)
         pullLogDict = self.configParser.getSectionItems(sectionName)
+        prefer_id = self.configParser.get(sectionName, keyPreferId)
 
         # 待清除的日志路径
         pendingPullLogList = list()
         for key in pullLogDict:
-            if key in [keyParentLogDirInPhone]:
+            if key in notLogPathKeyList:
                 continue
 
             key = FileUtil.recookPath(key)
@@ -47,7 +54,7 @@ class ClearLogImpl(BaseConfig):
 
         # 依次删除日志
         adbUtil = AdbUtil()
-        targetDeviceId = adbUtil.choosePhone()  # 选择待截图的手机信息
+        targetDeviceId = adbUtil.choosePhone(prefer_id=prefer_id)  # 选择待截图的手机信息
         regularPathList = list()  # 正则表达式路径
         for logPath in pendingPullLogList:
             if '*' in logPath:
@@ -76,12 +83,13 @@ class ClearLogImpl(BaseConfig):
                 print('获取子文件名列表失败 stderr=%s' % stderr)
                 break
 
-            for name in stdout.split():
-                print(f'name={name},fullName={fullName}')
-                name = CommonUtil.convert2str(name)
-                if re.search(r'%s' % fullName, name) is not None:
-                    path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))
-                    subRegularFileList.append(path)
+            if stdout is not None:
+                for name in stdout.split():
+                    print(f'name={name},fullName={fullName}')
+                    name = CommonUtil.convert2str(name)
+                    if re.search(r'%s' % fullName, name) is not None:
+                        path = FileUtil.recookPath('%s/%s' % (parentDirPath, name))
+                        subRegularFileList.append(path)
 
         for path in subRegularFileList:
             print('正在删除正则路径日志 %s' % path)
