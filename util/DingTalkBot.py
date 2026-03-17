@@ -76,17 +76,23 @@ class DingTalkBot:
         """
         return self.send_markdown(title=title, markdown_text=f"![{title}]({pic_url})", is_at_all=is_at_all)
 
-    def send_markdown(self, title: str, markdown_text: str, is_at_all: bool = False) -> Dict[str, Any]:
+    def send_markdown(self, title: str, markdown_text: str, is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
         """
         发送 Markdown 格式消息（支持图片和超链接）
+        若要在md中@所有人或者@特定人员, 可以在 markdown_text 中添加: '@xxx' 并按需配置 is_at_all 或 at_mobiles 列表
+        1. 在 markdown_text 添加 '@所有人' 文本, 并将 is_at_all设置为true
+        2. 在 markdown_text 添加 '@{手机号}' 文本, 并将 at_mobiles列表中添加该手机号
 
-        :param title: 消息会话列表中展示的标题，非消息体的标题
-        :param markdown_text: Markdown 内容
-        :param is_at_all: 是否@所有人
-        :return: 响应结果
+        @param title: 消息会话列表中展示的标题，非消息体的标题
+        @param markdown_text: Markdown 内容
+        @param is_at_all: 是否@所有人
+        @param at_mobiles: 要@的手机号
+        @return: 响应结果
         """
+        at_mobiles = [] if at_mobiles is None else at_mobiles
         data = {
             "at": {
+                "atMobiles": at_mobiles,
                 "isAtAll": is_at_all
             },
             "msgtype": "markdown",

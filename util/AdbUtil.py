@@ -75,6 +75,9 @@ class AdbUtil(object):
         :return: str 被选中的设备的序列号
         """
         ids, names = self.getAllDeviceId()
+        if len(ids) == 0:
+            print('未检测到设备,请检查设备是否连接正常,或确认adb服务是否正常启动')
+            return ""
         target_device_id = ids[0]  # 用户最终选定的设备,默认为第一台
         length = len(ids)
         if length > 1:
