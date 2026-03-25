@@ -68,10 +68,11 @@ class AdbUtil(object):
         availableDeviceIds, _ = self.getAllDeviceId()
         return deviceId in availableDeviceIds
 
-    def choosePhone(self, prefer_id: str = None) -> str:
+    def choosePhone(self, prefer_id: str = None, auto_first: bool = False) -> str:
         """
         自动检测当前连接的设备数,若有多台,则提示用户选择一台,并返回其设备id
         :param prefer_id: 优先选择的设备序列号, 若该设备存在于列表中,则直接返回该设备id
+        :param auto_first: 若prefer_id不存在时, 是否默认直接返回第一台在线的设备, 若为False,则需要用户自己选择
         :return: str 被选中的设备的序列号
         """
         ids, names = self.getAllDeviceId()
@@ -85,6 +86,10 @@ class AdbUtil(object):
                 if prefer_id in ids:
                     # print('检测到多台设备, 优先选择的 %s 设备已在线, 直接返回' % prefer_id)
                     return prefer_id
+
+            if auto_first:
+                # print('检测到多台设备, 已自动选择第一台设备 %s' % ids[0])
+                return ids[0]
 
             print('检测到有多台设备: ')
             for i in range(length):
