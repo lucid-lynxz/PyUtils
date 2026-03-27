@@ -334,6 +334,11 @@ class FileUtil(object):
             os.makedirs(folder_path)
 
     @staticmethod
+    def create_dir(path: str, recreateIfExist: bool = False) -> bool:
+        path = FileUtil.recookPath(f'{path}/')
+        return FileUtil.createFile(path, recreateIfExist)
+
+    @staticmethod
     def createFile(path: str, recreateIfExist: bool = False) -> bool:
         """
         创建文件
