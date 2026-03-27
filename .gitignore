@@ -7,3 +7,4 @@ test.py
 assets/imgCache/*
 d:/
 **/ignore_*
+**/.workBuddy/*
