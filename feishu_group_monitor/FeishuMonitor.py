@@ -381,7 +381,7 @@ class FeishuMonitor:
                 return ""
 
             prefix = f"{prefix}_" if prefix else ""
-            file_name = f"{prefix}{message_id}.png"
+            file_name = f"{prefix}{image_key}.png"
             file_path = FileUtil.recookPath(f'{save_dir}/{file_name}')
             with open(str(file_path), "wb") as f:
                 f.write(resp.file.read())

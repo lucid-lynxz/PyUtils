@@ -8,3 +8,5 @@ assets/imgCache/*
 d:/
 **/ignore_*
 **/.workBuddy/*
+**/.env
+**/.token.json
