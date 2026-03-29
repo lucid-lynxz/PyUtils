@@ -1,3 +1,9 @@
+import os
+import time
+import hmac
+import hashlib
+import base64
+import urllib.parse
 import requests
 from typing import Optional, Dict, Any
 from util.CommonUtil import CommonUtil
@@ -10,160 +16,210 @@ class DingTalkBot:
     文档:https://open.dingtalk.com/document/orgapp/custom-robots-send-group-messages
     """
 
-    def __init__(self, token: str, secret: str = None):
+    def __init__(self, token: str, secret: str = None,
+                 app_key: str = None, app_secret: str = None):
         """
         初始化钉钉机器人
-        :param token: 钉钉机器人的 Webhook URL 中的token信息
-        :param secret: 启用机器人加签模式,传入 secret参数
+
+        :param token:       钉钉机器人的 Webhook URL 中的 token
+        :param secret:      机器人加签密钥（可选）
+        :param app_key:     钉钉应用 AppKey（可选，用于 upload_media）
+        :param app_secret:  钉钉应用 AppSecret（可选，用于 upload_media）
         """
         _hook_host_url = 'https://oapi.dingtalk.com/robot/send'
         self.access_token: str = token
         self.secret: str = secret
+        self.app_key: str = app_key
+        self.app_secret: str = app_secret
         self.headers = {"Content-Type": "application/json"}
         self.webhook_url = f'{_hook_host_url}?access_token={token}'
+        # app_access_token 缓存
+        self._app_token: Optional[str] = None
+        self._app_token_expires_at: float = 0
 
-    def send_text(self, content: str, is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
-        """
-        发送纯文本消息
+    # ──────────────────────── 发消息 ────────────────────────
 
-        :param content: 文本内容
-        :param is_at_all: 是否@所有人
-        :return: 响应结果
-        """
+    def send_text(self, content: str, is_at_all: bool = False,
+                  at_mobiles: list = None) -> Dict[str, Any]:
+        """发送纯文本消息"""
         at_mobiles = [] if at_mobiles is None else at_mobiles
-        data = {
-            "at": {
-                "atMobiles": at_mobiles,
-                "atUserIds": [],
-                "isAtAll": is_at_all
-            },
-            "text": {
-                "content": content
-            },
-            "msgtype": "text"
-        }
+        return self._send({
+            "msgtype": "text",
+            "text": {"content": content},
+            "at": {"atMobiles": at_mobiles, "atUserIds": [], "isAtAll": is_at_all}
+        })
 
-        return self._send(data)
-
-    def send_link(self, title: str, message_url: str, text: str, pic_url: Optional[str] = None) -> Dict[str, Any]:
-        """
-        发送超链接卡片消息
-
-        :param title: 标题
-        :param message_url: 超链接地址
-        :param text: 消息正文
-        :param pic_url: 图片地址（可选）
-        :return: 响应结果
-        """
-        data = {
+    def send_link(self, title: str, message_url: str, text: str,
+                  pic_url: Optional[str] = None) -> Dict[str, Any]:
+        """发送超链接卡片消息"""
+        payload = {
             "msgtype": "link",
-            "link": {
-                "title": title,
-                "messageUrl": message_url,
-                "text": text
-            },
+            "link": {"title": title, "messageUrl": message_url, "text": text}
         }
         if pic_url:
-            data["link"]["picUrl"] = pic_url
-        return self._send(data)
+            payload["link"]["picUrl"] = pic_url
+        return self._send(payload)
 
-    def send_image(self, pic_url: str, title: str = 'image', is_at_all: bool = False) -> Dict[str, Any]:
+    def send_markdown(self, title: str, markdown_text: str,
+                      is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
         """
-        发送图片
-        :param pic_url: 图片网址
-        :param title: 图片标题, 请勿传空
-        :param is_at_all: 是否@所有人
-        """
-        return self.send_markdown(title=title, markdown_text=f"![{title}]({pic_url})", is_at_all=is_at_all)
-
-    def send_markdown(self, title: str, markdown_text: str, is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
-        """
-        发送 Markdown 格式消息（支持图片和超链接）
-        若要在md中@所有人或者@特定人员, 可以在 markdown_text 中添加: '@xxx' 并按需配置 is_at_all 或 at_mobiles 列表
-        1. 在 markdown_text 添加 '@所有人' 文本, 并将 is_at_all设置为true
-        2. 在 markdown_text 添加 '@{手机号}' 文本, 并将 at_mobiles列表中添加该手机号
-
-        @param title: 消息会话列表中展示的标题，非消息体的标题
-        @param markdown_text: Markdown 内容
-        @param is_at_all: 是否@所有人
-        @param at_mobiles: 要@的手机号
-        @return: 响应结果
+        发送 Markdown 消息（支持图片链接和超链接）
+        若要在 md 中@所有人或@特定人员：
+          1. 在 markdown_text 添加 '@所有人'，并设置 is_at_all=True
+          2. 在 markdown_text 添加 '@{手机号}'，并在 at_mobiles 列表中添加该手机号
         """
         at_mobiles = [] if at_mobiles is None else at_mobiles
-        data = {
-            "at": {
-                "atMobiles": at_mobiles,
-                "isAtAll": is_at_all
-            },
+        return self._send({
             "msgtype": "markdown",
-            "markdown": {
-                "title": title,
-                "text": markdown_text
-            }
-        }
-        return self._send(data)
+            "markdown": {"title": title, "text": markdown_text},
+            "at": {"atMobiles": at_mobiles, "isAtAll": is_at_all}
+        })
 
-    def _generate_url(self):
+    def send_image(self, pic_url: str, title: str = 'image',
+                   is_at_all: bool = False) -> Dict[str, Any]:
         """
-        生成钉钉机器人通知的url, 主要是处理加签模式下的url
+        发送图片（Markdown 链接形式，pic_url 需为可访问的在线地址）
+        如需上传本地图片，请使用 ImgUploader.upload_local_img()，
+        再将返回的 URL 传入本方法。
         """
+        return self.send_markdown(title=title,
+                                  markdown_text=f"![{title}]({pic_url})",
+                                  is_at_all=is_at_all)
+
+    # ──────────────────────── 钉钉原生 media upload ────────────────────────
+
+    def _get_app_access_token(self) -> Optional[str]:
+        """获取 app_access_token，带缓存（有效期约 2 小时，提前 5 分钟刷新）"""
+        now = time.time()
+        if self._app_token and now < self._app_token_expires_at - 300:
+            return self._app_token
+        if not self.app_key or not self.app_secret:
+            return None
+        try:
+            resp = requests.post(
+                "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+                headers={"Content-Type": "application/json"},
+                json={"appKey": self.app_key, "appSecret": self.app_secret},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            token = result.get("accessToken", "")
+            expire = int(result.get("expireIn", 7200))
+            if token:
+                self._app_token = token
+                self._app_token_expires_at = now + expire
+                return token
+        except Exception:
+            pass
+        return None
+
+    def upload_media(self, local_path: str) -> Optional[str]:
+        """
+        将本地图片上传到钉钉服务器，获取 media_id（永久有效）。
+        需要 app_key 和 app_secret 才可使用。
+
+        如需使用图床上传，请使用 ImgUploader.upload_local_img()。
+
+        :param local_path: 本地图片绝对路径
+        :return: media_id；失败返回 None
+        """
+        if not os.path.isfile(local_path):
+            CommonUtil.printLog(f"[DingTalkBot] upload_media: 文件不存在 {local_path}")
+            return None
+        size = os.path.getsize(local_path)
+        if size > 10 * 1024 * 1024:
+            CommonUtil.printLog(f"[DingTalkBot] upload_media: 文件超过 10MB")
+            return None
+        token = self._get_app_access_token()
+        if not token:
+            return None
+        filename = os.path.basename(local_path)
+        ext = os.path.splitext(filename)[-1].lower().lstrip(".")
+        allowed = {"jpg", "jpeg", "png", "gif", "bmp", "webp"}
+        mime = f"image/{ext}" if ext in allowed else "image/jpeg"
+        try:
+            with open(local_path, "rb") as f:
+                resp = requests.post(
+                    "https://api.dingtalk.com/v1.0/media/upload",
+                    headers={
+                        "x-acs-dingtalk-access-token": token,
+                        "Content-Type": "multipart/form-data",
+                    },
+                    files={"media": (filename, f, mime)},
+                    data={"fileName": filename, "fileSize": str(size)},
+                    timeout=30,
+                )
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("errcode", 0) == 0 or result.get("success"):
+                media_id = result.get("mediaId", "")
+                CommonUtil.printLog(f"[DingTalkBot] upload_media 成功: {media_id}")
+                return media_id
+            CommonUtil.printLog(f"[DingTalkBot] upload_media 失败: {result}")
+        except Exception as e:
+            CommonUtil.printLog(f"[DingTalkBot] upload_media 异常: {e}")
+        return None
+
+    def send_local_image(self, local_path: str,
+                         is_at_all: bool = False) -> Dict[str, Any]:
+        """
+        发送本地图片到钉钉群（仅限有 app_key/app_secret 的用户）。
+        如需使用图床上传，请使用 ImgUploader.upload_local_img()。
+        """
+        media_id = self.upload_media(local_path)
+        if not media_id:
+            return {"error": f"upload_media 失败: {local_path}"}
+        return self._send({
+            "msgtype": "image",
+            "image": {"media_id": media_id},
+            "at": {"isAtAll": is_at_all}
+        })
+
+    # ──────────────────────── 内部方法 ────────────────────────
+
+    def _generate_url(self) -> str:
+        """生成机器人发送消息的 URL（含加签）"""
         if CommonUtil.isNoneOrBlank(self.secret):
             return self.webhook_url
-        else:
-            import time
-            import hmac
-            import hashlib
-            import base64
-            import urllib.parse
-            import requests
-            timestamp = str(round(time.time() * 1000))
-            string_to_sign = f'{timestamp}\n{self.secret}'
-            hmac_code = hmac.new(self.secret.encode('utf-8'), string_to_sign.encode('utf-8'),
-                                 digestmod=hashlib.sha256).digest()
-            sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-            return f'{self.webhook_url}&timestamp={timestamp}&sign={sign}'
+        timestamp = str(round(time.time() * 1000))
+        string_to_sign = f"{timestamp}\n{self.secret}"
+        hmac_code = hmac.new(
+            self.secret.encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).digest()
+        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+        return f"{self.webhook_url}&timestamp={timestamp}&sign={sign}"
 
     def _send(self, data: Dict[str, Any], print_log: bool = True) -> Dict[str, Any]:
-        """
-        发送请求到钉钉机器人
-
-        :param data: 构建好的消息数据
-        :return: 响应结果
-        """
+        """发送请求到钉钉机器人 webhook"""
         try:
-            url = self._generate_url()
-            response = requests.post(url, json=data, headers=self.headers)
+            response = requests.post(
+                self._generate_url(), json=data, headers=self.headers, timeout=15
+            )
             response.raise_for_status()
             result = response.json()
         except requests.exceptions.RequestException as e:
             result = {"error": str(e)}
-
         if print_log:
-            CommonUtil.printLog(f"_send result={result}, reqData={data}")
+            CommonUtil.printLog(f"_send result={result}")
         return result
 
 
 if __name__ == '__main__':
+    _token = 'replace_you_bot_token'
+    _secret = 'replace_you_bot_secret'
     _host_url = "https://www.baidu.com"
     _pic_url = 'https://q6.itc.cn/images01/20240821/9617e87d12d744948b311e19ac502bce.png'
-    _token = 'replace_you_bot_token'
-    _secret = 'you_bot_secret'
 
     bot = DingTalkBot(token=_token, secret=_secret)
-    bot.send_text("测试发送普通文本, world!2_189", is_at_all=True)
-    bot.send_link("测试卡片效果333", _host_url, "来自百度的链接\n正文多行带图片", pic_url=_pic_url)
 
-    # 发送markdown文本,包含文字/图片/超链接
-    bot.send_markdown('测试markdown效果+超链接+图片', f"""
-    # H1大标题 仅@lynxz 33
-      这是正文
-
-    ## H2小标题
-    * 小点1
-    * 小点2
-
-    [超链接-baidu]({_host_url})
-    ![图片链接]({_pic_url})""", False)
-
-    # 仅发送一张图片
-    bot.send_image(_pic_url, is_at_all=True)
+    bot.send_text("测试发送普通文本，world!", is_at_all=True)
+    bot.send_link("测试卡片效果", _host_url, "来自百度的链接\n正文多行", pic_url=_pic_url)
+    bot.send_markdown('测试 Markdown', f"""# H1 大标题
+## H2 小标题
+* 小点1
+* 小点2
+[百度链接]({_host_url})
+![图片]({_pic_url})""", is_at_all=False)
