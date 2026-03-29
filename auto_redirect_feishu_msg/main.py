@@ -20,5 +20,4 @@ if __name__ == "__main__":
     curDirPath = os.path.abspath(os.path.dirname(__file__))
     configPath = '%s/config.ini' % curDirPath
 
-    # 触发更新
     RedirectFeishuImpl(configPath, optFirst=True).run()
