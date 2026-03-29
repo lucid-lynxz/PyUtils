@@ -185,6 +185,10 @@ class FeishuMonitorByOAuth:
         token = self.get_valid_token()
         chat_id_map = self.resolve_chat_ids(token, chat_names)  # {chat_id: 显示名}
 
+        if not chat_id_map:
+            _cp("❌ 没有匹配到任何群，程序退出", _C.RED)
+            sys.exit(1)
+
         _cp("监听中的群：", _C.CYAN)
         for cid, name in chat_id_map.items():
             _cp(f"  • {name}  ({cid})", _C.GREEN)
@@ -417,8 +421,572 @@ class FeishuMonitorByOAuth:
                 _cp(f"  ⚠️  未找到群：'{target}'（确认群名正确且你已加入该群）", _C.YELLOW)
 
         if not result:
-            _cp("❌ 没有匹配到任何群，程序退出", _C.RED)
-            sys.exit(1)
+            _cp("❌ 没有匹配到任何群", _C.RED)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # 公开方法：转发消息到其他群
+    # ------------------------------------------------------------------
+
+    def forward_messages(
+            self,
+            messages: dict | list[dict],
+            target_chat_names: list[str] | str,
+            token: str | None = None,
+            add_header: bool = True,
+            native_forward: bool = False,
+    ) -> list[dict]:
+        """
+        将消息转发到其他群聊
+
+        Args:
+            messages:        要转发的消息，可以是单条消息 dict 或消息列表。
+                             消息格式应为 _build_msg_dict 返回的标准格式 或飞书原始消息格式。
+            target_chat_names: 目标群名称列表或单个群名称字符串。
+            token:           user_access_token，不传则自动获取。
+            add_header:      是否在转发内容前添加 "转发自 xx 群" 的头部信息（仅非原生转发时有效）。
+            native_forward:  是否使用飞书原生转发 API。True=保留原始格式原样转发(需要机器人同时在被监听的消息群 和 待转发的目标群 中才可用)，
+                             False=解析后重新发送（可添加自定义头部，默认）。
+
+        Returns:
+            发送结果列表，每项包含 success, chat_name, chat_id, msg_id, error 等字段。
+
+        使用示例：
+            # 在回调中转发消息（默认使用富文本转发）
+            def on_message(msg, chat_name):
+                if "关键字" in msg.get("content", ""):
+                    monitor.forward_messages(msg, ["另一个群"])
+
+            monitor.start(chat_names=["源群"], callback=on_message)
+        """
+        if not messages:
+            return []
+
+        # 统一转换为列表
+        if isinstance(messages, dict):
+            messages = [messages]
+
+        # 统一目标群名称为列表
+        if isinstance(target_chat_names, str):
+            target_chat_names = [target_chat_names]
+
+        if not target_chat_names:
+            _cp("❌ 目标群名称为空", _C.RED)
+            return []
+
+        # 获取 token
+        if not token:
+            token = self.get_valid_token()
+
+        # 解析目标群 chat_id
+        target_chat_map = self.resolve_chat_ids(token, target_chat_names)  # {chat_id: 群名}
+
+        if not target_chat_map:
+            _cp("❌ 未找到任何目标群", _C.RED)
+            return []
+
+        results = []
+
+        for target_chat_id, target_chat_name in target_chat_map.items():
+            for msg in messages:
+                # 检查消息是否包含图片
+                has_images = bool(msg.get("image_key") or msg.get("image_keys") or msg.get("downloaded_images"))
+
+                if native_forward and not has_images:
+                    # 无图片消息：使用飞书原生转发 API
+                    raw_msg = msg.get("raw", msg)
+                    message_id = raw_msg.get("message_id", "")
+                    if message_id:
+                        result = self._forward_message_native(
+                            token, message_id, target_chat_id, target_chat_name
+                        )
+                        # 如果原生转发失败，回退到富文本转发
+                        if not result.get("success"):
+                            _cp(f"⚠️ 原生转发失败，回退到富文本转发", _C.YELLOW)
+                            result = self._forward_single_message(
+                                msg, target_chat_id, target_chat_name, token, add_header=False
+                            )
+                    else:
+                        # 没有 message_id，回退到解析转发
+                        _cp(f"⚠️ 消息没有 message_id，使用解析转发", _C.YELLOW)
+                        result = self._forward_single_message(
+                            msg, target_chat_id, target_chat_name, token, add_header
+                        )
+                else:
+                    # 有图片消息或禁用原生转发：使用富文本转发（带图片重新上传）
+                    if has_images and native_forward:
+                        _cp(f"  [调试] 消息包含图片，使用富文本转发并重新上传图片", _C.GRAY)
+                    result = self._forward_single_message_with_images(
+                        msg, target_chat_id, target_chat_name, token, add_header
+                    )
+                results.append(result)
+
+        return results
+
+    def _forward_single_message(
+            self,
+            msg: dict,
+            target_chat_id: str,
+            target_chat_name: str,
+            token: str,
+            add_header: bool,
+    ) -> dict:
+        """转发单条消息到指定群"""
+        _cp(f"  [调试] _forward_single_message 开始: target={target_chat_name}, add_header={add_header}", _C.GRAY)
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            # 提取消息信息
+            raw_msg = msg.get("raw", msg)
+            msg_type = msg.get("msg_type", raw_msg.get("msg_type", "text"))
+            content = msg.get("content", "")
+            sender_name = msg.get("sender_name", "未知用户")
+            source_chat_name = msg.get("chat_name", "")
+
+            # 构建转发内容（简化格式）
+            if add_header and source_chat_name:
+                header = f"[转发自 {source_chat_name} {sender_name}] "
+            elif add_header:
+                header = f"[转发自 {sender_name}] "
+            else:
+                header = ""
+
+            # 根据消息类型构建发送内容
+            if msg_type == "text":
+                forward_content = f"{header}{content}"
+                _cp(f"  [调试] 发送文本消息: {forward_content[:50]}...", _C.GRAY)
+                send_result = self._send_text_message(token, target_chat_id, forward_content)
+
+            elif msg_type == "image":
+                # 图片消息：先发送文字说明，再转发图片
+                image_key = msg.get("image_key", "")
+                if header:
+                    self._send_text_message(token, target_chat_id, header.rstrip())
+                if image_key:
+                    send_result = self._send_image_message(token, target_chat_id, image_key)
+                else:
+                    # 如果没有 image_key，发送文字说明
+                    send_result = self._send_text_message(token, target_chat_id, f"{header}[图片消息]")
+
+            elif msg_type == "post":
+                # 富文本消息：尝试原样转发富文本内容
+                send_result = self._forward_post_message(
+                    token, target_chat_id, raw_msg, header, add_header
+                )
+
+            elif msg_type == "file":
+                # 文件消息：发送文字说明
+                forward_content = f"{header}[文件消息] {content}"
+                send_result = self._send_text_message(token, target_chat_id, forward_content)
+
+            else:
+                # 其他类型：发送文字说明
+                forward_content = f"{header}[{msg_type}消息] {content}"
+                send_result = self._send_text_message(token, target_chat_id, forward_content)
+
+            _cp(f"  [调试] 发送结果: {send_result}", _C.GRAY)
+            if send_result.get("code") == 0:
+                result["success"] = True
+                result["msg_id"] = send_result.get("data", {}).get("message_id", "")
+                _cp(f"✅ 消息已转发到 [{target_chat_name}]", _C.GREEN)
+            else:
+                result["error"] = f"code={send_result.get('code')}, msg={send_result.get('msg')}"
+                _cp(f"❌ 转发到 [{target_chat_name}] 失败: {result['error']}", _C.RED)
+
+        except Exception as e:
+            result["error"] = str(e)
+            _cp(f"❌ 转发异常: {e}", _C.RED)
+            traceback.print_exc()
+
+        return result
+
+    def _forward_single_message_with_images(
+            self,
+            msg: dict,
+            target_chat_id: str,
+            target_chat_name: str,
+            token: str,
+            add_header: bool,
+    ) -> dict:
+        """
+        转发单条消息到指定群，处理图片重新上传
+        适用于带图片的消息，会将下载的图片重新上传到目标群
+        """
+        _cp(f"  [调试] _forward_single_message_with_images 开始: target={target_chat_name}", _C.GRAY)
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            # 提取消息信息
+            raw_msg = msg.get("raw", msg)
+            msg_type = msg.get("msg_type", raw_msg.get("msg_type", "text"))
+            content = msg.get("content", "")
+            sender_name = msg.get("sender_name", "未知用户")
+            source_chat_name = msg.get("chat_name", "")
+            downloaded_images = msg.get("downloaded_images", {})
+
+            # 构建转发头部（简化格式，避免特殊字符问题）
+            if add_header and source_chat_name:
+                header = f"[转发自 {source_chat_name} {sender_name}] "
+            elif add_header:
+                header = f"[转发自 {sender_name}] "
+            else:
+                header = ""
+
+            # 获取 tenant_token 用于上传图片
+            tenant_token = self._get_tenant_access_token()
+
+            # 上传所有下载的图片，获取新的 image_key
+            new_image_keys = {}
+            for old_key, image_path in downloaded_images.items():
+                if os.path.exists(image_path):
+                    new_key = self._upload_image(image_path, tenant_token)
+                    if new_key:
+                        new_image_keys[old_key] = new_key
+                        _cp(f"  [调试] 图片重新上传成功: {old_key} -> {new_key}", _C.GRAY)
+                    else:
+                        _cp(f"  [警告] 图片重新上传失败: {old_key}", _C.YELLOW)
+
+            # 根据消息类型构建发送内容
+            if msg_type == "image" and new_image_keys:
+                # 纯图片消息：先发送头部文字，再发送图片
+                if header:
+                    self._send_text_message(token, target_chat_id, header.rstrip())
+                image_key = list(new_image_keys.values())[0]
+                send_result = self._send_image_message(token, target_chat_id, image_key)
+
+            elif msg_type == "post" and downloaded_images:
+                # 富文本消息：替换图片 key 后发送
+                send_result = self._forward_post_message_with_new_images(
+                    token, target_chat_id, raw_msg, header, add_header, new_image_keys
+                )
+            else:
+                # 其他情况：使用普通富文本转发
+                send_result = self._forward_post_message(
+                    token, target_chat_id, raw_msg, header, add_header
+                )
+
+            _cp(f"  [调试] 发送结果: {send_result}", _C.GRAY)
+            if send_result.get("code") == 0:
+                result["success"] = True
+                result["msg_id"] = send_result.get("data", {}).get("message_id", "")
+                _cp(f"✅ 消息已转发到 [{target_chat_name}]", _C.GREEN)
+            else:
+                result["error"] = f"code={send_result.get('code')}, msg={send_result.get('msg')}"
+                _cp(f"❌ 转发到 [{target_chat_name}] 失败: {result['error']}", _C.RED)
+
+        except Exception as e:
+            result["error"] = str(e)
+            _cp(f"❌ 转发异常: {e}", _C.RED)
+            traceback.print_exc()
+
+        return result
+
+    def _forward_post_message_with_new_images(
+            self,
+            token: str,
+            chat_id: str,
+            raw_msg: dict,
+            header: str,
+            add_header: bool,
+            new_image_keys: dict,
+    ) -> dict:
+        """
+        转发富文本消息，替换图片 key 为新的 key
+        保持原始消息的完整格式（图文混排）
+        """
+        try:
+            body = raw_msg.get("body", {})
+            content_str = body.get("content", "{}")
+            content = json.loads(content_str)
+
+            # 直接在原始 content 中替换 image_key
+            content_str_new = content_str
+            for old_key, new_key in new_image_keys.items():
+                content_str_new = content_str_new.replace(old_key, new_key)
+
+            # 解析替换后的内容
+            new_content = json.loads(content_str_new)
+
+            # 确保格式正确：外层必须有 "post" 键
+            if "post" not in new_content:
+                # 如果原始格式是 {"zh_cn": {...}}，需要包装成 {"post": {"zh_cn": {...}}}
+                new_content = {"post": new_content}
+
+            # 如果需要添加头部，在 content 前面添加
+            if add_header and header:
+                post_data = new_content.get("post", {})
+                if isinstance(post_data, dict):
+                    has_lang_key = any(k in post_data for k in ("zh_cn", "en_us", "ja_jp"))
+                    if has_lang_key:
+                        lang_key = "zh_cn" if "zh_cn" in post_data else list(post_data.keys())[0]
+                        if "content" in post_data[lang_key] and isinstance(post_data[lang_key]["content"], list):
+                            # 在内容最前面添加头部
+                            post_data[lang_key]["content"].insert(0, [{"tag": "text", "text": header}])
+                    else:
+                        # 直接在根级别添加
+                        if "content" in post_data and isinstance(post_data["content"], list):
+                            post_data["content"].insert(0, [{"tag": "text", "text": header}])
+
+                # 重新序列化
+                content_str_new = json.dumps(new_content, ensure_ascii=False)
+
+            _cp(f"  [调试] 富文本内容(替换后): {content_str_new[:200]}...", _C.GRAY)
+
+            url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
+            payload = {
+                "receive_id": chat_id,
+                "content": content_str_new,
+                "msg_type": "post",
+            }
+            return self._post_json(url, payload, headers={"Authorization": f"Bearer {token}"})
+
+        except Exception as e:
+            _cp(f"  [警告] 富文本转发(替换图片)失败: {e}", _C.YELLOW)
+            # 回退到纯文本方式
+            body = raw_msg.get("body", {})
+            content_str = body.get("content", "{}")
+            text_content = self._parse_content("post", content_str)
+            forward_content = f"{header}{text_content}"
+            return self._send_text_message(token, chat_id, forward_content)
+
+    def _send_text_message(self, token: str, chat_id: str, content: str) -> dict:
+        """发送文本消息到指定群"""
+        url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
+        # content 必须是 JSON 字符串
+        content_str = json.dumps({"text": content}, ensure_ascii=False)
+        payload = {
+            "receive_id": chat_id,
+            "content": content_str,
+            "msg_type": "text",
+        }
+        return self._post_json(url, payload, headers={"Authorization": f"Bearer {token}"})
+
+    def _forward_post_message(
+            self,
+            token: str,
+            chat_id: str,
+            raw_msg: dict,
+            header: str,
+            add_header: bool,
+    ) -> dict:
+        """
+        转发富文本消息，将图片转为文本描述（因为 image_key 不能跨群复用）
+        保留文字、链接、@人、表情等格式
+        """
+        try:
+            body = raw_msg.get("body", {})
+            content_str = body.get("content", "{}")
+            content = json.loads(content_str)
+
+            # 获取原始富文本结构
+            post_data = content.get("post") or content
+
+            # 构建新的富文本内容
+            new_content = {"post": {"zh_cn": {"title": "", "content": []}}}
+
+            # 提取原始内容行并处理图片
+            if isinstance(post_data, dict):
+                has_lang_key = any(k in post_data for k in ("zh_cn", "en_us", "ja_jp"))
+                if has_lang_key:
+                    lang_content = post_data.get("zh_cn") or post_data.get("en_us")
+                else:
+                    lang_content = post_data
+
+                if isinstance(lang_content, dict):
+                    original_content = lang_content.get("content", [])
+                    for row in original_content:
+                        if not isinstance(row, list):
+                            continue
+                        new_row = []
+                        for elem in row:
+                            if not isinstance(elem, dict):
+                                continue
+                            tag = elem.get("tag", "")
+                            if tag == "img":
+                                # 图片转为文本描述
+                                image_key = elem.get("image_key", "")
+                                width = elem.get("width", 0)
+                                height = elem.get("height", 0)
+                                size_info = f"{width}x{height}" if width and height else ""
+                                new_row.append({
+                                    "tag": "text",
+                                    "text": f"[图片{size_info}] "
+                                })
+                            else:
+                                # 保留其他元素（text, a, at, emotion 等）
+                                new_row.append(elem)
+                        if new_row:
+                            new_content["post"]["zh_cn"]["content"].append(new_row)
+
+            # 如果没有有效内容，回退到纯文本
+            if not new_content["post"]["zh_cn"]["content"]:
+                raise ValueError("没有有效的富文本内容")
+
+            final_content_str = json.dumps(new_content, ensure_ascii=False)
+
+            url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
+            payload = {
+                "receive_id": chat_id,
+                "content": final_content_str,
+                "msg_type": "post",
+            }
+            _cp(f"  [调试] 发送富文本: {final_content_str[:150]}...", _C.GRAY)
+            return self._post_json(url, payload, headers={"Authorization": f"Bearer {token}"})
+
+        except urllib.error.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+            except Exception:
+                pass
+            _cp(f"  [警告] 富文本转发 HTTP 错误 {e.code}: {error_body or e.reason}", _C.YELLOW)
+            # 回退到纯文本方式
+            body = raw_msg.get("body", {})
+            content_str = body.get("content", "{}")
+            text_content = self._parse_content("post", content_str)
+            forward_content = f"{header}{text_content}"
+            return self._send_text_message(token, chat_id, forward_content)
+
+    def _send_image_message(self, token: str, chat_id: str, image_key: str) -> dict:
+        """发送图片消息到指定群（使用已有的 image_key）"""
+        url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
+        # content 必须是 JSON 字符串
+        content_str = json.dumps({"image_key": image_key}, ensure_ascii=False)
+        payload = {
+            "receive_id": chat_id,
+            "content": content_str,
+            "msg_type": "image",
+        }
+        return self._post_json(url, payload, headers={"Authorization": f"Bearer {token}"})
+
+    def _upload_image(self, image_path: str, token: str | None = None) -> str:
+        """
+        上传图片到飞书，获取 image_key
+        文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/image/create
+        :param image_path: 本地图片路径
+        :param token: tenant_access_token，不传则自动获取
+        :return: image_key，失败返回空字符串
+        """
+        if not os.path.exists(image_path):
+            _cp(f"  [警告] 图片不存在: {image_path}", _C.YELLOW)
+            return ""
+
+        try:
+            # 获取 tenant_access_token
+            if not token:
+                token = self._get_tenant_access_token()
+
+            url = f"{_FEISHU_API}/im/v1/images"
+
+            # 构建 multipart/form-data 请求
+            boundary = "----FormBoundary" + os.urandom(8).hex()
+            file_name = os.path.basename(image_path)
+
+            # 读取图片文件
+            with open(image_path, "rb") as f:
+                file_data = f.read()
+
+            # 构建请求体
+            body = []
+            body.append(f"------{boundary}".encode())
+            body.append(b'Content-Disposition: form-data; name="image_type"')
+            body.append(b"")
+            body.append(b"message")  # 用于消息的图片
+            body.append(f"------{boundary}".encode())
+            body.append(f'Content-Disposition: form-data; name="image"; filename="{file_name}"'.encode())
+            body.append(b"Content-Type: image/png")  # 假设是 png，实际应该根据文件类型判断
+            body.append(b"")
+            body.append(file_data)
+            body.append(f"------{boundary}--".encode())
+
+            body = b"\r\n".join(body)
+
+            req = urllib.request.Request(url, data=body, method="POST")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", f"multipart/form-data; boundary=----{boundary}")
+
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                if result.get("code") == 0:
+                    image_key = result.get("data", {}).get("image_key", "")
+                    _cp(f"  [调试] 图片上传成功: {image_key}", _C.GRAY)
+                    return image_key
+                else:
+                    _cp(f"  [警告] 图片上传失败: {result}", _C.YELLOW)
+                    return ""
+
+        except Exception as e:
+            _cp(f"  [警告] 图片上传异常: {e}", _C.YELLOW)
+            return ""
+
+    def _forward_message_native(
+            self,
+            user_token: str,
+            message_id: str,
+            target_chat_id: str,
+            target_chat_name: str,
+    ) -> dict:
+        """
+        使用飞书原生消息转发 API，保留原始消息的完整格式（图文混排、样式等）
+        注意：此接口需要使用 tenant_access_token（应用身份），不支持 user_access_token
+        官方文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/forward
+        """
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            # 获取 tenant_access_token（应用身份）
+            tenant_token = self._get_tenant_access_token()
+
+            # 飞书转发 API 文档: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/forward
+            # 注意：message_id 不需要 URL 编码，直接使用原始格式
+            url = f"{_FEISHU_API}/im/v1/messages/{message_id}/forward?receive_id_type=chat_id"
+            payload = {
+                "receive_id": target_chat_id,
+            }
+            _cp(f"  [调试] 转发消息: msg_id={message_id}, target={target_chat_name}", _C.GRAY)
+            send_result = self._post_json(url, payload, headers={"Authorization": f"Bearer {tenant_token}"})
+
+            if send_result.get("code") == 0:
+                result["success"] = True
+                result["msg_id"] = send_result.get("data", {}).get("message_id", "")
+                _cp(f"✅ 消息已原样转发到 [{target_chat_name}]", _C.GREEN)
+            else:
+                result["error"] = f"code={send_result.get('code')}, msg={send_result.get('msg')}"
+                _cp(f"❌ 原样转发到 [{target_chat_name}] 失败: {result['error']}", _C.RED)
+                if send_result.get("code") == 230064:
+                    _cp(f"   提示: 请确保应用已开启机器人能力，且机器人在源群和目标群中", _C.YELLOW)
+
+        except urllib.error.HTTPError as e:
+            # 捕获 HTTP 错误并读取响应体
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+            except Exception:
+                pass
+            result["error"] = f"HTTP {e.code}: {error_body or e.reason}"
+            _cp(f"❌ 原样转发 HTTP 错误: {result['error']}", _C.RED)
+        except Exception as e:
+            result["error"] = str(e)
+            _cp(f"❌ 原样转发异常: {e}", _C.RED)
 
         return result
 
@@ -1007,14 +1575,37 @@ class FeishuMonitorByOAuth:
 
     @staticmethod
     def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
-        data = json.dumps(payload).encode("utf-8")
+        # 处理 content 字段已经是 JSON 字符串的情况
+        # 飞书 API 要求 content 字段是 JSON 字符串，而不是嵌套对象
+        payload_to_send = {}
+        for k, v in payload.items():
+            if k == "content" and isinstance(v, str):
+                # content 已经是 JSON 字符串，保持原样
+                payload_to_send[k] = v
+            else:
+                payload_to_send[k] = v
+
+        data = json.dumps(payload_to_send, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST")
         req.add_header("Content-Type", "application/json; charset=utf-8")
         if headers:
             for k, v in headers.items():
                 req.add_header(k, v)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # 读取错误响应体并返回
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+            except Exception:
+                pass
+            # 尝试解析为 JSON 返回
+            try:
+                return json.loads(error_body)
+            except Exception:
+                return {"code": -1, "msg": f"HTTP {e.code}: {error_body or e.reason}"}
 
     @staticmethod
     def _get(url: str, token: str, params: dict | None = None) -> dict:
