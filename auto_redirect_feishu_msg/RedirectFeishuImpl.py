@@ -74,8 +74,8 @@ class RedirectFeishuImpl(BaseConfig):
             # print(f'msg_type={msg_type},image_keys={image_keys}')
             # print(f'downloaded_images={downloaded_images}')
 
-            target_channels = forward_to_feishu_chat_names.get(chat_name, '').split(',')
-            if not CommonUtil.isNoneOrBlank(target_channels):
+            target_channels = [c.strip() for c in forward_to_feishu_chat_names.get(chat_name, '').split(',') if c.strip()]
+            if target_channels:
                 feishuMonitorByOAuth.forward_messages(msg, target_channels, native_forward=True)
 
             markdown = False

@@ -49,6 +49,11 @@ from lark_oapi.api.im.v1 import (
     ListChatRequest,
     ListMessageRequest,
     GetMessageResourceRequest,
+    ForwardMessageRequest,
+    CreateImageRequest,
+    CreateImageRequestBody,
+    CreateMessageRequest,
+    CreateMessageRequestBody,
 )
 
 from util.FileUtil import FileUtil
@@ -257,12 +262,12 @@ class FeishuMonitor:
 
         elif msg_type == "post":
             lines = []
-            
+
             # 飞书 post 消息的结构可能是：{"post": {...}} 或直接就是内容对象
             post_data = content.get("post", {})
-            
+
             lang_content = None
-            
+
             if not post_data and content.get("content"):
                 # 如果 content 直接包含内容（扁平结构）
                 lang_content = content
@@ -272,7 +277,7 @@ class FeishuMonitor:
                     if lang in post_data:
                         lang_content = post_data[lang]
                         break
-                
+
                 # 如果找不到指定语言，尝试第一个值
                 if lang_content is None and post_data:
                     lang_content = next(iter(post_data.values()))
@@ -281,9 +286,9 @@ class FeishuMonitor:
                 title = lang_content.get("title", "")
                 if title:
                     lines.append(f"[标题] {title}")
-                
+
                 content_rows = lang_content.get("content", [])
-                
+
                 for row_idx, row in enumerate(content_rows):
                     row_text = ""
                     # row 可能是一个列表，包含多个元素
@@ -315,14 +320,14 @@ class FeishuMonitor:
                                 text = elem.get("text", "")
                                 if text:
                                     row_text += text
-                    
+
                     if row_text.strip():
                         lines.append(row_text)
-            
+
             # 如果解析结果为空，打印原始内容便于调试
             if not lines:
                 return "[富文本 (空)]"
-            
+
             return "\n".join(lines)
 
         elif msg_type == "file":
@@ -366,7 +371,7 @@ class FeishuMonitor:
             # 保存图片到 ./cache/{chat_name}/ 目录
             base_dir = self.cache_dir if CommonUtil.isNoneOrBlank(base_dir) else base_dir
             save_dir = f'{base_dir}/{chat_name}'
-            FileUtil.create_dir(base_dir)
+            FileUtil.create_dir(save_dir)  # 创建完整路径，而不是只创建 base_dir
 
             req = (
                 GetMessageResourceRequest.builder()
@@ -378,13 +383,23 @@ class FeishuMonitor:
             resp = self.client.im.v1.message_resource.get(req)
 
             if not resp.success():
+                self.cprint(f"  [警告] 下载图片 API 失败: {resp.msg}", self.C.YELLOW)
                 return ""
 
             prefix = f"{prefix}_" if prefix else ""
             file_name = f"{prefix}{image_key}.png"
             file_path = FileUtil.recookPath(f'{save_dir}/{file_name}')
+
+            # 读取响应内容并检查
+            image_data = resp.file.read()
+            if not image_data or len(image_data) < 100:
+                self.cprint(f"  [警告] 下载的图片数据异常，大小: {len(image_data) if image_data else 0} bytes", self.C.YELLOW)
+                return ""
+
             with open(str(file_path), "wb") as f:
-                f.write(resp.file.read())
+                f.write(image_data)
+
+            self.cprint(f"  [调试] 图片已保存: {file_path} ({len(image_data)} bytes)", self.C.GRAY)
             return str(file_path)
         except Exception as e:
             self.cprint(f"❌ 下载图片失败:{e}", self.C.RED)
@@ -414,6 +429,7 @@ class FeishuMonitor:
         sender_id = msg.sender.id if msg.sender else "?"
         # 尝试从多个可能的属性中获取发送者姓名
         sender_name = self.get_user_name(sender_id)
+        create_time_ms = msg.create_time or "0"
         create_time = self.format_time(msg.create_time or "0")
         msg_id = msg.message_id or ""
 
@@ -430,6 +446,7 @@ class FeishuMonitor:
 
         return {
             "msg_type": msg_type,  # 'text' 'post' 'image'
+            "create_time_ms": create_time_ms,  # 时间戳
             "create_time": create_time,  # "2022-01-01 00:00:00"
             "sender_name": sender_name,  # 发送者姓名, 比如: "张三"
             "content": display_content,  # 文本消息内容
@@ -475,8 +492,34 @@ class FeishuMonitor:
 
         self.cprint(f"  发送者:{display_sender}", self.C.BLUE)
 
+        # 用于保存下载的图片路径
+        downloaded_images = {}
+
         if msg_type in ("text", "post"):
             self.cprint(f"  📝 {display_content}", self.C.GREEN)
+            # 富文本消息，下载内嵌图片
+            if msg_type == "post" and self.cfg.get("download_images"):
+                try:
+                    content = json.loads(content_str) if 'content_str' in locals() else json.loads(msg.body.content if msg.body else "{}")
+                    post_data = content.get("post") or content
+                    if isinstance(post_data, dict):
+                        for lang in ("zh_cn", "en_us", "ja_jp"):
+                            if lang in post_data:
+                                lang_content = post_data[lang]
+                                if isinstance(lang_content, dict):
+                                    for row in lang_content.get("content", []):
+                                        if isinstance(row, list):
+                                            for elem in row:
+                                                if isinstance(elem, dict) and elem.get("tag") == "img":
+                                                    img_key = elem.get("image_key", "")
+                                                    if img_key:
+                                                        prefix = f"{create_time4file}_{sender_name}" if sender_name else create_time
+                                                        saved = self.download_image(msg_id, img_key, chat_name, prefix)
+                                                        if saved:
+                                                            self.cprint(f"      ✅ 内嵌图片已保存：{saved}", self.C.GREEN)
+                                                            downloaded_images[img_key] = saved
+                except Exception:
+                    pass
         elif msg_type == "image":
             self.cprint(f"  🖼️  {display_content}", self.C.YELLOW)
             if self.cfg.get("download_images"):
@@ -486,12 +529,17 @@ class FeishuMonitor:
                         saved = self.download_image(msg_id, image_key, chat_name, prefix)
                         if saved:
                             self.cprint(f"      ✅ 已保存：{saved}", self.C.GREEN)
+                            downloaded_images[image_key] = saved
                         else:
                             self.cprint("      ⚠️ 图片下载失败", self.C.YELLOW)
                 except Exception:
                     pass
         else:
             self.cprint(f"  📎 {display_content}", self.C.YELLOW)
+
+        # 保存下载的图片路径到消息对象，供回调使用
+        if downloaded_images:
+            msg._downloaded_images = downloaded_images
 
         if mentions:
             self.cprint(f"  提及:{' '.join(mentions)}", self.C.GRAY)
@@ -620,6 +668,399 @@ class FeishuMonitor:
             self.cprint("\n\n  👋 监听已停止。", self.C.CYAN)
 
     # ─────────────────────────────────────────────
+    # 消息转发功能
+    # ─────────────────────────────────────────────
+
+    def forward_messages(
+            self,
+            messages,
+            target_chat_names: List[str],
+            add_header: bool = True,
+            native_forward: bool = True,
+    ) -> List[Dict]:
+        """
+        将消息转发到其他群聊
+
+        Args:
+            messages: 要转发的消息对象或列表（SDK 消息对象或 parse_msg 返回的字典）
+            target_chat_names: 目标群名称列表
+            add_header: 是否添加 "转发自 xx 群" 头部信息
+            native_forward: 是否使用原生转发（无图片消息可用，带图片消息会自动使用富文本转发）
+
+        Returns:
+            发送结果列表
+        """
+        if not isinstance(messages, list):
+            messages = [messages]
+
+        # 解析目标群 chat_id（使用临时变量，避免修改 self.chat_ids）
+        target_chat_ids = {}
+        for chat_name in target_chat_names:
+            if chat_name in self.chat_ids:
+                target_chat_ids[chat_name] = self.chat_ids[chat_name]
+            else:
+                # 尝试从所有群聊中查找
+                all_chats = self.get_all_chats()
+                found = False
+                for chat in all_chats:
+                    if chat.name == chat_name:
+                        target_chat_ids[chat_name] = chat.chat_id
+                        found = True
+                        break
+                if not found:
+                    self.cprint(f"❌ 未找到目标群：{chat_name}", self.C.RED)
+
+        if not target_chat_ids:
+            self.cprint("❌ 没有有效的目标群", self.C.RED)
+            return []
+
+        results = []
+        for target_name, target_id in target_chat_ids.items():
+            for msg in messages:
+                result = self._forward_single_message(msg, target_id, target_name, add_header, native_forward)
+                results.append(result)
+
+        return results
+
+    def _forward_single_message(
+            self,
+            msg,
+            target_chat_id: str,
+            target_chat_name: str,
+            add_header: bool,
+            native_forward: bool,
+    ) -> Dict:
+        """转发单条消息"""
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            # 统一消息格式
+            if isinstance(msg, dict):
+                # 已经是 parse_msg 返回的字典格式
+                msg_type = msg.get("msg_type", "text")
+                msg_id = msg.get("msg_id", "")
+                sender_name = msg.get("sender_name", "未知用户")
+                source_chat_name = msg.get("source_chat_name", "")
+                content_str = msg.get("raw_content", "{}")
+                image_key = msg.get("image_key", "")
+                downloaded_path = msg.get("downloaded_path", "")
+            else:
+                # SDK 消息对象
+                msg_type = msg.msg_type or "text"
+                msg_id = msg.message_id or ""
+                sender_id = msg.sender.id if msg.sender else "?"
+                sender_name = self.get_user_name(sender_id) or sender_id
+                source_chat_name = ""
+                content_str = msg.body.content if msg.body else "{}"
+                image_key = ""
+                downloaded_path = ""
+
+                # 尝试获取图片 key
+                if msg_type == "image":
+                    try:
+                        content_json = json.loads(content_str)
+                        image_key = content_json.get("image_key", "")
+                    except Exception:
+                        pass
+
+            # 检查是否包含图片
+            has_image = bool(image_key) or msg_type == "image" or msg_type == "post"
+
+            # 构建头部信息
+            if add_header:
+                header = f"[转发自 {source_chat_name} {sender_name}] " if source_chat_name else f"[转发自 {sender_name}] "
+            else:
+                header = ""
+
+            # 根据消息类型选择转发方式
+            if native_forward and not has_image and msg_id:
+                # 无图片消息：使用原生转发
+                result = self._forward_message_native(msg_id, target_chat_id, target_chat_name)
+            else:
+                # 有图片消息或禁用原生转发：使用富文本转发
+                if has_image and native_forward:
+                    self.cprint(f"  [调试] 消息包含图片，使用富文本转发", self.C.GRAY)
+                result = self._forward_message_rich_text(
+                    msg, msg_type, content_str, header, add_header, target_chat_id, target_chat_name,
+                    image_key=image_key, msg_id=msg_id
+                )
+
+        except Exception as e:
+            result["error"] = str(e)
+            self.cprint(f"❌ 转发异常: {e}", self.C.RED)
+
+        return result
+
+    def _forward_message_native(self, message_id: str, target_chat_id: str, target_chat_name: str) -> Dict:
+        """使用飞书原生转发 API"""
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            req = (
+                ForwardMessageRequest.builder()
+                .message_id(message_id)
+                .receive_id_type("chat_id")
+                .receive_id(target_chat_id)
+                .build()
+            )
+
+            resp = self.client.im.v1.message.forward(req)
+
+            if resp.success():
+                result["success"] = True
+                result["msg_id"] = resp.data.message_id if resp.data else ""
+                self.cprint(f"✅ 消息已原样转发到 [{target_chat_name}]", self.C.GREEN)
+            else:
+                result["error"] = f"code={resp.code}, msg={resp.msg}"
+                self.cprint(f"❌ 原样转发到 [{target_chat_name}] 失败: {result['error']}", self.C.RED)
+                if resp.code == 230064:
+                    self.cprint(f"   提示: 请确保应用已开启机器人能力，且机器人在源群和目标群中", self.C.YELLOW)
+
+        except Exception as e:
+            result["error"] = str(e)
+            self.cprint(f"❌ 原样转发异常: {e}", self.C.RED)
+
+        return result
+
+    def _upload_image_to_feishu(self, image_path: str) -> str:
+        """
+        上传图片到飞书，返回 image_key
+        """
+        if not os.path.exists(image_path):
+            self.cprint(f"  [警告] 图片不存在: {image_path}", self.C.YELLOW)
+            return ""
+
+        try:
+            with open(image_path, "rb") as f:
+                image_data = f.read()
+
+            if not image_data or len(image_data) < 100:
+                self.cprint(f"  [警告] 图片文件内容为空或过小", self.C.YELLOW)
+                return ""
+
+            # 使用 requests 直接上传，绕过 SDK 的格式检测
+            import requests as _req
+            upload_url = "https://open.feishu.cn/open-apis/im/v1/images"
+            token = self._get_tenant_access_token()
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # 根据文件头判断正确的 MIME 类型
+            mime = "image/png"
+            if image_data[:2] == b'\xff\xd8':
+                mime = "image/jpeg"
+            elif image_data[:6] in (b'GIF87a', b'GIF89a'):
+                mime = "image/gif"
+            elif image_data[:4] == b'RIFF' and image_data[8:12] == b'WEBP':
+                mime = "image/webp"
+
+            self.cprint(f"  [调试] 上传图片: {image_path} ({len(image_data)} bytes, MIME: {mime})", self.C.GRAY)
+
+            resp = _req.post(
+                upload_url,
+                headers=headers,
+                files={"image": (os.path.basename(image_path), image_data, mime)},
+                data={"image_type": "message"},
+                timeout=30,
+            )
+
+            result = resp.json()
+            if result.get("code") == 0:
+                new_key = result.get("data", {}).get("image_key", "")
+                self.cprint(f"  [调试] 图片上传成功: {new_key}", self.C.GRAY)
+                return new_key
+
+            self.cprint(f"  [警告] 图片上传失败: {result.get('msg', result)}", self.C.YELLOW)
+            return ""
+
+        except Exception as e:
+            self.cprint(f"  [警告] 图片上传异常: {e}", self.C.YELLOW)
+            return ""
+
+    def _get_tenant_access_token(self) -> str:
+        """获取 tenant_access_token"""
+        import json
+        import urllib.request
+
+        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        payload = json.dumps({
+            "app_id": self.app_id,
+            "app_secret": self.app_secret
+        }).encode("utf-8")
+
+        req = urllib.request.Request(url, data=payload, method="POST")
+        req.add_header("Content-Type", "application/json; charset=utf-8")
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                if result.get("code") == 0:
+                    return result.get("tenant_access_token", "")
+        except Exception as e:
+            self.cprint(f"  [警告] 获取 tenant_access_token 失败: {e}", self.C.YELLOW)
+        return ""
+
+    def _forward_message_rich_text(
+            self,
+            msg,
+            msg_type: str,
+            content_str: str,
+            header: str,
+            add_header: bool,
+            target_chat_id: str,
+            target_chat_name: str,
+            image_key: str = "",
+            msg_id: str = "",
+    ) -> Dict:
+        """使用富文本方式转发消息（支持图片重新上传）"""
+        result = {
+            "success": False,
+            "target_chat_name": target_chat_name,
+            "target_chat_id": target_chat_id,
+            "msg_id": "",
+            "error": "",
+        }
+
+        try:
+            # 处理图片上传
+            new_image_keys = {}
+
+            # 获取已下载的图片路径
+            downloaded_images = {}
+            if isinstance(msg, dict):
+                downloaded_images = msg.get("downloaded_images", {})
+            else:
+                # 从 SDK 消息对象获取（由 print_message 方法设置）
+                if hasattr(msg, '_downloaded_images'):
+                    downloaded_images = msg._downloaded_images
+
+            # 如果没有已下载的图片，但有 image_key，尝试立即下载
+            self.cprint(f"  [调试] downloaded_images={downloaded_images}, msg_type={msg_type}, image_key={image_key}", self.C.GRAY)
+            if not downloaded_images:
+                if msg_type == "image" and image_key:
+                    self.cprint(f"  [调试] 图片未下载，正在下载...", self.C.GRAY)
+                    prefix = self.format_time(
+                        msg.create_time if hasattr(msg, 'create_time') else "0", True
+                    )
+                    saved = self.download_image(msg_id, image_key, target_chat_name, prefix)
+                    if saved:
+                        downloaded_images = {image_key: saved}
+                        self.cprint(f"  [调试] 图片下载成功: {saved}", self.C.GRAY)
+                elif msg_type == "post":
+                    # 富文本消息，提取所有内嵌图片 key
+                    self.cprint(f"  [调试] 进入 post 分支，准备提取内嵌图片", self.C.GRAY)
+                    try:
+                        content = json.loads(content_str)
+                        post_data = content.get("post") or content
+                        self.cprint(f"  [调试] post_data keys: {list(post_data.keys()) if isinstance(post_data, dict) else 'not dict'}", self.C.GRAY)
+
+                        if isinstance(post_data, dict):
+                            # 情况1：带语言层级 {"zh_cn": {"title": ..., "content": [...]}}
+                            lang_content = None
+                            for lang in ("zh_cn", "en_us", "ja_jp"):
+                                if lang in post_data:
+                                    lang_content = post_data[lang]
+                                    self.cprint(f"  [调试] 找到 {lang} 内容", self.C.GRAY)
+                                    break
+
+                            # 情况2：不带语言层级 {"title": ..., "content": [...]}
+                            if lang_content is None and "content" in post_data:
+                                lang_content = post_data
+                                self.cprint(f"  [调试] 使用直接 content（无语言层级）", self.C.GRAY)
+
+                            if isinstance(lang_content, dict):
+                                rows = lang_content.get("content", [])
+                                self.cprint(f"  [调试] content rows count: {len(rows)}", self.C.GRAY)
+                                for row in rows:
+                                    if isinstance(row, list):
+                                        for elem in row:
+                                            if isinstance(elem, dict) and elem.get("tag") == "img":
+                                                old_key = elem.get("image_key", "")
+                                                if old_key:
+                                                    self.cprint(f"  [调试] 内嵌图片未下载，正在下载: {old_key}", self.C.GRAY)
+                                                    prefix = self.format_time(msg.get('create_time_ms', '0'), True)
+                                                    saved = self.download_image(msg_id, old_key, target_chat_name, prefix)
+                                                    if saved:
+                                                        downloaded_images[old_key] = saved
+                                                        self.cprint(f"  [调试] 内嵌图片下载成功: {saved}", self.C.GRAY)
+                    except Exception as e:
+                        self.cprint(f"  [警告] 提取内嵌图片失败: {e}", self.C.YELLOW)
+
+            # 上传所有图片
+            for old_key, image_path in downloaded_images.items():
+                new_key = self._upload_image_to_feishu(image_path)
+                if new_key:
+                    new_image_keys[old_key] = new_key
+
+            # 构建新的 content
+            if new_image_keys:
+                # 替换 image_key
+                self.cprint(f"  [调试] 替换图片 keys: {new_image_keys}", self.C.GRAY)
+                for old_key, new_key in new_image_keys.items():
+                    content_str = content_str.replace(old_key, new_key)
+                self.cprint(f"  [调试] 替换后的 content: {content_str[:200]}...", self.C.GRAY)
+
+            # 解析并添加头部
+            content = json.loads(content_str)
+
+            # 确保格式正确
+            if "post" not in content:
+                content = {"post": content}
+
+            # 添加头部
+            if add_header and header:
+                post_data = content.get("post", {})
+                if isinstance(post_data, dict):
+                    for lang in ("zh_cn", "en_us", "ja_jp"):
+                        if lang in post_data:
+                            if "content" in post_data[lang] and isinstance(post_data[lang]["content"], list):
+                                post_data[lang]["content"].insert(0, [{"tag": "text", "text": header}])
+                                break
+
+            final_content = json.dumps(content, ensure_ascii=False)
+
+            # 发送消息
+            # 使用 request_body 方式构建请求
+            from lark_oapi.api.im.v1 import CreateMessageRequestBody
+            req_body = CreateMessageRequestBody.builder() \
+                .receive_id(target_chat_id) \
+                .msg_type(msg_type) \
+                .content(final_content) \
+                .build()
+
+            req = CreateMessageRequest.builder() \
+                .receive_id_type("chat_id") \
+                .request_body(req_body) \
+                .build()
+
+            resp = self.client.im.v1.message.create(req)
+
+            if resp.success():
+                result["success"] = True
+                result["msg_id"] = resp.data.message_id if resp.data else ""
+                self.cprint(f"✅ 消息已转发到 [{target_chat_name}]", self.C.GREEN)
+            else:
+                result["error"] = f"code={resp.code}, msg={resp.msg}"
+                self.cprint(f"❌ 转发到 [{target_chat_name}] 失败: {result['error']}", self.C.RED)
+
+        except Exception as e:
+            result["error"] = str(e)
+            self.cprint(f"❌ 转发异常: {e}", self.C.RED)
+
+        return result
+
+    # ─────────────────────────────────────────────
     # 辅助方法:列出所有群聊
     # ─────────────────────────────────────────────
     def list_all_chats(self):
@@ -644,5 +1085,31 @@ class FeishuMonitor:
 if __name__ == "__main__":
     """列出所有群聊"""
     monitor = FeishuMonitor()
+    fs_forward_chats = os.getenv('FEISHU_FORWARD_TO_CHATS', '').split(',')  # 待转发消息的目标群名称列表
+
+
+    # 转发消息方式1：在回调中自动转发
+    def on_message(msg, chat_name):
+        # 解析消息
+        msg_dict = monitor.parse_msg(msg)
+        msg_dict["source_chat_name"] = chat_name
+        msg_dict["raw_content"] = msg.body.content if msg.body else "{}"
+
+        # 自动判断：无图片用原生转发，有图片用富文本+重新上传
+        monitor.forward_messages(msg_dict, fs_forward_chats)
+
+
+    # monitor.start_monitor(["源群"], callback=on_message)
+
     monitor.list_all_chats()
-    monitor.start_monitor()
+    monitor.start_monitor(callback=on_message)
+
+    # # 转发消息方式2：手动转发
+    # msg_dict = {
+    #     "msg_type": "text",
+    #     "content": "测试消息",
+    #     "sender_name": "张三",
+    #     "source_chat_name": "源群",
+    #     "raw_content": '{"text":"测试消息"}'
+    # }
+    # monitor.forward_messages(msg_dict, fs_forward_chats)
