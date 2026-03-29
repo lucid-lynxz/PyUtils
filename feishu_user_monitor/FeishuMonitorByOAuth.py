@@ -25,6 +25,7 @@ import urllib.parse
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from dotenv import load_dotenv
 from util.FileUtil import FileUtil
 
 # ══════════════════════════════════════════════════════════════════
@@ -121,7 +122,8 @@ class FeishuMonitorByOAuth:
     ):
         self._env_file = Path(env_file) if env_file else _DEFAULT_ENV_FILE
         self._token_file = Path(token_file) if token_file else _DEFAULT_TOKEN_FILE
-        self._env_vals = self._load_dotenv(self._env_file)
+        if self._env_file and self._env_file.is_file():
+            load_dotenv(str(self._env_file))
         self.cache_dir = FileUtil.create_cache_dir(None, __file__)
 
         self.app_id = app_id or self._env("FEISHU_APP_ID")
@@ -142,7 +144,7 @@ class FeishuMonitorByOAuth:
 
     def start(
             self,
-            chat_names: list[str],
+            chat_names: list[str] | None = None,
             poll_interval: int = 8,
             download_images: bool = False,
             callback=None,
@@ -151,7 +153,8 @@ class FeishuMonitorByOAuth:
         启动消息监听，阻塞运行直到 Ctrl+C。
 
         Args:
-            chat_names:      要监听的群名列表，支持精确/模糊匹配
+            chat_names:      要监听的群名列表，支持精确/模糊匹配。
+                             为空时自动从 .env 的 FEISHU_CHAT_NAMES 读取，支持多个群以逗号分割。
             poll_interval:   轮询间隔（秒），默认 8
             download_images: 是否将图片保存到本地，默认 False
             callback:        新消息回调函数，签名为 callback(msg: dict, chat_name: str)
@@ -166,8 +169,11 @@ class FeishuMonitorByOAuth:
                                raw         原始消息 dict（完整飞书消息体）
         """
         if not chat_names:
-            _cp("❌ chat_names 不能为空", _C.RED)
-            sys.exit(1)
+            raw = self._env("FEISHU_CHAT_NAMES", "")
+            chat_names = [n.strip() for n in raw.split(",") if n.strip()]
+            if not chat_names:
+                _cp("❌ chat_names 为空且 .env 中未配置 FEISHU_CHAT_NAMES", _C.RED)
+                sys.exit(1)
 
         _cp("\n" + "═" * 62, _C.CYAN)
         _cp("  🚀 飞书群消息监听器（用户身份版）已启动", _C.BOLD)
@@ -1051,20 +1057,7 @@ class FeishuMonitorByOAuth:
             return ts_str
 
     def _env(self, key: str, default: str = "") -> str:
-        return os.environ.get(key) or self._env_vals.get(key) or default
-
-    @staticmethod
-    def _load_dotenv(path: Path) -> dict[str, str]:
-        result: dict[str, str] = {}
-        if not path.exists():
-            return result
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, val = line.partition("=")
-            result[key.strip()] = val.strip().strip('"').strip("'")
-        return result
+        return os.environ.get(key) or default
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1074,22 +1067,8 @@ class FeishuMonitorByOAuth:
 if __name__ == "__main__":
     monitor = FeishuMonitorByOAuth()
 
-    env = monitor._env_vals
-
-
-    def _e(key: str, default: str = "") -> str:
-        return os.environ.get(key) or env.get(key) or default
-
-
-    names_raw = _e("FEISHU_CHAT_NAMES", "")
-    if not names_raw:
-        _cp("❌ 直接运行时，请在 .env 中配置 FEISHU_CHAT_NAMES=群名1,群名2", _C.RED)
-        sys.exit(1)
-
-    names = [n.strip() for n in names_raw.split(",") if n.strip()]
-
     monitor.start(
-        chat_names=names,
-        poll_interval=int(_e("FEISHU_POLL_INTERVAL", "5")),
-        download_images=_e("FEISHU_DOWNLOAD_IMAGES", "true").lower() == "true"
+        chat_names=None,  # 空时自动从 .env 的 FEISHU_CHAT_NAMES 读取
+        poll_interval=int(os.environ.get("FEISHU_POLL_INTERVAL", "5")),
+        download_images=os.environ.get("FEISHU_DOWNLOAD_IMAGES", "true").lower() == "true",
     )
