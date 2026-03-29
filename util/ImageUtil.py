@@ -473,6 +473,239 @@ class ImageUtil:
         return result.convert('RGB')
 
     @staticmethod
+    def compress_image(input_path: str, output_path: str = None, subfix: str = '_compressed', quality: int = 85, use_pngquant: bool = False) -> str:
+        """
+        压缩图片 (PNG/JPG/JPEG), 允许少量质量损失
+
+        Args:
+            input_path (str): 输入图片路径
+            output_path (str, optional): 输出图片路径, 默认使用原文件路径, 并在文件名后添加 subfix (默认是: _compressed 后缀)
+            subfix (str, optional): 输出文件的后缀信息,当output_path为空时有效
+            quality (int, optional): 压缩质量 (1-100), 默认85, 数值越小压缩率越高
+            use_pngquant (bool, optional): 是否使用 pngquant (仅PNG), 需要系统中已安装 pngquant
+
+        Returns:
+            str: 压缩后的文件路径, 失败返回空字符串
+        """
+        if not os.path.exists(input_path):
+            CommonUtil.printLog(f"compress_image fail: 文件不存在 {input_path}")
+            return ''
+
+        # 确定输出路径
+        if not output_path:
+            subfix = subfix if subfix else ''
+            file_name, file_ext = os.path.splitext(input_path)
+            output_path = f"{file_name}{subfix}{file_ext}"
+
+        # 确保输出目录存在
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        try:
+            ext = os.path.splitext(input_path)[1].lower()
+            original_size = os.path.getsize(input_path)
+
+            if ext == '.png':
+                if use_pngquant:
+                    # 使用 pngquant 进行有损压缩 (质量损失极小, 压缩率高)
+                    return ImageUtil._compress_png_with_pngquant(input_path, output_path, quality)
+                else:
+                    # 使用 Pillow 进行 PNG 压缩
+                    return ImageUtil._compress_png_with_pillow(input_path, output_path, quality)
+            elif ext in ['.jpg', '.jpeg']:
+                # JPEG 压缩
+                return ImageUtil._compress_jpeg(input_path, output_path, quality)
+            else:
+                CommonUtil.printLog(f"compress_image fail: 不支持的格式 {ext}")
+                return ''
+
+        except Exception as e:
+            CommonUtil.printLog(f"compress_image fail: {e}")
+            return ''
+
+    @staticmethod
+    def _compress_png_with_pillow(input_path: str, output_path: str, quality: int = 85) -> str:
+        """使用 Pillow 压缩 PNG 图片"""
+        try:
+            original_size = os.path.getsize(input_path)
+
+            with Image.open(input_path) as img:
+                # 转换为 P 模式(调色板模式)可以减小文件大小, 但有轻微质量损失
+                # 质量参数映射到调色板颜色数量
+                if quality < 50:
+                    colors = 64
+                elif quality < 75:
+                    colors = 128
+                elif quality < 90:
+                    colors = 192
+                else:
+                    colors = 256
+
+                # 如果有透明度, 保留 RGBA 模式
+                if img.mode in ('RGBA', 'LA') or 'transparency' in img.info:
+                    # 使用优化选项保存
+                    img.save(output_path, 'PNG', optimize=True)
+                else:
+                    # 尝试转换为调色板模式以减小体积
+                    try:
+                        img_p = img.convert('P', palette=Image.ADAPTIVE, colors=colors)
+                        img_p.save(output_path, 'PNG', optimize=True)
+                    except:
+                        # 转换失败则使用原模式
+                        img.save(output_path, 'PNG', optimize=True)
+
+            compressed_size = os.path.getsize(output_path)
+            ratio = (1 - compressed_size / original_size) * 100
+            CommonUtil.printLog(f"PNG压缩完成: {input_path} -> {output_path}, "
+                                f"原大小: {ImageUtil._format_size(original_size)}, "
+                                f"压缩后: {ImageUtil._format_size(compressed_size)}, "
+                                f"压缩率: {ratio:.1f}%")
+            return output_path
+
+        except Exception as e:
+            CommonUtil.printLog(f"_compress_png_with_pillow fail: {e}")
+            return ''
+
+    @staticmethod
+    def _compress_png_with_pngquant(input_path: str, output_path: str, quality: int = 85) -> str:
+        """使用 pngquant 压缩 PNG 图片 (需要系统中已安装 pngquant)"""
+        import subprocess
+        import shutil
+
+        try:
+            # 检查 pngquant 是否可用
+            if not shutil.which('pngquant'):
+                CommonUtil.printLog("pngquant 未安装, 回退到 Pillow 压缩")
+                return ImageUtil._compress_png_with_pillow(input_path, output_path, quality)
+
+            original_size = os.path.getsize(input_path)
+
+            # pngquant 质量参数是 0-100, 但格式是 min-max, 例如 65-80
+            # 我们根据传入的 quality 计算一个合理的范围
+            min_quality = max(0, quality - 15)
+            max_quality = min(100, quality + 5)
+            quality_str = f"{min_quality}-{max_quality}"
+
+            # 构建命令
+            cmd = [
+                'pngquant',
+                '--quality', quality_str,
+                '--force',
+                '--output', output_path,
+                input_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0 or result.returncode == 99:  # 99 表示质量低于预期但仍完成
+                compressed_size = os.path.getsize(output_path)
+                ratio = (1 - compressed_size / original_size) * 100
+                CommonUtil.printLog(f"PNG(pngquant)压缩完成: {input_path} -> {output_path}, "
+                                    f"原大小: {ImageUtil._format_size(original_size)}, "
+                                    f"压缩后: {ImageUtil._format_size(compressed_size)}, "
+                                    f"压缩率: {ratio:.1f}%")
+                return output_path
+            else:
+                CommonUtil.printLog(f"pngquant 执行失败: {result.stderr}, 回退到 Pillow 压缩")
+                return ImageUtil._compress_png_with_pillow(input_path, output_path, quality)
+
+        except Exception as e:
+            CommonUtil.printLog(f"_compress_png_with_pngquant fail: {e}, 回退到 Pillow 压缩")
+            return ImageUtil._compress_png_with_pillow(input_path, output_path, quality)
+
+    @staticmethod
+    def _compress_jpeg(input_path: str, output_path: str, quality: int = 85) -> str:
+        """压缩 JPEG 图片"""
+        try:
+            original_size = os.path.getsize(input_path)
+
+            with Image.open(input_path) as img:
+                # 转换为 RGB 模式(去除透明度)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img = img.convert('RGB')
+
+                # 保存时设置质量参数
+                img.save(output_path, 'JPEG', quality=quality, optimize=True, progressive=True)
+
+            compressed_size = os.path.getsize(output_path)
+            ratio = (1 - compressed_size / original_size) * 100
+            CommonUtil.printLog(f"JPEG压缩完成: {input_path} -> {output_path}, "
+                                f"原大小: {ImageUtil._format_size(original_size)}, "
+                                f"压缩后: {ImageUtil._format_size(compressed_size)}, "
+                                f"压缩率: {ratio:.1f}%")
+            return output_path
+
+        except Exception as e:
+            CommonUtil.printLog(f"_compress_jpeg fail: {e}")
+            return ''
+
+    @staticmethod
+    def compress_images_in_dir(input_dir: str, output_dir: str = None, quality: int = 85,
+                               use_pngquant: bool = False, recursive: bool = False) -> list:
+        """
+        批量压缩目录中的图片
+
+        Args:
+            input_dir (str): 输入目录路径
+            output_dir (str, optional): 输出目录路径, 默认覆盖原文件
+            quality (int, optional): 压缩质量 (1-100), 默认85
+            use_pngquant (bool, optional): 是否使用 pngquant (仅PNG)
+            recursive (bool, optional): 是否递归处理子目录
+
+        Returns:
+            list: 成功压缩的文件路径列表
+        """
+        if not os.path.exists(input_dir):
+            CommonUtil.printLog(f"compress_images_in_dir fail: 目录不存在 {input_dir}")
+            return []
+
+        supported_exts = ('.png', '.jpg', '.jpeg')
+        compressed_files = []
+
+        if recursive:
+            for root, dirs, files in os.walk(input_dir):
+                for file in files:
+                    if file.lower().endswith(supported_exts):
+                        input_path = os.path.join(root, file)
+                        # 计算相对路径以保持目录结构
+                        rel_path = os.path.relpath(input_path, input_dir)
+
+                        if output_dir:
+                            output_path = os.path.join(output_dir, rel_path)
+                        else:
+                            output_path = None  # 使用默认命名
+
+                        result = ImageUtil.compress_image(input_path, output_path, quality, use_pngquant)
+                        if result:
+                            compressed_files.append(result)
+        else:
+            for file in os.listdir(input_dir):
+                if file.lower().endswith(supported_exts):
+                    input_path = os.path.join(input_dir, file)
+
+                    if output_dir:
+                        output_path = os.path.join(output_dir, file)
+                    else:
+                        output_path = None
+
+                    result = ImageUtil.compress_image(input_path, output_path, quality, use_pngquant)
+                    if result:
+                        compressed_files.append(result)
+
+        CommonUtil.printLog(f"批量压缩完成: 共处理 {len(compressed_files)} 个文件")
+        return compressed_files
+
+    @staticmethod
+    def _format_size(size_bytes: int) -> str:
+        """格式化文件大小显示"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.2f} TB"
+
+    @staticmethod
     def save_img(output_path, image: Image = None) -> bool:
         """
         保存处理后的图像
