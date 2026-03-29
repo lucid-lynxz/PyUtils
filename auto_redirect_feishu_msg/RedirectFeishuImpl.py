@@ -36,6 +36,9 @@ class RedirectFeishuImpl(BaseConfig):
         redirect_port = int(feishu_setting['redirect_port'])
         chat_names = feishu_setting['chat_names'].split(',')
 
+        # 原生转发到飞书的目标群
+        forward_to_feishu_chat_names = self.configParser.getSectionItems('forward_to_feishu_chat_names')
+
         # 图床配置
         imguploader_setting = self.configParser.getSectionItems('imguploader')
         imgbb_key = imguploader_setting['imgbb_key']
@@ -65,16 +68,20 @@ class RedirectFeishuImpl(BaseConfig):
             content = msg['content']
             content = f'{msg_title}\n{content}'
             msg_type = msg['msg_type']
-
             image_keys: dict = msg.get('image_keys')
-            print(f'msg_type={msg_type},image_keys={image_keys}')
             downloaded_images: dict = msg.get('downloaded_images')
-            print(f'downloaded_images={downloaded_images}')
+
+            # print(f'msg_type={msg_type},image_keys={image_keys}')
+            # print(f'downloaded_images={downloaded_images}')
+
+            target_channels = forward_to_feishu_chat_names.get(chat_name, '').split(',')
+            if not CommonUtil.isNoneOrBlank(target_channels):
+                feishuMonitorByOAuth.forward_messages(msg, target_channels, native_forward=True)
 
             markdown = False
             if msg_type != 'text':  # 富文本消息
                 # 遍历富文本内嵌图片, 上传并替换图片链接
-                for image_key in msg['image_keys']:
+                for image_key in image_keys:
                     if downloaded_images:
                         img_path = downloaded_images.get(image_key)
                         img_url = img_uploader.upload_local_img(img_path)
