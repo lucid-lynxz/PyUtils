@@ -23,6 +23,7 @@ from util.FileUtil import FileUtil
 
 
 class ImgUploader:
+    key_imgbb = 'IMGBB_KEY'
 
     # ─────────────────────────────────────────────────────────
     # 公开入口
@@ -38,15 +39,14 @@ class ImgUploader:
         if FileUtil.isFileExist(env_path):
             load_dotenv(env_path)
 
-        key_imgbb = 'IMGBB_KEY'
         self.imgbb_key: str = ''
 
         # 优先从 key_dict 中读取各图床的key
         if not CommonUtil.isNoneOrBlank(key_dict):
-            self.imgbb_key = key_dict.get(key_imgbb)
+            self.imgbb_key = key_dict.get(ImgUploader.key_imgbb)
 
         # 然后才读取环境变量中的 key
-        self.imgbb_key = self.imgbb_key or os.environ.get(key_imgbb, "")
+        self.imgbb_key = self.imgbb_key or os.environ.get(ImgUploader.key_imgbb, "")
 
     def upload_local_img(self, local_path: str) -> Optional[str]:
         """

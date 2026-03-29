@@ -23,7 +23,7 @@ class NetUtil(object):
 
     @staticmethod
     def push_to_robot(content: str, configDict: dict = None, printLog: bool = True,
-                      with_time: bool = True) -> bool:
+                      with_time: bool = True, markdown: bool = False) -> bool:
         """
         自动按需发送普通文本给钉钉/飞书自定义机器人
         :param content: 普通文本消息
@@ -40,13 +40,14 @@ class NetUtil(object):
               atPhone: 钉钉机器人支持at特定人员,此处填写手机号, 可多个,逗号分隔
         :param printLog: 是否打印日志, 默认为False
         :param with_time: 是否在消息前面加上时间, 默认为 True
+        :param markdown: 是否发送markdown文本
         """
         if CommonUtil.isNoneOrBlank(content):
             return False
-        
+
         # 限流逻辑实现
         current_time = TimeUtil.currentTimeMillis() / 1000  # 转换为秒
-        
+
         # 检查是否在限流时间内
         if content in NetUtil._message_cache:
             last_send_time = NetUtil._message_cache[content]
@@ -54,17 +55,17 @@ class NetUtil(object):
                 if printLog:
                     CommonUtil.printLog(f'Message rate limited: "{content}" (sent {current_time - last_send_time:.1f}s ago)')
                 return False
-        
+
         # 更新或添加消息记录
         NetUtil._message_cache[content] = current_time
-        
+
         # 如果超过最大缓存数量，删除最早的记录
         if len(NetUtil._message_cache) > NetUtil._MESSAGE_CACHE_SIZE:
             # OrderedDict在Python 3.7+中保持插入顺序，popitem(last=False)删除第一个元素
             oldest_content, _ = NetUtil._message_cache.popitem(last=False)
             if printLog:
                 CommonUtil.printLog(f'Message cache full, removed oldest: "{oldest_content}"')
-        
+
         if printLog:
             CommonUtil.printLog(f'push_to_robot content={content}')
 
@@ -88,9 +89,9 @@ class NetUtil(object):
             return False
         # CommonUtil.printLog(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
         if not CommonUtil.isNoneOrBlank(ddAccessToken):
-            NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret)
+            NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret, markdown=markdown)
         if not CommonUtil.isNoneOrBlank(fsToken):
-            NetUtil.push_feishu_robot(content, fsToken, atAll)
+            NetUtil.push_feishu_robot(content, fsToken, atAll, markdown=markdown)
         return True
 
     @staticmethod
@@ -98,7 +99,8 @@ class NetUtil(object):
                              access_token: str,
                              is_at_all: bool = False,
                              at_mobiles: list = '',
-                             secret: str = None) -> str:
+                             secret: str = None,
+                             markdown: bool = False) -> str:
         """
         发送文本消息到钉钉机器人
         文档:  https://developers.dingtalk.com/document/robots/custom-robot-access
@@ -107,8 +109,13 @@ class NetUtil(object):
         :param is_at_all: 是否@所有人
         :param at_mobiles: @指定人员,填入对应人员的手机号列表, 如: ['123', '456']
         :param secret: 钉钉机器人开启加签模式时需要使用,非空有效
+        :param markdown: 是否发送markdown文本
         """
-        result = DingTalkBot(token=access_token, secret=secret).send_text(content, is_at_all, at_mobiles)
+        _bot = DingTalkBot(token=access_token, secret=secret)
+        if markdown:
+            result = _bot.send_markdown('markdown', content, is_at_all, at_mobiles)
+        else:
+            result = _bot.send_text(content, is_at_all, at_mobiles)
         ddResult = json.dumps(result, default=str)
         CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
         return ddResult
@@ -116,19 +123,33 @@ class NetUtil(object):
     @staticmethod
     def push_feishu_robot(content: str,
                           access_token: str,
-                          is_at_all: bool = False, ) -> str:
+                          is_at_all: bool = False,
+                          markdown: bool = False) -> str:
         """
         发送普通文本消息到飞书自定义机器人
         官方文档: https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN
+        :param content: 待发送的内容
+        :param access_token: 机器人token,必填
+        :param is_at_all: 是否@所有人
+        :param markdown: 是否发送markdown文本,默认为False
         """
         headers = {"Content-type": "application/json"}
         atAllOpt = '\n<at user_id="all">所有人</at>' if is_at_all else ''
-        json_data_obj = {
-            "content": {
-                "text": "%s%s" % (content, atAllOpt)
-            },
-            "msg_type": "text"
-        }
+
+        if markdown:
+            # Markdown 格式消息
+            json_data_obj = {
+                "content": {"post": {"zh_cn": {"title": "markdown_msg", "content": [[{"tag": "text", "text": content}]]}}},
+                "msg_type": "post"
+            }
+        else:
+            # 普通文本消息
+            json_data_obj = {
+                "content": {
+                    "text": "%s%s" % (content, atAllOpt)
+                },
+                "msg_type": "text"
+            }
         # CommonUtil.printLog(f'data_obj={json_data_obj}')
         # 将str类型转换为bytes类型
         json_data_obj = json.dumps(json_data_obj).encode('utf-8')

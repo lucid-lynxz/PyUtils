@@ -851,6 +851,10 @@ class FeishuMonitorByOAuth:
         elif msg_type == "post":
             image_keys = self._extract_post_image_keys(content_str)
 
+        downloaded = downloaded or {}
+        if image_keys is None or len(image_keys) == 0:
+            image_keys = list(downloaded.keys())
+
         return {
             "msg_type": msg_type,
             "msg_id": msg.get("message_id", ""),
