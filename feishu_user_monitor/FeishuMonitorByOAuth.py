@@ -23,6 +23,7 @@ import traceback
 import webbrowser
 import urllib.parse
 import urllib.request
+import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from dotenv import load_dotenv
@@ -137,6 +138,8 @@ class FeishuMonitorByOAuth:
 
         # 发送者名称缓存
         self._sender_cache: dict[str, str] = {}
+        # 已删除的图片 key 缓存（避免重复请求）
+        self._deleted_image_keys: set[str] = set()
 
     # ------------------------------------------------------------------
     # 公开方法：监听消息（主入口）
@@ -148,6 +151,7 @@ class FeishuMonitorByOAuth:
             poll_interval: int = 8,
             download_images: bool = False,
             callback=None,
+            resume_file: str | Path | None = None,
     ) -> None:
         """
         启动消息监听，阻塞运行直到 Ctrl+C。
@@ -167,6 +171,10 @@ class FeishuMonitorByOAuth:
                                sender_type 发送者类型（user/app）
                                content     解析后的可读内容
                                raw         原始消息 dict（完整飞书消息体）
+            resume_file:     断点续传文件路径，默认 <token_file同目录>/.monitor_resume.json。
+                             运行结束后自动写入最新时间戳，下次启动时自动读取并从该时间戳继续。
+                             传入 "" 则禁用断点续传，从当前时间-5秒开始。
+                             文件内容是个json, key-表示群名称  value-时间戳(ms)
         """
         if not chat_names:
             raw = self._env("FEISHU_CHAT_NAMES", "")
@@ -197,8 +205,27 @@ class FeishuMonitorByOAuth:
         # 预加载群成员名字到缓存（im:chat 权限即可，无需 contact 权限）
         self._preload_members(token, list(chat_id_map.keys()))
 
+        # 断点续传：尝试从上次保存的时间戳恢复（JSON key 用 chat_name，可读性更好）
+        _resume_path = Path(resume_file) if resume_file not in (None, "") else self._token_file.parent / ".monitor_resume.json"
+        latest_ts: dict[str, int] = {}
         now_ms = int(time.time() * 1000) - 5000
-        latest_ts = {cid: now_ms for cid in chat_id_map}
+
+        if str(resume_file) != "" and _resume_path.exists():
+            try:
+                saved = json.loads(_resume_path.read_text(encoding="utf-8"))
+                for cid, chat_name in chat_id_map.items():
+                    ts = saved.get(chat_name)      # JSON 中用 chat_name 做 key
+                    if ts and isinstance(ts, int):
+                        latest_ts[cid] = ts
+                loaded = [f"{self._fmt_time(str(v))} ({k})" for k, v in saved.items()]
+                _cp(f"  ✅ 断点已恢复：{', '.join(loaded)}", _C.GREEN)
+            except Exception:
+                pass
+
+        # 未找到记录的群，用当前时间-5秒作为起始
+        for cid in chat_id_map:
+            if cid not in latest_ts:
+                latest_ts[cid] = now_ms
 
         _cp("👂 开始监听，等待新消息...\n", _C.CYAN)
 
@@ -228,6 +255,23 @@ class FeishuMonitorByOAuth:
                 time.sleep(poll_interval)
         except KeyboardInterrupt:
             _cp("\n\n  👋 监听已停止。", _C.CYAN)
+
+        # 退出前保存各群最新时间戳（JSON key 改用 chat_name）
+        if str(resume_file) != "":
+            try:
+                _resume_path = Path(resume_file) if resume_file not in (None, "") else self._token_file.parent / ".monitor_resume.json"
+                _resume_path.parent.mkdir(parents=True, exist_ok=True)
+                # 保存时把 chat_id 反查为 chat_name
+                _id_to_name = {v: k for k, v in chat_id_map.items()}  # name -> id
+                saved_ts = {chat_id_map[cid]: ts for cid, ts in latest_ts.items()}
+                _resume_path.write_text(
+                    json.dumps(saved_ts, ensure_ascii=False, indent=2),
+                    encoding="utf-8"
+                )
+                saved = [f"{self._fmt_time(str(v))} ({k})" for k, v in saved_ts.items()]
+                _cp(f"  💾 断点已保存到：{_resume_path}", _C.GRAY)
+            except Exception as e:
+                _cp(f"  ⚠️ 断点保存失败：{e}", _C.YELLOW)
 
     # ------------------------------------------------------------------
     # 公开方法：列出所有群聊
@@ -1201,6 +1245,20 @@ class FeishuMonitorByOAuth:
                         pass
         elif msg_type == "text":
             _cp(f"  📝 {display}", _C.GREEN)
+        elif msg_type == "interactive":
+            _cp(f"  📎 {display}", _C.YELLOW)
+            if download_images:
+                image_keys = self._extract_interactive_image_keys(content_str)
+                for idx, image_key in enumerate(image_keys):
+                    prefix = f"{create_time4file}_{sender_name}_i{idx + 1}" if sender_name else f"{create_time}_i{idx + 1}"
+                    try:
+                        saved = self.download_image(token, msg_id, image_key, prefix, image_save_dir)
+                        if saved:
+                            abs_path = str(Path(saved).resolve())
+                            downloaded[image_key] = abs_path
+                            _cp(f"      ✅ 内嵌图片已保存：{abs_path}", _C.GREEN)
+                    except Exception as e:
+                        _cp(f"  [错误] interactive 图片下载异常: {e}", _C.RED)
         else:
             _cp(f"  📎 {display}", _C.YELLOW)
 
@@ -1315,14 +1373,72 @@ class FeishuMonitorByOAuth:
             return "[分享用户名片]"
 
         elif msg_type == "system":
-            return f"[系统消息] {content.get('content', {}).get('text', '')}"
+            text = content.get("content", {}).get("text", "") or content.get("text", "")
+            return f"[系统消息] {text}" if text else f"[系统消息] {content_str}"
+
+        elif msg_type == "interactive":
+            # interactive 消息：提取所有图片 key 和文本
+            parts = []
+            elements = content.get("elements") or []
+            image_keys = []
+            for group in elements:
+                if not isinstance(group, list):
+                    continue
+                for elem in group:
+                    if not isinstance(elem, dict):
+                        continue
+                    tag = elem.get("tag", "")
+                    if tag == "img":
+                        key = elem.get("image_key", "")
+                        if key:
+                            image_keys.append(key)
+                            parts.append(f"[图片:{key}]")
+                    elif tag == "text":
+                        text = elem.get("text", "")
+                        if text:
+                            parts.append(text)
+                    elif tag == "button":
+                        text = elem.get("text", "")
+                        if text:
+                            parts.append(f"[按钮:{text}]")
+                    else:
+                        parts.append(f"[{tag}]")
+            if image_keys:
+                parts.insert(0, f"[interactive] 包含 {len(image_keys)} 张图片")
+            return "\n      ".join(parts) if parts else f"[interactive] {content_str}"
 
         else:
-            return f"[{msg_type}] {content_str[:100]}"
+            return f"[{msg_type}] {content_str[:200]}"
 
     # ------------------------------------------------------------------
     # 私有方法：提取富文本中所有内嵌图片的 image_key
     # ------------------------------------------------------------------
+
+    @staticmethod
+
+    def _extract_interactive_image_keys(content_str: str) -> list[str]:
+        """
+        从 interactive 消息的 content JSON 中提取所有 img 元素的 image_key。
+        interactive 消息结构示例：
+          {"title": null, "elements": [[{"tag": "img", "image_key": "img_v3_02ad_..."}]]}
+        """
+        keys: list[str] = []
+        seen: set[str] = set()
+        try:
+            content = json.loads(content_str)
+            elements = content.get("elements") or []
+            for group in elements:
+                if not isinstance(group, list):
+                    continue
+                for elem in group:
+                    if isinstance(elem, dict) and elem.get("tag") == "img":
+                        key = elem.get("image_key", "")
+                        if key and key not in seen:
+                            keys.append(key)
+                            seen.add(key)
+        except Exception:
+            pass
+        return keys
 
     @staticmethod
     def _extract_post_image_keys(content_str: str) -> list[str]:
@@ -1418,6 +1534,8 @@ class FeishuMonitorByOAuth:
                 pass
         elif msg_type == "post":
             image_keys = self._extract_post_image_keys(content_str)
+        elif msg_type == "interactive":
+            image_keys = self._extract_interactive_image_keys(content_str)
 
         downloaded = downloaded or {}
         if image_keys is None or len(image_keys) == 0:
@@ -1523,12 +1641,18 @@ class FeishuMonitorByOAuth:
     # ------------------------------------------------------------------
 
     def download_image(self, token: str, message_id: str, image_key: str, prefix: str, save_dir: str) -> str:
+        # 已标记为删除的图片，直接跳过
+        if image_key in self._deleted_image_keys:
+            return ""
         try:
             save_path = Path(save_dir)
             save_path.mkdir(parents=True, exist_ok=True)
             url = f"{_FEISHU_API}/im/v1/messages/{message_id}/resources/{image_key}?type=image"
-            data = self._download_bytes(url, token)
+            data, err_code = self._download_bytes(url, token)
             if not data:
+                # 记录已删除的图片 key，后续不再尝试
+                if err_code == 14005:
+                    self._deleted_image_keys.add(image_key)
                 return ""
             prefix = f"{prefix}_" if prefix else ""
             file_name = f"{prefix}{image_key}.png"
@@ -1626,14 +1750,42 @@ class FeishuMonitorByOAuth:
             raise RuntimeError(f"HTTP {e.code} {e.reason} — URL: {url}\n  响应体: {body}") from None
 
     @staticmethod
-    def _download_bytes(url: str, token: str) -> bytes | None:
+    def _download_bytes(url: str, token: str) -> tuple[bytes | None, int]:
+        """
+        Returns:
+            (data, error_code) - error_code=0 表示成功，其他为飞书错误码
+        """
         try:
             req = urllib.request.Request(url)
             req.add_header("Authorization", f"Bearer {token}")
             with urllib.request.urlopen(req, timeout=30) as resp:
-                return resp.read()
-        except Exception:
-            return None
+                data = resp.read()
+                # 检查是否是错误响应（JSON 而非图片）
+                if data[:1] == b'{' and b'"code"' in data[:200]:
+                    err = json.loads(data.decode("utf-8", errors="replace"))
+                    code = err.get("code", 0)
+                    msg = err.get("msg", "")
+                    if code == 14005:  # Resource Has Been Deleted
+                        _cp(f"  ⚠️ 图片已被删除，跳过", _C.YELLOW)
+                    else:
+                        _cp(f"  [警告] 下载返回错误 code={code}: {msg}", _C.YELLOW)
+                    return None, code
+                return data, 0
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            err_code = -1
+            try:
+                err_code = json.loads(body).get("code", -1)
+            except Exception:
+                pass
+            if err_code == 14005:
+                _cp(f"  ⚠️ 图片已被删除，跳过", _C.YELLOW)
+            else:
+                _cp(f"  [错误] _download_bytes HTTP {e.code}: {body[:300]}", _C.RED)
+            return None, err_code
+        except Exception as e:
+            _cp(f"  [错误] _download_bytes 异常: {e}", _C.RED)
+            return None, -1
 
     # ------------------------------------------------------------------
     # 私有方法：工具函数
