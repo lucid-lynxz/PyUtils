@@ -60,7 +60,7 @@ class _C:
 
 
 def _cp(text: str, color: str = _C.RESET) -> None:
-    print(f"{color}{text}{_C.RESET}")
+    print(f"{color}{text}{_C.RESET}", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -152,6 +152,7 @@ class FeishuMonitorByOAuth:
             download_images: bool = False,
             callback=None,
             resume_file: str | Path | None = None,
+            auto_save_resume: bool = True,
     ) -> None:
         """
         启动消息监听，阻塞运行直到 Ctrl+C。
@@ -175,6 +176,8 @@ class FeishuMonitorByOAuth:
                              运行结束后自动写入最新时间戳，下次启动时自动读取并从该时间戳继续。
                              传入 "" 则禁用断点续传，从当前时间-5秒开始。
                              文件内容是个json, key-表示群名称  value-时间戳(ms)
+            auto_save_resume: 退出时是否自动保存断点时间戳，默认 True。
+                             设为 False 时，断点文件不会被覆盖，适合手动管理时间戳。
         """
         if not chat_names:
             raw = self._env("FEISHU_CHAT_NAMES", "")
@@ -237,6 +240,12 @@ class FeishuMonitorByOAuth:
                         new_msgs, new_ts = self.fetch_new_messages(token, chat_id, latest_ts[chat_id])
                         latest_ts[chat_id] = new_ts
                         for m in new_msgs:
+                            # 过滤无效消息
+                            m_type = m.get("msg_type", "")
+                            m_body = (m.get("body") or {})
+                            m_content = m_body.get("content", "") if isinstance(m_body, dict) else ""
+                            if m_type == "interactive" and "请升级至最新版本客户端" in m_content:
+                                continue
                             downloaded: dict[str, str] = {}
                             try:
                                 _img_dir = FileUtil.recookPath(f'{self.cache_dir}/{chat_name}/')
@@ -257,7 +266,7 @@ class FeishuMonitorByOAuth:
             _cp("\n\n  👋 监听已停止。", _C.CYAN)
 
         # 退出前保存各群最新时间戳（JSON key 改用 chat_name）
-        if str(resume_file) != "":
+        if auto_save_resume and str(resume_file) != "":
             try:
                 _resume_path = Path(resume_file) if resume_file not in (None, "") else self._token_file.parent / ".monitor_resume.json"
                 _resume_path.parent.mkdir(parents=True, exist_ok=True)
@@ -478,7 +487,7 @@ class FeishuMonitorByOAuth:
             messages: dict | list[dict],
             target_chat_names: list[str] | str,
             token: str | None = None,
-            add_header: bool = True,
+            add_header: bool = False,
             native_forward: bool = False,
     ) -> list[dict]:
         """
@@ -689,8 +698,10 @@ class FeishuMonitorByOAuth:
             else:
                 header = ""
 
-            # 获取 tenant_token 用于上传图片
+            # 获取 tenant_access_token 用于上传图片和发送消息
             tenant_token = self._get_tenant_access_token()
+            # post 消息中引用图片 image_key 时，发送者也必须是同一身份
+            send_token = tenant_token
 
             # 上传所有下载的图片，获取新的 image_key
             new_image_keys = {}
@@ -707,20 +718,82 @@ class FeishuMonitorByOAuth:
             if msg_type == "image" and new_image_keys:
                 # 纯图片消息：先发送头部文字，再发送图片
                 if header:
-                    self._send_text_message(token, target_chat_id, header.rstrip())
+                    self._send_text_message(send_token, target_chat_id, header.rstrip())
                 image_key = list(new_image_keys.values())[0]
-                send_result = self._send_image_message(token, target_chat_id, image_key)
+                send_result = self._send_image_message(send_token, target_chat_id, image_key)
 
             elif msg_type == "post" and downloaded_images:
-                # 富文本消息：替换图片 key 后发送
-                send_result = self._forward_post_message_with_new_images(
-                    token, target_chat_id, raw_msg, header, add_header, new_image_keys
-                )
+                # 检查 post 内容是否只有图片（无文字），如果是则用 image 类型发送
+                body = raw_msg.get("body", {})
+                content_str = body.get("content", "{}") if isinstance(body, dict) else "{}"
+                has_text = False
+                try:
+                    c = json.loads(content_str)
+                    pd = c.get("post") or c
+                    if isinstance(pd, dict):
+                        lk = next((k for k in ("zh_cn", "en_us", "ja_jp") if k in pd), None)
+                        if lk:
+                            rows = pd[lk].get("content", []) or []
+                        elif "content" in pd:
+                            rows = pd.get("content", []) or []
+                        else:
+                            rows = []
+                        for row in rows:
+                            if isinstance(row, list):
+                                for elem in row:
+                                    if isinstance(elem, dict) and elem.get("tag") == "text" and elem.get("text", ""):
+                                        has_text = True
+                                        break
+                            if has_text:
+                                break
+                except Exception:
+                    has_text = True
+
+                if has_text:
+                    # 富文本消息：替换图片 key 后发送
+                    send_result = self._forward_post_message_with_new_images(
+                        send_token, target_chat_id, raw_msg, header, add_header, new_image_keys
+                    )
+                else:
+                    # 纯图片 post：用 image 类型发送
+                    if header:
+                        self._send_text_message(send_token, target_chat_id, header.rstrip())
+                    image_key = list(new_image_keys.values())[0]
+                    send_result = self._send_image_message(send_token, target_chat_id, image_key)
             else:
-                # 其他情况：使用普通富文本转发
-                send_result = self._forward_post_message(
-                    token, target_chat_id, raw_msg, header, add_header
-                )
+                # interactive 消息：提取文本和图片，分开发送
+                if msg_type == "interactive":
+                    body_content = raw_msg.get("body", {}).get("content", "{}") if isinstance(raw_msg.get("body"), dict) else "{}"
+                    try:
+                        interactive_data = json.loads(body_content) if isinstance(body_content, str) else body_content
+                    except Exception:
+                        interactive_data = {}
+                    text_parts = []
+                    for group in interactive_data.get("elements") or []:
+                        if not isinstance(group, list):
+                            continue
+                        for elem in group:
+                            if not isinstance(elem, dict):
+                                continue
+                            if elem.get("tag") == "text":
+                                t = elem.get("text", "")
+                                if t:
+                                    text_parts.append(t)
+                    # 先发文字部分
+                    text_content = "\n".join(text_parts) if text_parts else ""
+                    if header or text_content:
+                        self._send_text_message(send_token, target_chat_id, f"{header}{text_content}".strip())
+                    # 再发图片（每张图单独一条消息）
+                    if new_image_keys:
+                        for new_key in new_image_keys.values():
+                            self._send_image_message(send_token, target_chat_id, new_key)
+                    # 构造一个成功的结果
+                    send_result = {"code": 0, "msg": "success"}
+                else:
+                    # 其他情况：使用普通富文本转发
+                    send_result = self._forward_post_message(
+                        send_token, target_chat_id, raw_msg, header, add_header
+                    )
 
             _cp(f"  [调试] 发送结果: {send_result}", _C.GRAY)
             if send_result.get("code") == 0:
@@ -764,10 +837,16 @@ class FeishuMonitorByOAuth:
             # 解析替换后的内容
             new_content = json.loads(content_str_new)
 
-            # 确保格式正确：外层必须有 "post" 键
+            # 确保格式正确：外层必须有 "post" 键，内部必须有语言键
             if "post" not in new_content:
-                # 如果原始格式是 {"zh_cn": {...}}，需要包装成 {"post": {"zh_cn": {...}}}
                 new_content = {"post": new_content}
+
+            post_data = new_content.get("post", {})
+            if isinstance(post_data, dict):
+                has_lang_key = any(k in post_data for k in ("zh_cn", "en_us", "ja_jp"))
+                if not has_lang_key:
+                    # 根就是语言内容（如 {"title":"","content":[...]}），需要包装
+                    new_content["post"] = {"zh_cn": post_data}
 
             # 如果需要添加头部，在 content 前面添加
             if add_header and header:
@@ -784,10 +863,11 @@ class FeishuMonitorByOAuth:
                         if "content" in post_data and isinstance(post_data["content"], list):
                             post_data["content"].insert(0, [{"tag": "text", "text": header}])
 
-                # 重新序列化
-                content_str_new = json.dumps(new_content, ensure_ascii=False)
+            # 重新序列化（无论是否添加 header 都需要，因为上面可能加了 post/zh_cn 包装）
+            content_str_new = json.dumps(new_content, ensure_ascii=False)
 
-            _cp(f"  [调试] 富文本内容(替换后): {content_str_new[:200]}...", _C.GRAY)
+            _cp(f"  [调试] 富文本内容(替换后): {content_str_new[:300]}", _C.GRAY)
+            _cp(f"  [调试] 完整结构 keys: post={list(new_content.get('post',{}).keys()) if isinstance(new_content.get('post'),dict) else 'N/A'}", _C.GRAY)
 
             url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
             payload = {
@@ -1037,6 +1117,23 @@ class FeishuMonitorByOAuth:
     # ------------------------------------------------------------------
     # 公开方法：拉取新消息
     # ------------------------------------------------------------------
+    # 私有方法：获取消息详情
+    # ------------------------------------------------------------------
+
+    def _get_message_detail(self, token: str, message_id: str) -> dict | None:
+        """获取单条消息的完整内容（列表 API 可能返回降级内容，需要详情 API）"""
+        try:
+            resp = self._get(
+                f"{_FEISHU_API}/im/v1/messages/{message_id}",
+                token,
+            )
+            if resp.get("code") == 0:
+                return resp.get("data", {}).get("items", [None])[0]
+        except Exception as e :
+            _cp(f"  [警告] 获取消息详情异常: {e}", _C.YELLOW)
+        return None
+
+    # ------------------------------------------------------------------
 
     def fetch_new_messages(
             self,
@@ -1057,39 +1154,68 @@ class FeishuMonitorByOAuth:
         """
         start_time = str(since_ts_ms // 1000)
         try:
-            resp = self._get(
-                f"{_FEISHU_API}/im/v1/messages",
-                token,
-                params={
+            page_token = None
+            items = []
+            while True:
+                params = {
                     "container_id_type": "chat",
                     "container_id": chat_id,
                     "start_time": start_time,
                     "page_size": 50,
-                },
-            )
+                }
+                if page_token:
+                    params["page_token"] = page_token
+                resp = self._get(
+                    f"{_FEISHU_API}/im/v1/messages",
+                    token,
+                    params=params,
+                )
+                if resp.get("code") != 0:
+                    code = resp.get("code")
+                    if code == 99991671:
+                        _cp("[警告] Token 已失效，将在下次轮询时自动刷新", _C.YELLOW)
+                    else:
+                        _cp(f"[警告] 获取消息失败: code={code}, msg={resp.get('msg')}", _C.RED)
+                    break
+
+                page_items = resp.get("data", {}).get("items") or []
+                items.extend(page_items)
+
+                if not resp.get("data", {}).get("has_more"):
+                    break
+                page_token = resp.get("data", {}).get("page_token")
+                if not page_token:
+                    break
+
         except Exception as e:
             _cp(f"[警告] 请求失败: {e}", _C.RED)
             return [], since_ts_ms
-
-        if resp.get("code") != 0:
-            code = resp.get("code")
-            if code == 99991671:
-                _cp("[警告] Token 已失效，将在下次轮询时自动刷新", _C.YELLOW)
-            else:
-                _cp(f"[警告] 获取消息失败: code={code}, msg={resp.get('msg')}", _C.RED)
-            return [], since_ts_ms
-
-        # 飞书 API 返回的消息已按时间正序排列（旧消息在前），无需反转
-        items = resp.get("data", {}).get("items") or []
 
         new_latest = since_ts_ms
         new_msgs = []
         for m in items:
             ts_ms = int(m.get("create_time", "0"))  # create_time 已是毫秒
             if ts_ms > since_ts_ms:
+                # interactive 消息的列表 API 可能返回降级内容，需要调详情接口获取完整内容
+                if m.get("msg_type") == "interactive":
+                    detail = self._get_message_detail(token, m.get("message_id", ""))
+                    if detail:
+                        detail_body = detail.get("body", {})
+                        detail_content = detail_body.get("content", "") if isinstance(detail_body, dict) else ""
+                        if "请升级至最新版本客户端" not in detail_content:
+                            _cp(f"  [调试] 详情接口返回完整内容: {str(detail_body)[:150]}", _C.GREEN)
+                            m = detail
+                        else:
+                            _cp(f"  [调试] 详情接口也是降级内容，无法获取完整卡片", _C.YELLOW)
                 new_msgs.append(m)
                 if ts_ms > new_latest:
                     new_latest = ts_ms
+
+        # 调试：打印前3条消息的原始结构
+        if new_msgs:
+            import json as _json
+            for i, m in enumerate(new_msgs[:3]):
+                _cp(f"  [RAW msg {i}] msg_type={m.get('msg_type')} body={str(m.get('body',''))[:200]}", _C.GRAY)
 
         return new_msgs, new_latest
 
