@@ -850,6 +850,20 @@ class FileUtil(object):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
+    @staticmethod
+    def md5(file_path: str) -> str:
+        """
+        计算文件的 MD5 值
+        :param file_path: 文件绝对路径
+        :return: MD5 值的十六进制字符串
+        """
+        md5_hash = hashlib.md5()
+        with open(file_path, 'rb') as f:
+            # 分块读取，避免大文件占用过多内存
+            for chunk in iter(lambda: f.read(8192), b''):
+                md5_hash.update(chunk)
+        return md5_hash.hexdigest()
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"

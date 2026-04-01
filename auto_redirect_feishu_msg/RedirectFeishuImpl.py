@@ -115,4 +115,4 @@ class RedirectFeishuImpl(BaseConfig):
             NetUtil.push_to_robot(content, with_time=False, markdown=markdown)
 
         feishuMonitorByOAuth = FeishuMonitorByOAuth(app_id, app_secret, redirect_port)
-        feishuMonitorByOAuth.start(chat_names, download_images=True, callback=on_message, auto_save_resume=False)
+        feishuMonitorByOAuth.start(chat_names, download_images=True, callback=on_message, auto_save_resume=True)

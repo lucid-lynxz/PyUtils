@@ -5,6 +5,7 @@ import json
 import os
 import threading
 from typing import Optional, TypeVar, Generic, Callable, Set
+from typing_extensions import Self
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
@@ -78,11 +79,11 @@ class KVCache(Generic[T]):
             cache_dir = os.path.dirname(self.cache_file)
             if cache_dir and not os.path.exists(cache_dir):
                 os.makedirs(cache_dir)
-            CommonUtil.printLog(f'尝试保存缓存: {self.cache_file}')
+            # CommonUtil.printLog(f'尝试保存缓存: {self.cache_file}')
             intent = None if len(self.cache.keys()) >= 50000 else 2
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=intent)
-            CommonUtil.printLog(f'保存缓存成功')
+            # CommonUtil.printLog(f'保存缓存成功')
         except Exception as e:
             CommonUtil.printLog(f"保存缓存文件失败: {e}")
 
@@ -93,7 +94,7 @@ class KVCache(Generic[T]):
             key = self.recook_key(key) if self.recook_key else key
             return self.cache.get(key)
 
-    def set(self, key: str, value: T):
+    def set(self, key: str, value: T) -> Self:
         """将key-value对存入缓存"""
         # 使用线程锁保护共享资源
         with self.lock:
@@ -106,9 +107,11 @@ class KVCache(Generic[T]):
             if self.save_batch is not None and self._new_key_cnt > 0 and self._new_key_cnt % self.save_batch == 0:
                 self._save_cache()
                 self._new_key_cnt = 0
+        return self
 
-    def save(self):
+    def save(self) -> Self:
         """保存缓存到文件"""
         # 使用线程锁保护共享资源
         with self.lock:
             self._save_cache()
+        return self

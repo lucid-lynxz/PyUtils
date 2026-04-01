@@ -10,6 +10,7 @@
 """
 import os
 import sys
+import time
 import base64
 import requests
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from util.CommonUtil import CommonUtil
 from util.FileUtil import FileUtil
+from util.KVCache import KVCache
 
 
 class ImgUploader:
@@ -48,24 +50,62 @@ class ImgUploader:
         # 然后才读取环境变量中的 key
         self.imgbb_key = self.imgbb_key or os.environ.get(ImgUploader.key_imgbb, "")
 
-    def upload_local_img(self, local_path: str) -> Optional[str]:
+        # 创建上传结果缓存: key=图片绝对路径，value={'md5': str, 'url': str}
+        cache_dir = FileUtil.create_cache_dir(None, __file__, )
+        cache_file = f'{cache_dir}/img_uploader_cache.json'
+        self.cache: KVCache[Dict[str, str]] = KVCache(cache_file, save_batch=10)
+
+    def upload_local_img(self, local_path: str, max_retry_cnt: int = 3,
+                         use_cache: bool = True) -> Optional[str]:
         """
         将本地图片上传到图床，返回图片 URL。
 
         上传顺序：ImgBB（需 imgbb_key）
 
         :param local_path: 本地图片绝对路径
+        :param max_retry_cnt: 上传失败时最大重试次数，默认 3 次
+        :param use_cache: 是否使用缓存，默认 True
         :return: 图片 URL；所有图床均失败返回 None
         """
         if not os.path.isfile(local_path):
             CommonUtil.printLog(f"[ImgUploader] 文件不存在：{local_path}")
             return None
 
-        # ── 图床 1：ImgBB ───────────────────────────────────
-        if self.imgbb_key:
-            _url = self.upload_to_imgbb(local_path, self.imgbb_key)
-            if _url:
-                return _url
+        # 获取绝对路径作为 cache key
+        abs_path = FileUtil.recookPath(local_path)
+        # 计算当前文件的 md5
+        file_md5 = FileUtil.md5(abs_path)
+
+        # 检查缓存
+        if use_cache and self.cache.get(abs_path):
+            cache_data = self.cache.get(abs_path)
+            cached_md5 = cache_data.get('md5')
+            cached_url = cache_data.get('url')
+
+            # md5 一致，说明文件未变化，直接返回缓存的 url
+            if cached_md5 and cached_url and cached_md5 == file_md5:
+                CommonUtil.printLog(f"[ImgUploader] ✅ 使用缓存：{abs_path}")
+                return cached_url
+            # else:
+            #     CommonUtil.printLog(f"[ImgUploader] ⚠️ 缓存失效 (md5 不匹配)，重新上传：{abs_path}")
+
+        _url = None  # 上传结果url
+        for attempt in range(1, max_retry_cnt + 1):
+            if not CommonUtil.isNoneOrBlank(_url):
+                break
+
+            if self.imgbb_key:  # 图床 1：ImgBB
+                _url = self.upload_to_imgbb(local_path, self.imgbb_key)
+
+            if not _url and attempt < max_retry_cnt:
+                wait_time = min(2 ** (attempt - 1), 5)  # 指数退避：1s, 2s, 4s, 最多 5s
+                CommonUtil.printLog(f"  {wait_time}秒后重试...")
+                time.sleep(wait_time)
+
+        if not CommonUtil.isNoneOrBlank(_url):  # 缓存上传结果
+            self.cache.set(abs_path, {'md5': file_md5, 'url': _url}).save()
+            # CommonUtil.printLog(f"[ImgUploader] 💾 已缓存：{abs_path} -> {_url}")
+            return _url
 
         CommonUtil.printLog(f"[ImgUploader] 所有图床均失败：{local_path}")
         return None
