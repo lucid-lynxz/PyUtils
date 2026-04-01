@@ -117,7 +117,7 @@ class NetUtil(object):
         else:
             result = _bot.send_text(content, is_at_all, at_mobiles)
         ddResult = json.dumps(result, default=str)
-        CommonUtil.printLog(f'push_ding_talk_robot result={ddResult}')
+        CommonUtil.printLog(f'push_ding_talk_robot md={markdown}, result={ddResult}')
         return ddResult
 
     @staticmethod

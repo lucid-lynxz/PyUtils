@@ -335,6 +335,9 @@ class CommonUtil(object):
 
     @staticmethod
     def convertStr2Float(src: str, defaultValue: float) -> float:
+        if CommonUtil.isNoneOrBlank(src):
+            return defaultValue
+
         try:
             return float(src)
         except ValueError:
@@ -342,6 +345,9 @@ class CommonUtil(object):
 
     @staticmethod
     def convertStr2Int(src: str, defaultValue: int) -> int:
+        if CommonUtil.isNoneOrBlank(src):
+            return defaultValue
+
         try:
             return int(src)
         except ValueError:

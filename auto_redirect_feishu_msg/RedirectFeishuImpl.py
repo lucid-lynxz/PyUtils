@@ -19,6 +19,8 @@ if proj_dir not in sys.path:
 from util.CommonUtil import CommonUtil
 from util.NetUtil import NetUtil
 from util.ImgUploader import ImgUploader
+from util.ImageUtil import ImageUtil
+from util.FileUtil import FileUtil
 
 from base.BaseConfig import BaseConfig
 from feishu_user_monitor.FeishuMonitorByOAuth import FeishuMonitorByOAuth
@@ -84,10 +86,28 @@ class RedirectFeishuImpl(BaseConfig):
                 for image_key in image_keys:
                     if downloaded_images:
                         img_path = downloaded_images.get(image_key)
-                        img_url = img_uploader.upload_local_img(img_path)
-                        if img_url:
-                            pic_flag = f' ![{image_key}]({img_url}) '
+                        full_img_url = img_uploader.upload_local_img(img_path)  # 先上传一张完整图片
+
+                        # 钉钉长图预览时会模糊, 因此尝试将图片拆分为小图分段上传再拼接
+                        imageUtil = ImageUtil(img_path)
+                        image_segments = (imageUtil.resize(1280, condition=imageUtil.image.width > 1280)
+                                          .split_long_image(max_height=2048, compress_quality=0))
+                        total_size = len(image_segments)
+                        if total_size > 1:
+                            CommonUtil.printLog(f'[图片:{image_key}] 拆分为 {total_size} 段')
+
+                        pic_flag = ''
+                        for i in range(total_size):
+                            img_path = image_segments[i]
+                            img_url = img_uploader.upload_local_img(img_path)
+                            if img_url:
+                                pic_flag = f' {pic_flag}\n![{image_key}_part_{i}_{total_size}]({img_url})'.strip()
+                            if total_size > 1:
+                                FileUtil.deleteFile(img_path)  # 删除子图片
+
+                        if pic_flag:
                             content = content.replace(f"[图片:{image_key}]", pic_flag).replace(f"[图片] image_key={image_key}", pic_flag)
+                            content = f'{content}\n[{image_key}]({full_img_url})'
                             content = content.replace('\n', '</br>')
                             markdown = True
                     else:
@@ -95,4 +115,4 @@ class RedirectFeishuImpl(BaseConfig):
             NetUtil.push_to_robot(content, with_time=False, markdown=markdown)
 
         feishuMonitorByOAuth = FeishuMonitorByOAuth(app_id, app_secret, redirect_port)
-        feishuMonitorByOAuth.start(chat_names, download_images=True, callback=on_message, auto_save_resume=True)
+        feishuMonitorByOAuth.start(chat_names, download_images=True, callback=on_message, auto_save_resume=False)

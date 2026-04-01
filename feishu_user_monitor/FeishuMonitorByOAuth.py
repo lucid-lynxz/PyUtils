@@ -217,7 +217,7 @@ class FeishuMonitorByOAuth:
             try:
                 saved = json.loads(_resume_path.read_text(encoding="utf-8"))
                 for cid, chat_name in chat_id_map.items():
-                    ts = saved.get(chat_name)      # JSON 中用 chat_name 做 key
+                    ts = saved.get(chat_name)  # JSON 中用 chat_name 做 key
                     if ts and isinstance(ts, int):
                         latest_ts[cid] = ts
                 loaded = [f"{self._fmt_time(str(v))} ({k})" for k, v in saved.items()]
@@ -867,7 +867,7 @@ class FeishuMonitorByOAuth:
             content_str_new = json.dumps(new_content, ensure_ascii=False)
 
             _cp(f"  [调试] 富文本内容(替换后): {content_str_new[:300]}", _C.GRAY)
-            _cp(f"  [调试] 完整结构 keys: post={list(new_content.get('post',{}).keys()) if isinstance(new_content.get('post'),dict) else 'N/A'}", _C.GRAY)
+            _cp(f"  [调试] 完整结构 keys: post={list(new_content.get('post', {}).keys()) if isinstance(new_content.get('post'), dict) else 'N/A'}", _C.GRAY)
 
             url = f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id"
             payload = {
@@ -1129,7 +1129,7 @@ class FeishuMonitorByOAuth:
             )
             if resp.get("code") == 0:
                 return resp.get("data", {}).get("items", [None])[0]
-        except Exception as e :
+        except Exception as e:
             _cp(f"  [警告] 获取消息详情异常: {e}", _C.YELLOW)
         return None
 
@@ -1215,7 +1215,7 @@ class FeishuMonitorByOAuth:
         if new_msgs:
             import json as _json
             for i, m in enumerate(new_msgs[:3]):
-                _cp(f"  [RAW msg {i}] msg_type={m.get('msg_type')} body={str(m.get('body',''))[:200]}", _C.GRAY)
+                _cp(f"  [RAW msg {i}] msg_type={m.get('msg_type')} body={str(m.get('body', ''))[:200]}", _C.GRAY)
 
         return new_msgs, new_latest
 
@@ -1541,7 +1541,6 @@ class FeishuMonitorByOAuth:
     # ------------------------------------------------------------------
 
     @staticmethod
-
     def _extract_interactive_image_keys(content_str: str) -> list[str]:
         """
         从 interactive 消息的 content JSON 中提取所有 img 元素的 image_key。
@@ -1773,6 +1772,14 @@ class FeishuMonitorByOAuth:
         try:
             save_path = Path(save_dir)
             save_path.mkdir(parents=True, exist_ok=True)
+            prefix = f"{prefix}_" if prefix else ""
+            file_name = f"{prefix}{image_key}.png"
+            file_path = save_path / file_name
+
+            # 图片文件名有唯一新, 若本地已存在就不用重新下了
+            if file_path.exists():
+                return FileUtil.recookPath(str(file_path))
+
             url = f"{_FEISHU_API}/im/v1/messages/{message_id}/resources/{image_key}?type=image"
             data, err_code = self._download_bytes(url, token)
             if not data:
@@ -1780,9 +1787,7 @@ class FeishuMonitorByOAuth:
                 if err_code == 14005:
                     self._deleted_image_keys.add(image_key)
                 return ""
-            prefix = f"{prefix}_" if prefix else ""
-            file_name = f"{prefix}{image_key}.png"
-            file_path = save_path / file_name
+
             file_path.write_bytes(data)
             return FileUtil.recookPath(str(file_path))
         except Exception as e:

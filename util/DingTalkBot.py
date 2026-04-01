@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import hmac
 import hashlib
@@ -61,14 +62,30 @@ class DingTalkBot:
         return self._send(payload)
 
     def send_markdown(self, title: str, markdown_text: str,
-                      is_at_all: bool = False, at_mobiles: list = None) -> Dict[str, Any]:
+                      is_at_all: bool = False, at_mobiles: list = None,
+                      max_image_count: int = 4) -> Dict[str, Any]:
         """
         发送 Markdown 消息（支持图片链接和超链接）
         若要在 md 中@所有人或@特定人员：
           1. 在 markdown_text 添加 '@所有人'，并设置 is_at_all=True
           2. 在 markdown_text 添加 '@{手机号}'，并在 at_mobiles 列表中添加该手机号
+
+        
+        :param title: 消息标题
+        :param markdown_text: Markdown 内容
+        :param is_at_all: 是否@所有人
+        :param at_mobiles: @特定手机号列表
+        :param max_image_count: 单个消息最大图片数，超过会自动拆分发送（默认 5 张）
         """
         at_mobiles = [] if at_mobiles is None else at_mobiles
+
+        # 统计图片数量
+        image_urls = re.findall(r'!\[.*?]\((.*?)\)', markdown_text)
+
+        # 如果图片超过限制，拆分发送
+        if len(image_urls) > max_image_count:
+            return self._send_markdown_batch(title, markdown_text, is_at_all, at_mobiles, max_image_count)
+
         return self._send({
             "msgtype": "markdown",
             "markdown": {"title": title, "text": markdown_text},
@@ -85,6 +102,58 @@ class DingTalkBot:
         return self.send_markdown(title=title,
                                   markdown_text=f"![{title}]({pic_url})",
                                   is_at_all=is_at_all)
+
+    def _send_markdown_batch(self, title: str, markdown_text: str,
+                             is_at_all: bool, at_mobiles: list,
+                             max_image_count: int) -> Dict[str, Any]:
+        """
+        分批发送包含多张图片的 Markdown 消息
+            
+        :return: 返回最后一条消息的结果
+        """
+        # 提取所有图片链接
+        image_pattern = r'!\[(.*?)]\((.*?)\)'
+        images = re.findall(image_pattern, markdown_text)
+
+        # 移除所有图片后的纯文本部分
+        text_without_images = re.sub(r'!\[.*?]\(.*?\)', '', markdown_text)
+        lines = [line.strip() for line in text_without_images.split('\n') if line.strip()]
+
+        CommonUtil.printLog(f"📸 检测到 {len(images)} 张图片，将分批发送（每批最多{max_image_count}张）")
+
+        results = []
+        batch_num = 1
+
+        # 按批次发送图片
+        for i in range(0, len(images), max_image_count):
+            batch_images = images[i:i + max_image_count]
+            batch_md_lines = [f"#### {title} (第{batch_num}/{(len(images) + max_image_count - 1) // max_image_count}批)"]
+
+            # 添加文本内容（只在第一批添加）
+            if batch_num == 1 and lines:
+                batch_md_lines.extend(lines[:10])  # 限制文本行数
+
+            # 添加图片
+            for img_title, img_url in batch_images:
+                batch_md_lines.append(f"![{img_title}]({img_url})")
+
+            batch_md_text = '\n'.join(batch_md_lines)
+            CommonUtil.printLog(f"📤 发送第{batch_num}批...")
+
+            result = self._send({
+                "msgtype": "markdown",
+                "markdown": {"title": f"{title}_part{batch_num}", "text": batch_md_text},
+                "at": {"atMobiles": at_mobiles, "isAtAll": is_at_all}
+            })
+            results.append(result)
+            batch_num += 1
+
+            # 避免限流，批次间延迟 0.5 秒
+            if i + max_image_count < len(images):
+                time.sleep(0.5)
+
+        CommonUtil.printLog(f"✅ 已分批发送完成，共{len(results)}条消息")
+        return results[-1] if results else {"error": "no messages sent"}
 
     # ──────────────────────── 钉钉原生 media upload ────────────────────────
 
@@ -193,17 +262,28 @@ class DingTalkBot:
         return f"{self.webhook_url}&timestamp={timestamp}&sign={sign}"
 
     def _send(self, data: Dict[str, Any], print_log: bool = True) -> Dict[str, Any]:
-        """发送请求到钉钉机器人 webhook"""
+        """
+        发送请求到钉钉机器人 webhook
+        
+        注意：钉钉 API 在某些情况下会返回 errcode=-1 但实际发送成功
+        特别是当消息包含多个外部图片链接时
+        """
         try:
-            response = requests.post(
-                self._generate_url(), json=data, headers=self.headers, timeout=15
-            )
+            response = requests.post(self._generate_url(), json=data, headers=self.headers, timeout=15)
             response.raise_for_status()
             result = response.json()
+
+            # 特殊处理：钉钉返回 -1 但有 msgid 表示实际发送成功
+            if result.get('errcode') == -1 and result.get('msgid'):
+                CommonUtil.printLog(f"⚠️ 钉钉返回系统繁忙但消息已发送 (msgid={result.get('msgid')})", condition=print_log)
+                return {'errcode': 0, 'errmsg': 'ok', 'msgid': result.get('msgid'), 'warning': '系统繁忙但已发送'}
+        except requests.exceptions.Timeout as e:
+            CommonUtil.printLog(f"⚠️ 请求超时，但消息可能已发送：{e}", condition=print_log)
+            return {'errcode': 0, 'errmsg': 'timeout_but_may_sent', 'warning': str(e)}
         except requests.exceptions.RequestException as e:
             result = {"error": str(e)}
-        if print_log:
-            CommonUtil.printLog(f"_send result={result}")
+
+        CommonUtil.printLog(f"_send result={result}", condition=print_log)
         return result
 
 

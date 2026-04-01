@@ -25,6 +25,7 @@ class ImageUtil:
         """
         self.image = None
         self.original_image = None
+        self.image_path = ''
 
         self._font_path: str = None  # 绘制文字时的字体路径
         self._font: ImageFont = None  # 绘制文字时的字体对象
@@ -54,6 +55,7 @@ class ImageUtil:
         """
         try:
             self.image = Image.open(image_path)
+            self.image_path = image_path
             # 保存原始图像以便后续操作
             self.original_image = self.image.copy()
             return self
@@ -61,7 +63,7 @@ class ImageUtil:
             CommonUtil.printLog(f"open_image fail:{e}")
             return self
 
-    def resize(self, width=None, height=None, keep_aspect_ratio=False) -> Self:
+    def resize(self, width=None, height=None, keep_aspect_ratio=False, condition: bool = True) -> Self:
         """
         非等比例尺缩放图像
 
@@ -69,12 +71,16 @@ class ImageUtil:
             width (int, optional): 目标宽度
             height (int, optional): 目标高度
             keep_aspect_ratio (bool, optional): 是否保持宽高比
+            condition: 执行本方法的前置条件
 
         Returns:
             self: 返回实例本身以支持链式调用
         """
         if not self.image:
             self.new((width, height))
+            return self
+
+        if not condition:
             return self
 
         try:
@@ -330,6 +336,7 @@ class ImageUtil:
             bool: 保存成功返回True，失败返回False
         """
         ImageUtil.save_img(output_path, self.image)
+        self.image_path = output_path
         return self
 
     def show(self) -> Self:
@@ -479,7 +486,7 @@ class ImageUtil:
 
         Args:
             input_path (str): 输入图片路径
-            output_path (str, optional): 输出图片路径, 默认使用原文件路径, 并在文件名后添加 subfix (默认是: _compressed 后缀)
+            output_path (str, optional): 输出图片路径, 若为空, 则默认使用原文件路径, 并在文件名后添加 subfix (默认是: _compressed 后缀)
             subfix (str, optional): 输出文件的后缀信息,当output_path为空时有效
             quality (int, optional): 压缩质量 (1-100), 默认85, 数值越小压缩率越高
             use_pngquant (bool, optional): 是否使用 pngquant (仅PNG), 需要系统中已安装 pngquant
@@ -557,12 +564,11 @@ class ImageUtil:
 
             compressed_size = os.path.getsize(output_path)
             ratio = (1 - compressed_size / original_size) * 100
-            CommonUtil.printLog(f"PNG压缩完成: {input_path} -> {output_path}, "
+            CommonUtil.printLog(f"PNG压缩完成: {output_path}, "
                                 f"原大小: {ImageUtil._format_size(original_size)}, "
                                 f"压缩后: {ImageUtil._format_size(compressed_size)}, "
                                 f"压缩率: {ratio:.1f}%")
             return output_path
-
         except Exception as e:
             CommonUtil.printLog(f"_compress_png_with_pillow fail: {e}")
             return ''
@@ -733,6 +739,35 @@ class ImageUtil:
         except Exception as e:
             CommonUtil.printLog(f"save fail:{e}")
             return False
+
+    def split_long_image(self, max_height=2048, compress_quality: int = 0) -> List[str]:
+        """
+        将超长图切割成多段，每段不超过指定高度
+        @param max_height: 拆分后每张图片的最大高度
+        @param compress_quality: 拆分子图后是否要进行压缩,压缩质量, 0表示不压缩  [1,100]
+        @return: 拆分后每张子图片的保存路径
+        """
+        if self.image.height <= max_height:
+            return [self.image_path]
+
+        from util.FileUtil import FileUtil
+        _, name, ext = FileUtil.getFileName(self.image_path)
+        image_dir = FileUtil.getParentPath(self.image_path)
+
+        segments = []
+        parts = (self.image.height + max_height - 1) // max_height  # 向上取整
+
+        for i in range(parts):
+            top = i * max_height
+            bottom = min((i + 1) * max_height, self.image.height)
+
+            segment = self.image.crop((0, top, self.image.width, bottom))
+            segment_path = FileUtil.recookPath(f'{image_dir}/{name}_part{i + 1}.png')
+            segment.save(segment_path)
+            if compress_quality > 0:
+                ImageUtil.compress_image(segment_path, segment_path, subfix='', quality=compress_quality)
+            segments.append(segment_path)
+        return segments
 
 
 # 使用示例

@@ -105,10 +105,11 @@ class ImgUploader:
 
             if data.get("success"):
                 inner = data.get("data") or {}
-                # 优先 display_url（高清），fallback 到 url / image.url
-                url = (inner.get("display_url")
+                # 优先使用原图 URL，避免图床压缩
+                # 优先级：image.url (原图) > url (标准) > display_url (预览压缩图)
+                url = ((inner.get("image") or {}).get("url")
                        or inner.get("url")
-                       or (inner.get("image") or {}).get("url")
+                       or inner.get("display_url")
                        or "")
                 if url:
                     CommonUtil.printLog(f"[ImgUploader] 上传到 ImgBB 成功：{url}")
