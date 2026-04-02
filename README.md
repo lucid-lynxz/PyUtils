@@ -105,3 +105,12 @@ def isDirFileExist(path: str) -> bool
 2. `get_log.py` 从手机中提取多文件保存到本机中
 3. `scrcpy_multi_devices.py` 基于scrcpy项目，实现多手机投屏功能(当前仅支持windows)
 4. `take_screenshot.py` 通过adb screenshot进行截屏并保存文件到本机中
+
+### 'auto_redirect_feishu_msg/main.py'
+
+转发飞书群消息到其他群或者钉钉
+对于企业内部群, 可用直接转发, 对于外部群且自己只是普通成员的, 只能获取到图文消息, 纯文本消息会被飞书降级, 获取不到
+后续考虑走 uiAutomation 进行类rpa获取纯文本消息
+
+
+

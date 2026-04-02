@@ -246,6 +246,13 @@ class FeishuMonitorByOAuth:
                             m_content = m_body.get("content", "") if isinstance(m_body, dict) else ""
                             if m_type == "interactive" and "请升级至最新版本客户端" in m_content:
                                 continue
+                            
+                            # 过滤系统消息（只包含"[系统消息]"的消息不转发）
+                            if m_type == "system":
+                                parsed_content = self._parse_content(m_type, m_content)
+                                if not parsed_content.strip() or parsed_content.strip() == "[系统消息]":
+                                    continue
+                            
                             downloaded: dict[str, str] = {}
                             try:
                                 _img_dir = FileUtil.recookPath(f'{self.cache_dir}/{chat_name}/')
