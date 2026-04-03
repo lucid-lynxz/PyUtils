@@ -949,12 +949,15 @@ class CSVUtil(object):
                 FileUtil.deleteFile(file)
 
     @staticmethod
-    def convert_excel(input_file: str, temp_csv: Optional[str] = None, ignore_exist: bool = True) -> str:
+    def convert_excel(input_file: str, temp_csv: Optional[str] = None, ignore_exist: bool = True,
+                      sheet_name: Optional[Union[str, int]] = None, convert_all_sheets: bool = False) -> Union[str, List[str]]:
         """
         如果输入是 Excel，则转为可分块读取的 CSV 文件, 否则直接返回原文件路径
         :param input_file: 输入文件路径, 支持: .xlsx  .xls  .csv
         :param temp_csv: excel后存储的csv文件路径, 若为None,则使用input_file同目录下, 将后缀改为csv
         :param ignore_exist: 忽略已存在的csv文件, 直接转换并覆盖
+        :param sheet_name: 非空时有效, 用于excel中有多个表时, 指定当前要转换的是第几个表或者什么名称的表
+        :param convert_all_sheets: 是否转换所有的表
         :return: 转换后的文件路径
         """
         input_lower = input_file.lower()
@@ -966,11 +969,43 @@ class CSVUtil(object):
             full_name, name, ext = FileUtil.getFileName(input_file)
 
             if not FileUtil.isFileExist(temp_csv) or ignore_exist:
-                CommonUtil.printLog(f"🔄 正在将 Excel 转换为 CSV 文件: {full_name}")
+                CommonUtil.printLog(f"🔄 正在将 Excel 转换为 CSV 文件：{full_name}")
                 try:
-                    df = pd.read_excel(input_file, dtype=str)
-                    CSVUtil.to_csv(df, temp_csv)
-                    CommonUtil.printLog(f"✅ Excel 已成功转换为: {temp_csv}")
+                    # 模式 1: 转换所有工作表
+                    if convert_all_sheets:
+                        # 读取所有工作表
+                        all_sheets = pd.read_excel(input_file, sheet_name=None, dtype=str)
+                        csv_paths = []
+
+                        for idx, (sheet_name_key, df_sheet) in enumerate(all_sheets.items()):
+                            # 生成带工作表名的 CSV 文件名
+                            base_name = temp_csv.replace('.csv', '')
+                            sheet_csv_path = f"{base_name}_{sheet_name_key}.csv"
+
+                            CSVUtil.to_csv(df_sheet, sheet_csv_path)
+                            csv_paths.append(sheet_csv_path)
+                            CommonUtil.printLog(f"   ✅ 工作表 '{sheet_name_key}' 已转换为：{sheet_csv_path}")
+
+                        CommonUtil.printLog(f"✅ Excel 已成功转换为 {len(csv_paths)} 个 CSV 文件")
+                        return csv_paths
+
+                    # 模式 2: 转换指定的工作表（或默认第一个）
+                    else:
+                        if sheet_name is None:
+                            # 默认读取第一个工作表（索引 0）
+                            df = pd.read_excel(input_file, sheet_name=0, dtype=str)
+                        elif isinstance(sheet_name, int):
+                            # 按索引读取
+                            df = pd.read_excel(input_file, sheet_name=sheet_name, dtype=str)
+                        elif isinstance(sheet_name, str):
+                            # 按名称读取
+                            df = pd.read_excel(input_file, sheet_name=sheet_name, dtype=str)
+                        else:
+                            raise ValueError(f"无效的 sheet_name 类型：{type(sheet_name)}, 应为 str 或 int")
+
+                        CSVUtil.to_csv(df, temp_csv)
+                        CommonUtil.printLog(f"✅ Excel 已成功转换为：{temp_csv}")
+                        return temp_csv
                 except Exception as e:
                     CommonUtil.printLog(f"❌ Excel 转换失败: {e}")
                     raise

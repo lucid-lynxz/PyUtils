@@ -6,7 +6,7 @@ import importlib.util
 import os, sys, threading, time, re
 import platform, random
 import signal, subprocess
-from typing import Type, Union, Optional, List, Set
+from typing import Type, Union, Optional, List, Set, Dict, Any, Pattern
 
 Number = Union[int, float]
 
@@ -804,6 +804,226 @@ class CommonUtil(object):
             CommonUtil._file_only_logger.info(msg)
         else:
             CommonUtil.printLog(msg)
+
+    @staticmethod
+    def filter_dict_list(
+            data: List[Dict[str, Any]],
+            conditions: Dict[str, Union[Any, Pattern, str]],
+            mode: str = 'all',
+            use_regex: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        过滤字典列表
+
+        Args:
+            data: 字典列表
+            conditions: 过滤条件字典，key 为属性名，value 为期望的值, 支持过滤的属性类型: int/bool/float/str
+                       - 普通值：直接相等比较
+                       - callable: 调用函数进行判断
+                       - 正则字符串/Pattern: 当 use_regex=True 时用于字符串匹配
+                       示例:  {
+                       'intFloatKey': lambda x: x > 10000,   # float/int类型, 支持掺入lambda顾虑条件
+                       'strKey' : r'Lynxz',                 # 支持过滤str属性值中包含 'Lynxz' 的数据
+                       'boolKey': True                     # 对布尔属性值进行过滤, 保留值为 True 的数据
+                       }
+
+            mode: 'all' - 满足所有条件; 'any' - 满足任一条件
+            use_regex: 是否启用正则匹配 (仅对字符串属性有效), 支持两种格式:
+                        - 字符串形式: {'name': r'^iPhone'}
+                        - 预编译 Pattern: {'name': re.compile(r'Air', re.IGNORECASE)}
+        Returns:
+            过滤后的新列表
+        """
+
+        def check_condition(item: Dict[str, Any]) -> bool:
+            """检查单个字典是否满足条件"""
+            results = []
+            for key, expected_value in conditions.items():
+                if key not in item:
+                    results.append(False)
+                    continue
+
+                actual_value = item[key]
+
+                # 如果条件是 callable，则调用它
+                if callable(expected_value):
+                    results.append(expected_value(actual_value))
+                # 如果启用正则且值是字符串类型
+                elif use_regex and isinstance(actual_value, str):
+                    # 编译正则表达式 (如果还不是 Pattern 对象)
+                    pattern = expected_value if isinstance(expected_value, Pattern) else re.compile(expected_value)
+                    results.append(bool(pattern.search(actual_value)))
+                else:
+                    # 否则进行相等性比较
+                    results.append(actual_value == expected_value)
+
+            return all(results) if mode == 'all' else any(results)
+
+        return [item for item in data if check_condition(item)]
+
+    @staticmethod
+    def filter_list(
+            data: List[str],
+            patterns: Dict[str, str],
+            flags: int = 0,
+            strip_result: bool = True,
+            start_line: int = 0,
+            start_pattern: str = None
+    ) -> Dict[str, List[str]]:
+        """
+        从字符串列表中提取符合多个正则表达式的内容，返回分组结果
+        主要用于对日志进行过滤，提取关键信息
+        
+        :param data: 原始字符串列表
+        :param patterns: 正则表达式字典，格式为 {简写名称: 正则表达式}
+                        正则中必须包含捕获组 () 用于提取目标内容
+                        例如: {'A': r'.*appId:(.*)$', 'B': r'.*appSecret:\s*(\w+)end$'}
+        :param flags: 正则标志位，如 re.IGNORECASE（默认 0）
+        :param strip_result: 是否去除提取结果的空白字符（默认 True）
+        :param start_line: 从第几行开始生效（从 0 开始计数），默认 0 表示全部有效
+                          例如: start_line=10 表示跳过前 10 行，从第 11 行开始过滤
+        :param start_pattern: 起始匹配模式，找到第一个匹配该模式的行后开始生效
+                             优先级高于 start_line，若两者都设置，以 start_pattern 为准
+                             例如: start_pattern=r'=== TestCase Start ===' 表示从测试用例开始处过滤
+        :return: 字典，key 为正则简写名称，value 为匹配到的内容列表
+                例如: {'A': ['123', '456'], 'B': ['abc37']}
+        
+        :example:
+        # 示例 1: 基础用法
+        lines = [
+             'helloAppId:123',
+             '03:08:15 your appSecret: abc37end',
+             'newAppId:456'
+         ]
+        patterns = {
+             'A': r'.*appId:(.*)$',
+             'B': r'.*appSecret:\s*(\w+)end$'
+         }
+        result = filter_list(lines, patterns)
+        print(result)
+        {'A': ['123', '456'], 'B': ['abc37']}
+        
+        # 示例 2: 不区分大小写
+        result = filter_list(lines, patterns, flags=re.IGNORECASE)
+        
+        # 示例 3: 保留空白字符
+        result = filter_list(lines, patterns, strip_result=False)
+        
+        # 示例 4: 复杂正则提取
+        logs = [
+             '[ERROR] userId=1001 message=login failed',
+             '[INFO] userId=1002 message=success',
+             '[WARN] userId=1003 message=timeout'
+         ]
+        patterns = {
+             'user_id': r'userId=(\d+)',
+             'error_msg': r'\[ERROR\].*message=(.*)',
+             'all_msg': r'message=(.*)'
+         }
+        result = filter_list(logs, patterns)
+        print(result)
+        {
+            'user_id': ['1001', '1002', '1003'],
+            'error_msg': ['login failed'],
+            'all_msg': ['login failed', 'success', 'timeout']
+        }
+        
+        # 示例 5: 从第 10 行开始过滤（跳过前 10 行）
+        result = filter_list(log_lines, patterns, start_line=10)
+        
+        # 示例 6: 从包含特定标记的行开始过滤
+        result = filter_list(
+            log_lines, 
+            patterns, 
+            start_pattern=r'=== TestCase Start ==='
+        )
+        """
+        # 初始化结果字典
+        result = {key: [] for key in patterns.keys()}
+
+        # 预编译所有正则表达式，提升性能
+        compiled_patterns = {}
+        for key, pattern in patterns.items():
+            try:
+                compiled_patterns[key] = re.compile(pattern, flags)
+            except re.error as e:
+                CommonUtil.printLog(f"❌ 正则表达式编译失败 [{key}]: {pattern}\n错误信息: {e}")
+                continue
+
+        # 确定起始行索引
+        actual_start_index = start_line
+        if start_pattern is not None:
+            # 使用 start_pattern 查找起始行
+            try:
+                start_regex = re.compile(start_pattern, flags)
+                found = False
+                for i, line in enumerate(data):
+                    if isinstance(line, str) and start_regex.search(line):
+                        actual_start_index = i
+                        found = True
+                        CommonUtil.printLog(f"📍 找到起始标记行 [{i}]: {line.strip()[:80]}")
+                        break
+                
+                if not found:
+                    CommonUtil.printLog(f"⚠️ 未找到起始标记: {start_pattern}，将从头开始过滤")
+                    actual_start_index = 0
+            except re.error as e:
+                CommonUtil.printLog(f"❌ 起始标记正则编译失败: {start_pattern}\n错误信息: {e}")
+                actual_start_index = 0
+
+        # 确保起始索引有效
+        actual_start_index = max(0, min(actual_start_index, len(data)))
+        
+        if actual_start_index > 0:
+            CommonUtil.printLog(f"📋 跳过前 {actual_start_index} 行，从第 {actual_start_index + 1} 行开始过滤")
+
+        # 遍历数据（从起始行开始）
+        for line_idx in range(actual_start_index, len(data)):
+            line = data[line_idx]
+            if not isinstance(line, str):
+                continue
+
+            # 对每个正则进行匹配
+            for key, compiled_pattern in compiled_patterns.items():
+                match = compiled_pattern.search(line)
+                if match:
+                    # 提取捕获组内容
+                    if match.groups():
+                        # 有捕获组，提取第一个捕获组
+                        extracted = match.group(1)
+                    else:
+                        # 没有捕获组，使用整个匹配结果
+                        extracted = match.group(0)
+
+                    # 根据参数决定是否去除空白
+                    if strip_result:
+                        extracted = extracted.strip()
+
+                    # 添加到结果列表
+                    result[key].append(extracted)
+        return result
+
+    @staticmethod
+    def deduplicate_list(data: List[str]) -> List[str]:
+        """
+        列表去重，保留首次出现的元素，保持原有顺序
+        
+        :param data: 原始列表（可能包含重复元素）
+        :return: 去重后的列表，顺序与首次出现顺序一致
+        
+        :example:
+        data = ['apple', 'banana', 'apple', 'orange', 'banana', 'grape']
+        result = deduplicate_list(data)
+        print(result)
+        ['apple', 'banana', 'orange', 'grape']
+        
+        # 日志去重场景
+        logs = ['ErrorCode:1001', 'ErrorCode:1002', 'ErrorCode:1001', 'ErrorCode:1003']
+        unique_logs = deduplicate_list(logs)
+        print(unique_logs)
+        ['ErrorCode:1001', 'ErrorCode:1002', 'ErrorCode:1003']
+        """
+        return list(dict.fromkeys(data))
 
 
 # 配置日志

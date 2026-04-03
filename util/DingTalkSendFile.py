@@ -1,6 +1,9 @@
 import requests
-import json
+import json, os
 from typing import Union
+from dotenv import load_dotenv
+from pathlib import Path
+from typing import Optional
 
 
 class DingTalkSendFile:
@@ -16,14 +19,21 @@ class DingTalkSendFile:
     * 4. 获取群聊chat_id:
     *   4.1 进入 https://open.dingtalk.com/tools/explorer/jsapi?id=10303
     *   4.2 左侧栏选择chooseChat，手机钉钉扫右侧二维码，登录钉钉开发者后台之后corpId默认填充不用填，isAllowCreateGroup和filterNotOwnerGroup选False
-    *   4.3 右侧点运行调试，在手机上选中接受文件的群获取 chatid
+    *   4.3 右侧点运行调试，在手机上选中接收文件的群获取 chatid
     * 5. 调用 send_file(path) 方法传入本地文件路径进行发送
     """
 
     # ----------------------------------------------------------------------------------------------------
-    def __init__(self, app_key: str, app_secret: str, chat_id: str):
-        self.client_id = app_key  # 用户id appKey
-        self.client_secret = app_secret  # 用户密码  appSecret
+    def __init__(self, chat_id: str, app_key: Optional[str] = None, app_secret: Optional[str] = None):
+        """
+        @param chat_id: 文件要发送到的目标群聊id
+        @param app_key: 钉钉应用的app_key, 若为None,则从当前目录下的 .env 文件中读取 'dd_appKey' 属性
+        @param app_secret: 钉钉应用的app_secret, 若为None,则从当前目录下的 .env 文件中读取 'dd_appSecret' 属性
+        """
+        env_path = Path(__file__).parent / ".env"
+        load_dotenv(dotenv_path=env_path)
+        self.client_id = app_key or os.getenv('dd_appKey')  # 企业应用的 appKey
+        self.client_secret = app_secret or os.getenv('dd_appSecret')  # 企业应用的  appSecret
         self.chat_id = chat_id  # 企业群聊id
         self.access_token: str = ''
 
@@ -63,13 +73,14 @@ class DingTalkSendFile:
             return ""
 
     # ----------------------------------------------------------------------------------------------------
-    def send_file(self, file_path: str):
+    def send_file(self, file_path: str) -> bool:
         """
         * 发送文件到钉钉
         """
         media_id = self.get_media_id(file_path)
         if not media_id:
-            return
+            print(f'发送文件失败: media_id无效')
+            return False
 
         url = f"https://oapi.dingtalk.com/chat/send?access_token={self.access_token}"
         payload = {
@@ -87,12 +98,15 @@ class DingTalkSendFile:
             data = response.json()
             if data["errcode"]:
                 print(f"发送文件出错，错误代码：{data['errcode']}，错误信息：{data['errmsg']}")
+                return False
+            return True
         except requests.RequestException as err:
             print(f"发送文件请求出错，错误信息：{err}")
+            return False
 
 
 if __name__ == '__main__':
     # 实例化类
-    sendFileUtil = DingTalkSendFile(app_key='dingawz6kljlkwvfjhlk', app_secret='gqAbiGv6iYcWYq0Q7zCDhaN3EF26vo9fwP4N_vph8XJGJs_6eN2OzfEA7ABqUfxJ',
-                                    chat_id='chat2ecc29e3838be6ca44f793b36b4aa870')
+    sendFileUtil = DingTalkSendFile('chat2ecc29e3838be6ca44f793b36b4aa870')
     sendFileUtil.send_file(r'H:\Pictures\拯救姬3.jpg')
+    sendFileUtil.send_file(r'H:\Pictures\测试.xlsx')
