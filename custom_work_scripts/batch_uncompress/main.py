@@ -66,7 +66,7 @@ class BathUncompressImpl(BaseConfig):
 
         tSuccess = False
         for pwd in pwds:
-            success, dest = compressUtil.unzip(srcPath, pwd=pwd, printCmdInfo=True)
+            success, dest = compressUtil.unzip(srcPath, pwd=pwd, print_log=True)
             if success and not FileUtil.isDirEmpty(dest):  # 解压成功: 未报错并且目录非空
                 allSize, _ = FileUtil.getDirSize(dest)  # 获取解压后的文件总大小,单位:byte
                 if allSize > 0 and allSize >= srcSize * minRatio:
