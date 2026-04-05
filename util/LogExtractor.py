@@ -1,8 +1,12 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
+
+import pandas as pd
 from typing_extensions import Self
+
+from util.CommonUtil import CommonUtil
 from util.CompressUtil import CompressUtil
 from util.FileUtil import FileUtil
-from util.CommonUtil import CommonUtil
+from util.NetUtil import NetUtil
 
 
 class LogExtractor:
@@ -12,6 +16,7 @@ class LogExtractor:
     # ✨ 流式调用（类似 Kotlin）
     result = (
         LogExtractor('app_log.zip') # 指定日志所在zip压缩包路径, 允许传None表示不从压缩包中读取
+        .update_zip_path('http://xxx') # 更新日志zip压缩包路径,支持http
         .read_file('logs/error.log') # 日志原始列内容列表
         .filter({  #  根据正则表达式, 匹配出关键数据值
             'error_code': r'ErrorCode:(\d+)',
@@ -22,19 +27,44 @@ class LogExtractor:
     )
     """
 
-    def __init__(self, zip_path: Optional[str] = None):
+    def __init__(self, zip_path: Optional[str] = None, cache_dir: str = None, sub_dir_name: str = None):
         """
         默认从压缩包中读取指定日志文件内容, 再进行过滤, 也支持绝对路径
+        @param zip_path: zip包本地路径或者可下载的url路径, 比如: http://xxx.aliyuncs.com/logs/测试日志_1775183375996.zip?OSSAccessKeyId=xx&Expires=xxx&Signature=xxx
+                        若为空, 则表示不需要从zip中提取日志文件
+        @param cache_dir: zip下载或解压等需要使用的缓存根目录, 若为空, 则自动在当前目录下创建一个 cache 缓存根目录
+        @param sub_dir_name: 在 cache_dir 下允许创建一个子目录用于存放本次下载的文件, 若为空,则不会创建子目录, 直接会在 cache_dir 中存储
         """
-        self.zip_path = zip_path
+        self.zip_path = ''
         self.data: List[str] = []  # 日志文件原始内容
         self.result: Dict[str, List[str]] = {}  # 过滤后的日志关键信息
+        self.cache_dir = cache_dir or FileUtil.create_cache_dir(None, __file__)
+        self.sub_dir_name = '' if CommonUtil.isNoneOrBlank(sub_dir_name) else sub_dir_name
+        self.update_zip_path(zip_path)
+
+    def update_zip_path(self, zip_path: str, **kwargs) -> Self:
+        """
+        更新zip包路径, 并按需下载到本地
+        @param zip_path: zip包本地路径或者可下载的url路径, 比如: http://xxx.aliyuncs.com/logs/测试日志_1775183375996.zip?OSSAccessKeyId=xx&Expires=xxx&Signature=xxx
+        @param kwargs: 其他参数, 主要用于下载, 如: auth=('账号', '密码'), timeout=10 force_download=False
+        """
+        self.zip_path = zip_path
+        if self.zip_path and self.zip_path.startswith('http'):
+            save_dir = FileUtil.recookPath(f'{self.cache_dir}/{self.sub_dir_name}/')
+            local_zip_path = NetUtil.download(self.zip_path, save_dir, **kwargs)
+            if CommonUtil.isNoneOrBlank(local_zip_path):
+                print(f'下载文件失败: {self.zip_path}')
+                self.zip_path = ''
+            else:
+                self.zip_path = local_zip_path
+        return self
 
     def read_file(self, target_path: str, in_zip: bool = True, charset: str = 'utf-8') -> Self:
         """
         读取日志文件内容
         @param target_path: 日志文件路径, 若是从zip中读取, 则表示在zip中的相对路径
         @param in_zip: 是否从zip包中读取日志文件
+        @param charset: 读取文件的编码格式
         """
         if in_zip:
             self.data = CompressUtil.read_zip_file_content(self.zip_path, target_path, charset=charset, mode='lines')
@@ -56,3 +86,149 @@ class LogExtractor:
     def get_result(self) -> Dict[str, List[str]]:
         """获取最终结果"""
         return self.result
+
+    def reset(self) -> Self:
+        """
+        清除数据
+        """
+        self.data = []
+        self.result = {}  # 过滤后的日志关键信息
+        self.update_zip_path('')
+        return self
+
+    def do(self, action: Callable[[Dict[str, List[str]]], None]) -> Self:
+        """
+        对日志过滤结果执行指定方法, 比如更新数据到表格等
+        @param action: 方法
+        """
+        action(self.result)
+        return self
+
+    def batch_filter(
+            self,
+            excel_path: str,
+            filter_patterns: Dict[str, str],
+            log_relative_path: Optional[str] = None,
+            start_row: int = -1,
+            end_row: int = -1,
+            log_url_column: str = 'log_url',
+            local_log_column: str = 'local_log',
+            result_combine_flags: Optional[Dict[str, str]] = None,
+            default_combine_flag: str = ','
+    ) -> pd.DataFrame:
+        """
+        处理Excel中的日志下载任务, 读取其中的 log_url 列数据进行下载, 下载完完成后更新本地日志路径到 local_Log 列
+        并根据 filter_patterns 对日志文件进行多个关键信息提取, 提取的每个关键信息是个list, 再进行拼接生成str并回更到excel文件中
+
+        Args:
+            excel_path: Excel文件路径
+            filter_patterns: 过滤用的正则表达式, 支持多个, 其中key表示简写的名称,最终会变成excel中的列名, 并将其value值作为数据也更新到excel中
+            log_relative_path: 最终要过滤的日志文件在 local_log_column 文件中的相对路径, 主要将日志在zip包中的相对路径传入, 传入空表示不需要解压,直接读取
+            start_row: 起始行号(从0开始,-1表示不限制)
+            end_row: 结束行号(从0开始,-1表示不限制)
+            log_url_column: 记录在线日志下载链接的列名
+            local_log_column: 下载完成后, 记录本地日志路径的列名
+            result_combine_flags: 日志信息过滤完成后, 对列表进行合并时使用的连接符, 允许不同日志使用不同的连接符, 若未指定, 则兜底使用 default_combine_flag
+            default_combine_flag: 日志过滤后, 每种信息都是个列表, 将列表拼接成字符串时, 默认使用的分隔符
+
+        Returns:
+            更新后的DataFrame
+        """
+        # 1. 读取Excel
+        print(f"读取Excel文件: {excel_path}")
+        df = pd.read_excel(excel_path, sheet_name=0)
+
+        print(f"总数据行数: {len(df)}")
+        print(f"列名: {list(df.columns)}")
+
+        # 2. 过滤行号范围
+        if start_row >= 0 or end_row >= 0:
+            original_count = len(df)
+
+            if start_row < 0:
+                start_row = 0
+            if end_row < 0:
+                end_row = len(df) - 1
+
+            # 确保范围有效
+            start_row = max(0, start_row)
+            end_row = min(len(df) - 1, end_row)
+
+            df = df.iloc[start_row:end_row + 1].reset_index(drop=True)
+            print(f"按行号过滤后({start_row}-{end_row}): {len(df)} 行")
+
+        # 3. 过滤 log_url 非空且 local_log 不存在或为空的数据
+        # 检查 log_url 列是否存在
+        if log_url_column not in df.columns:
+            raise ValueError(f"Excel中不存在 {log_url_column} 列")
+
+        # 过滤 log_url 非空
+        mask_valid_url = df[log_url_column].notna() & (df[log_url_column].astype(str).str.strip() != '')
+
+        # 检查 local_log 列是否存在
+        has_local_log = local_log_column in df.columns
+
+        if has_local_log:
+            # local_log 列存在,过滤为空的
+            mask_no_local = df[local_log_column].isna() | (df[local_log_column].astype(str).str.strip() == '')
+            mask_need_download = mask_valid_url & mask_no_local
+        else:
+            # local_log 列不存在,所有 log_url 非空的都需要下载
+            mask_need_download = mask_valid_url
+
+        df_to_download = df[mask_need_download].copy()
+
+        print(f"需要下载的数量: {len(df_to_download)}")
+
+        if len(df_to_download) == 0:
+            print("没有需要下载的数据")
+            return df
+
+        # 4. 下载日志并更新 local_log
+        downloaded_count = 0
+        # 获取需要下载的行的原始索引
+        download_indices = df[mask_need_download].index.tolist()
+
+        for local_idx, original_idx in enumerate(download_indices):
+            row = df.loc[original_idx]
+            log_url = row[log_url_column]
+
+            # 下载文件
+            self.update_zip_path(log_url, force_download=False)
+            local_path = self.zip_path
+
+            if local_path:
+                # 更新原DataFrame中的 local_log
+                # 找到原DataFrame中对应的行索引
+                df.at[original_idx, local_log_column] = local_path
+                downloaded_count += 1
+
+                # 读取日志, 过滤数据, 并更新过滤到的关键信息
+                target_log_path = log_relative_path if log_relative_path else local_path
+                in_zip = not CommonUtil.isNoneOrBlank(log_relative_path)
+                filter_result_dict = self.read_file(target_log_path, in_zip).filter(filter_patterns).distinct().get_result()
+
+                result_combine_flags = result_combine_flags or {}
+                for key in filter_result_dict:
+                    flag = result_combine_flags.get(key, default_combine_flag)
+                    df.at[original_idx, key] = flag.join(filter_result_dict[key]).lstrip(flag).rstrip(flag)
+        print(f"\n下载完成! 成功: {downloaded_count}, 失败: {len(df_to_download) - downloaded_count}")
+
+        # 5. 保存更新后的Excel
+        df.to_excel(excel_path, index=False)
+        print(f"结果已保存到: {excel_path}")
+        return df
+
+# if __name__ == '__main__':
+#     result = (
+#         LogExtractor('app_log.zip')
+#         .update_zip_path('http://xxx')
+#         .read_file('logs/error.log')
+#         .filter({
+#             'error_code': r'ErrorCode:(\d+)',
+#             'message': r'Message:(.*)'
+#         }, start_pattern=r'=== TestCase Start ===')
+#         .distinct()
+#         .get_result()
+#     )
+#     print(result)

@@ -940,6 +940,8 @@ class CommonUtil(object):
         """
         # 初始化结果字典
         result = {key: [] for key in patterns.keys()}
+        if CommonUtil.isNoneOrBlank(data):
+            return result
 
         # 预编译所有正则表达式，提升性能
         compiled_patterns = {}
@@ -963,7 +965,7 @@ class CommonUtil(object):
                         found = True
                         CommonUtil.printLog(f"📍 找到起始标记行 [{i}]: {line.strip()[:80]}")
                         break
-                
+
                 if not found:
                     CommonUtil.printLog(f"⚠️ 未找到起始标记: {start_pattern}，将从头开始过滤")
                     actual_start_index = 0
@@ -973,7 +975,7 @@ class CommonUtil(object):
 
         # 确保起始索引有效
         actual_start_index = max(0, min(actual_start_index, len(data)))
-        
+
         if actual_start_index > 0:
             CommonUtil.printLog(f"📋 跳过前 {actual_start_index} 行，从第 {actual_start_index + 1} 行开始过滤")
 
