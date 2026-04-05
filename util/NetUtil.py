@@ -6,6 +6,7 @@ import socket
 import traceback
 import urllib.request as urllib2
 from urllib.error import URLError, HTTPError
+from urllib.parse import urlparse, unquote
 from collections import OrderedDict
 
 from util.CommonUtil import CommonUtil
@@ -190,7 +191,7 @@ class NetUtil(object):
          通过get形式下载文件
          :param url: 文件下载地址
          :param save_path: 本地保存地址,,默认保存在当前目录下
-         :param kwargs: 如: auth=('账号', '密码'), timeout=10
+         :param kwargs: 如: auth=('账号', '密码'), timeout=10  force_download=False
          :return: 本地文件路径, 空表示下载失败
          """
         if CommonUtil.isNoneOrBlank(url):
@@ -198,12 +199,18 @@ class NetUtil(object):
 
         regex = re.compile(r'^(https?|ftp)://[^\s/$.?#].[^\s]*$', re.IGNORECASE)
         if re.match(regex, url):
-            filename = url.split("/")[-1]
+            filename = NetUtil.get_url_last_segment(url)
 
             if CommonUtil.isNoneOrBlank(save_path):
                 save_path = f'./{filename}'
             elif save_path.endswith('/'):
                 save_path = f'{save_path}{filename}'
+
+            # 支持跳过本地已有文件
+            force_download = kwargs.get('force_download', True)
+            if not force_download and FileUtil.isFileExist(save_path) and FileUtil.getFileSize(save_path)[0] > 0:
+                CommonUtil.printLog(f'文件已存在, 无需重复下载: {save_path}')
+                return save_path
 
             CommonUtil.printLog(f'download started:{filename}')
             try:
@@ -269,6 +276,32 @@ class NetUtil(object):
                 CommonUtil.printLog(f'download fail: {str(e)}')
                 return ''
         return ''
+
+    @staticmethod
+    def get_url_last_segment(url: str) -> str:
+        """
+        获取URL路径的最后一段内容
+
+        Args:
+            url: URL地址,可能包含中文和查询参数
+
+        Returns:
+            URL路径的最后一段,已进行URL解码
+
+        Examples:
+            get_url_last_segment("https://example.com/path/to/文件.txt")  --> '文件.txt'
+            get_url_last_segment("https://example.com/path/to/%E6%96%87%E4%BB%B6.txt?param=value") --> '文件.txt'
+            get_url_last_segment("https://example.com/path/to/folder/") --> 'folder'
+        """
+        parsed = urlparse(url)  # 解析URL
+        path = parsed.path  # 获取path部分(不包含查询参数)
+        path = path.rstrip('/')  # 去除末尾的斜杠
+
+        # 分割路径并获取最后一段
+        segments = path.split('/')
+        last_segment = segments[-1] if segments else ''
+
+        return unquote(last_segment)  # URL解码(处理中文等特殊字符)
 
 
 if __name__ == '__main__':
