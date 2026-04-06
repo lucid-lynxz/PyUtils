@@ -114,7 +114,8 @@ class LogExtractor:
             log_url_column: str = 'log_url',
             local_log_column: str = 'local_log',
             result_combine_flags: Optional[Dict[str, str]] = None,
-            default_combine_flag: str = ','
+            default_combine_flag: str = ',',
+            force_download: bool = False
     ) -> pd.DataFrame:
         """
         处理Excel中的日志下载任务, 读取其中的 log_url 列数据进行下载, 下载完完成后更新本地日志路径到 local_Log 列
@@ -130,6 +131,7 @@ class LogExtractor:
             local_log_column: 下载完成后, 记录本地日志路径的列名
             result_combine_flags: 日志信息过滤完成后, 对列表进行合并时使用的连接符, 允许不同日志使用不同的连接符, 若未指定, 则兜底使用 default_combine_flag
             default_combine_flag: 日志过滤后, 每种信息都是个列表, 将列表拼接成字符串时, 默认使用的分隔符
+            force_download: 本地对应的日志文件存在时, 是否重新下载, 若为 False, 则会跳过下载及之后的操作
 
         Returns:
             更新后的DataFrame
@@ -168,7 +170,7 @@ class LogExtractor:
         # 检查 local_log 列是否存在
         has_local_log = local_log_column in df.columns
 
-        if has_local_log:
+        if has_local_log and not force_download:
             # local_log 列存在,过滤为空的
             mask_no_local = df[local_log_column].isna() | (df[local_log_column].astype(str).str.strip() == '')
             mask_need_download = mask_valid_url & mask_no_local
@@ -194,7 +196,7 @@ class LogExtractor:
             log_url = row[log_url_column]
 
             # 下载文件
-            self.update_zip_path(log_url, force_download=False)
+            self.update_zip_path(log_url, force_download=force_download)
             local_path = self.zip_path
 
             if local_path:
