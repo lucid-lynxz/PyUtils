@@ -212,6 +212,7 @@ class NetUtil(object):
                 CommonUtil.printLog(f'文件已存在, 无需重复下载: {save_path}')
                 return save_path
 
+            FileUtil.createFile(save_path)
             CommonUtil.printLog(f'download started:{filename}')
             try:
                 # 创建请求对象并处理认证

@@ -156,8 +156,7 @@ class LogExtractor:
             start_row = max(0, start_row)
             end_row = min(len(df) - 1, end_row)
 
-            df = df.iloc[start_row:end_row + 1].reset_index(drop=True)
-            print(f"按行号过滤后({start_row}-{end_row}): {len(df)} 行")
+            print(f"按行号过滤({start_row}-{end_row}): 将处理 {end_row - start_row + 1} 行数据")
 
         # 3. 过滤 log_url 非空且 local_log 不存在或为空的数据
         # 检查 log_url 列是否存在
@@ -166,6 +165,15 @@ class LogExtractor:
 
         # 过滤 log_url 非空
         mask_valid_url = df[log_url_column].notna() & (df[log_url_column].astype(str).str.strip() != '')
+
+        # 如果指定了行号范围,则在范围内应用掩码
+        if start_row >= 0 and end_row >= 0:
+            # 创建一个全False的掩码
+            mask_in_range = pd.Series([False] * len(df), index=df.index)
+            # 只标记范围内的行为True
+            mask_in_range.iloc[start_row:end_row + 1] = True
+            # 与有效URL掩码进行与运算
+            mask_valid_url = mask_valid_url & mask_in_range
 
         # 检查 local_log 列是否存在
         has_local_log = local_log_column in df.columns
@@ -180,6 +188,7 @@ class LogExtractor:
 
         df_to_download = df[mask_need_download].copy()
 
+        print(f"总数据行数: {len(df)}")
         print(f"需要下载的数量: {len(df_to_download)}")
 
         if len(df_to_download) == 0:
@@ -188,6 +197,7 @@ class LogExtractor:
 
         # 4. 下载日志并更新 local_log
         downloaded_count = 0
+
         # 获取需要下载的行的原始索引
         download_indices = df[mask_need_download].index.tolist()
 
@@ -201,9 +211,14 @@ class LogExtractor:
 
             if local_path:
                 # 更新原DataFrame中的 local_log
-                # 找到原DataFrame中对应的行索引
-                df.at[original_idx, local_log_column] = local_path
+                if has_local_log:
+                    df.at[original_idx, local_log_column] = local_path
+                else:
+                    # 新增 local_log 列
+                    df.at[original_idx, local_log_column] = local_path
+
                 downloaded_count += 1
+                print(f"[{local_idx + 1}/{len(download_indices)}] 下载成功: {local_path}")
 
                 # 读取日志, 过滤数据, 并更新过滤到的关键信息
                 target_log_path = log_relative_path if log_relative_path else local_path
