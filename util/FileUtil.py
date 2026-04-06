@@ -9,6 +9,7 @@ import platform
 import re
 import shutil
 from typing import Optional, List, Type, TypeVar, Union, Dict, Tuple
+from datetime import datetime, timedelta
 
 from util.CommonUtil import CommonUtil
 
@@ -863,6 +864,110 @@ class FileUtil(object):
             for chunk in iter(lambda: f.read(8192), b''):
                 md5_hash.update(chunk)
         return md5_hash.hexdigest()
+
+    @staticmethod
+    def delete_old_files(dir_path: str, days: int = 7, include_subdirs: bool = True,
+                         file_only: bool = False, dir_only: bool = False,
+                         use_mtime: bool = True, dry_run: bool = False) -> dict:
+        """
+        删除指定目录下N天前创建的文件或目录
+
+        :param dir_path: 要清理的目录路径
+        :param days: 删除多少天前的文件/目录,默认7天
+        :param include_subdirs: 是否递归处理子目录,默认True
+        :param file_only: 是否只删除文件,默认False
+        :param dir_only: 是否只删除目录,默认False
+        :param use_mtime: 是否使用修改时间判断,默认True; False则使用创建时间(Windows有效)
+        :param dry_run: 是否为试运行模式(只打印不删除),默认False
+        :return: 统计信息字典 {deleted_files: int, deleted_dirs: int, skipped: int, errors: int}
+
+        Examples:
+            # 删除7天前的所有文件和目录
+            result = FileUtil.delete_old_files("/path/to/dir", days=7)
+
+            # 只删除30天前的文件,不删除目录
+            result = FileUtil.delete_old_files("/path/to/dir", days=30, file_only=True)
+
+            # 试运行模式,查看会删除哪些文件
+            result = FileUtil.delete_old_files("/path/to/dir", days=7, dry_run=True)
+        """
+
+        if not FileUtil.isDirFile(dir_path):
+            CommonUtil.printLog(f"delete_old_files fail: 目录不存在 {dir_path}")
+            return {'deleted_files': 0, 'deleted_dirs': 0, 'skipped': 0, 'errors': 0}
+
+        dir_path = FileUtil.recookPath(dir_path)
+        cutoff_time = datetime.now() - timedelta(days=days)
+        cutoff_timestamp = cutoff_time.timestamp()
+
+        stats = {'deleted_files': 0, 'deleted_dirs': 0, 'skipped': 0, 'errors': 0}
+
+        # 收集所有需要处理的条目
+        items_to_process = []
+        if include_subdirs:
+            all_paths = FileUtil.listAllFilePath(dir_path, depth=100, getAllDepthFileInfo=True)
+            # 添加目录本身
+            for path in all_paths:
+                items_to_process.append(path)
+        else:
+            items_to_process = [os.path.join(dir_path, item) for item in os.listdir(dir_path)]
+
+        # 按深度排序,先处理深层文件,再处理浅层目录
+        items_to_process.sort(key=lambda x: x.count(os.sep), reverse=True)
+
+        for item_path in items_to_process:
+            try:
+                if not os.path.exists(item_path):
+                    continue
+
+                is_dir = os.path.isdir(item_path)
+
+                # 根据参数过滤
+                if file_only and is_dir:
+                    stats['skipped'] += 1
+                    continue
+                if dir_only and not is_dir:
+                    stats['skipped'] += 1
+                    continue
+
+                # 获取时间戳
+                if use_mtime:
+                    item_time = os.path.getmtime(item_path)
+                else:
+                    # Windows下使用创建时间
+                    if platform.system() == 'Windows':
+                        item_time = os.path.getctime(item_path)
+                    else:
+                        # Linux/Mac使用状态改变时间
+                        item_time = os.stat(item_path).st_ctime
+
+                # 判断是否过期
+                if item_time >= cutoff_timestamp:
+                    stats['skipped'] += 1
+                    continue
+
+                # 执行删除
+                mode_str = "[DRY RUN] " if dry_run else ""
+                if is_dir:
+                    if not dry_run:
+                        shutil.rmtree(item_path)
+                    CommonUtil.printLog(f"{mode_str}删除目录: {item_path} (创建于: {datetime.fromtimestamp(item_time)})")
+                    stats['deleted_dirs'] += 1
+                else:
+                    if not dry_run:
+                        os.remove(item_path)
+                    CommonUtil.printLog(f"{mode_str}删除文件: {item_path} (创建于: {datetime.fromtimestamp(item_time)})")
+                    stats['deleted_files'] += 1
+
+            except Exception as e:
+                CommonUtil.printLog(f"删除失败: {item_path}, 错误: {e}")
+                stats['errors'] += 1
+
+        # 打印统计信息
+        CommonUtil.printLog(f"清理完成 | 删除文件: {stats['deleted_files']}, 删除目录: {stats['deleted_dirs']}, "
+                            f"跳过: {stats['skipped']}, 错误: {stats['errors']}")
+
+        return stats
 
 
 if __name__ == '__main__':
