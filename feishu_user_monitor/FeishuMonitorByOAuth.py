@@ -140,6 +140,31 @@ class FeishuMonitorByOAuth:
         self._sender_cache: dict[str, str] = {}
         # 已删除的图片 key 缓存（避免重复请求）
         self._deleted_image_keys: set[str] = set()
+        # 运行状态标志
+        self._running = False
+
+    # ------------------------------------------------------------------
+    # 公开方法：停止监听
+    # ------------------------------------------------------------------
+
+    def stop(self) -> None:
+        """
+        停止消息监听。
+        调用此方法后，start() 方法中的主循环将在当前轮询周期结束后退出。
+        
+        典型用法（在另一个线程中调用）：
+            import threading
+            monitor = FeishuMonitorByOAuth()
+            thread = threading.Thread(target=monitor.start, kwargs={"chat_names": ["产品群"]})
+            thread.start()
+            time.sleep(60)
+            monitor.stop()  # 停止监听
+        """
+        if self._running:
+            _cp("\n  🛑 正在停止监听...", _C.YELLOW)
+            self._running = False
+        else:
+            _cp("  ⚠️  监听器未在运行", _C.YELLOW)
 
     # ------------------------------------------------------------------
     # 公开方法：监听消息（主入口）
@@ -232,8 +257,9 @@ class FeishuMonitorByOAuth:
 
         _cp("👂 开始监听，等待新消息...\n", _C.CYAN)
 
+        self._running = True
         try:
-            while True:
+            while self._running:
                 token = self.refresh_token_if_needed() or self.get_valid_token()
                 for chat_id, chat_name in chat_id_map.items():
                     try:
