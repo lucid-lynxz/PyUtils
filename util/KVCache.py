@@ -28,7 +28,8 @@ class KVCache(Generic[T]):
     def __init__(self, cache_file: str, save_batch: Optional[int] = None,
                  recook_key: Optional[Callable] = None,
                  second_cache_files: Optional[Set[str]] = None, enable: bool = True,
-                 expire_seconds: int = 30 * 24 * 3600):
+                 expire_seconds: int = 30 * 24 * 3600,
+                 check_interval: int = 3600):
         """
         初始化查询缓存
 
@@ -38,6 +39,7 @@ class KVCache(Generic[T]):
         :param second_cache_files: 第二份缓存文件路径, 若存在, 会将 cache_file 中不存在的key数据添加到 self.cache 的整体缓存dict中
         :param enable: 是否启用缓存, 若为False, 则 get/set/save 等操作均无效
         :param expire_seconds: 缓存有效期(秒),默认30天,超过有效期则删除重建缓存文件
+        :param check_interval: 定期检查缓存过期的时间间隔(秒),默认1小时
         """
         self.cache_file = cache_file
         self.enable: bool = enable
@@ -45,7 +47,11 @@ class KVCache(Generic[T]):
         self.lock = threading.Lock()
         self.save_batch: Optional[int] = save_batch
         self.expire_seconds: int = expire_seconds
+        self.check_interval: int = check_interval
         self._new_key_cnt: int = 0  # 新增key的计数
+        self._last_check_time: float = time.time()  # 上次检查过期时间
+        self._stop_check_thread: bool = False  # 停止定期检查线程的标志
+        self._check_thread: Optional[threading.Thread] = None  # 定期检查线程
 
         # 检查缓存是否过期
         if self._is_cache_expired():
@@ -60,6 +66,10 @@ class KVCache(Generic[T]):
                     second_cache.update(self.cache)
                     self.cache = second_cache
         CommonUtil.printLog(f'初始化缓存成功,共有: {len(self.cache.keys())}条数据')
+        
+        # 启动定期检查缓存过期的后台线程
+        if self.enable and self.expire_seconds > 0:
+            self._start_expire_check_thread()
 
     def _is_cache_expired(self) -> bool:
         """
@@ -83,6 +93,63 @@ class KVCache(Generic[T]):
         except Exception as e:
             CommonUtil.printLog(f"检查缓存有效期失败: {e}, 将重建缓存")
             return True
+
+    def _check_and_handle_expire(self):
+        """
+        检查并处理缓存过期
+        如果缓存过期，删除文件并清空内存缓存
+        """
+        if not self.enable or self.expire_seconds <= 0:
+            return
+        
+        with self.lock:
+            if self._is_cache_expired():
+                CommonUtil.printLog(f'⚠️ 缓存已过期，删除重建: {self.cache_file}')
+                FileUtil.deleteFile(self.cache_file)
+                self.cache.clear()  # 清空内存缓存
+                self._new_key_cnt = 0
+                CommonUtil.printLog(f'✅ 缓存已重置')
+
+    def _expire_check_loop(self):
+        """
+        定期检查缓存过期的后台线程循环
+        """
+        while not self._stop_check_thread:
+            try:
+                # 等待检查间隔或直到被停止
+                for _ in range(int(self.check_interval * 10)):
+                    if self._stop_check_thread:
+                        break
+                    time.sleep(0.1)
+                
+                if not self._stop_check_thread:
+                    self._check_and_handle_expire()
+                    self._last_check_time = time.time()
+            except Exception as e:
+                CommonUtil.printLog(f"定期检查缓存过期异常: {e}")
+
+    def _start_expire_check_thread(self):
+        """
+        启动定期检查缓存过期的后台线程
+        """
+        self._stop_check_thread = False
+        self._check_thread = threading.Thread(
+            target=self._expire_check_loop,
+            daemon=True,  # 守护线程，主程序退出时自动结束
+            name=f"KVCache-ExpireCheck-{os.path.basename(self.cache_file)}"
+        )
+        self._check_thread.start()
+        CommonUtil.printLog(f'已启动缓存过期定期检查线程，间隔: {self.check_interval}秒')
+
+    def stop_expire_check(self):
+        """
+        停止定期检查缓存过期的后台线程
+        通常在程序退出前调用
+        """
+        if self._check_thread and self._check_thread.is_alive():
+            self._stop_check_thread = True
+            self._check_thread.join(timeout=2)
+            CommonUtil.printLog(f'已停止缓存过期定期检查线程')
 
     def _load_cache(self, cache_file: str) -> dict:
         """加载缓存文件"""
@@ -156,3 +223,24 @@ class KVCache(Generic[T]):
         with self.lock:
             self._save_cache()
         return self
+
+    def clear(self) -> Self:
+        """
+        清空缓存（包括内存和文件）
+        :return: self
+        """
+        if not self.enable:
+            return self
+        with self.lock:
+            self.cache.clear()
+            self._new_key_cnt = 0
+            FileUtil.deleteFile(self.cache_file)
+            CommonUtil.printLog(f'已清空缓存: {self.cache_file}')
+        return self
+
+    def __del__(self):
+        """析构函数，停止定期检查线程"""
+        try:
+            self.stop_expire_check()
+        except Exception:
+            pass
