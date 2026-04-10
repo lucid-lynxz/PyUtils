@@ -998,11 +998,12 @@ class CommonUtil(object):
                         extracted = match.group(0)
 
                     # 根据参数决定是否去除空白
-                    if strip_result:
+                    if strip_result and extracted:
                         extracted = extracted.strip()
 
                     # 添加到结果列表
-                    result[key].append(extracted)
+                    if not CommonUtil.isNoneOrBlank(extracted):
+                        result[key].append(extracted)
         return result
 
     @staticmethod

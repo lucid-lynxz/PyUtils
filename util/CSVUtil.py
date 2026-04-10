@@ -60,6 +60,28 @@ class CSVUtil(object):
         return df.fillna('')
 
     @staticmethod
+    def read_excel(excel_file: str, sheet: Optional[Union[str, int]] = None) -> Optional[pd.DataFrame]:
+        """
+        读取excel文件指定序号或名称得表格内容, 返回dataframe
+        @param excel_file: excel文件路径
+        @param sheet: 表格序号(从0开始)或者名称, 默认None表示读取第一个表格
+        @return 表格内容df
+        """
+        if not FileUtil.isFileExist(excel_file):
+            return None
+
+        if sheet is None:  # 默认读取第一个工作表（索引 0）
+            df = pd.read_excel(excel_file, sheet_name=0, dtype=str)
+        elif isinstance(sheet, int):  # 按索引读取
+            df = pd.read_excel(excel_file, sheet_name=sheet, dtype=str)
+        elif isinstance(sheet, str):  # 按名称读取
+            df = pd.read_excel(excel_file, sheet_name=sheet, dtype=str)
+        else:
+            print(f"read_excel fail: 无效的 sheet_name 类型：{type(sheet)}, 应为 str 或 int")
+            df = None
+        return df
+
+    @staticmethod
     def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> pd.DataFrame:
         """
         重排并只保留指定的列数据
@@ -70,6 +92,76 @@ class CSVUtil(object):
         if df is not None and not CommonUtil.isNoneOrBlank(usecols):
             df = df[usecols]  # 重排顺序
         return df
+
+    @staticmethod
+    def move_cols(df: pd.DataFrame, columns: Union[str, List[str]], position: int = 0, to_end: bool = False) -> pd.DataFrame:
+        """
+        将指定列移动到DataFrame的指定位置（最前面或最后面），其他列保持原有相对顺序
+        
+        :param df: 输入的DataFrame
+        :param columns: 要移动的列名或列名列表，如 'E' 或 ['E', 'D']
+        :param position: 移动到的目标位置（从0开始），默认为0表示移到最前面。
+                        当 to_end=True 时，此参数无效
+        :param to_end: 是否移到末尾，默认为False（移到前面）。若为True则移到所有列的最后面
+        :return: 重排后的新DataFrame（不修改原DataFrame）
+        
+        使用示例：
+            # 将 E, D 两列移到最前面，顺序为 E, D
+            df_new = CSVUtil.move_columns(df, ['E', 'D'])
+            # 或显式指定
+            df_new = CSVUtil.move_columns(df, ['E', 'D'], position=0, to_end=False)
+            
+            # 将 E, D 两列移到第2个位置（索引1）
+            df_new = CSVUtil.move_columns(df, ['E', 'D'], position=1)
+            
+            # 将 E, D 两列移到最末尾
+            df_new = CSVUtil.move_columns(df, ['E', 'D'], to_end=True)
+            
+            # 只移动单列到最前面
+            df_new = CSVUtil.move_columns(df, 'E')
+            
+            # 只移动单列到最后面
+            df_new = CSVUtil.move_columns(df, 'E', to_end=True)
+        """
+        if df is None or df.empty:
+            return df
+
+        # 统一转换为列表
+        if isinstance(columns, str):
+            columns = [columns]
+
+        if not columns:
+            return df.copy()
+
+        # 检查列是否存在
+        existing_cols = [col for col in columns if col in df.columns]
+        missing_cols = [col for col in columns if col not in df.columns]
+
+        if missing_cols:
+            CommonUtil.printLog(f"⚠️ 警告: 以下列不存在于DataFrame中，将被忽略: {missing_cols}")
+
+        if not existing_cols:
+            CommonUtil.printLog(f"⚠️ 警告: 没有有效的列需要移动")
+            return df.copy()
+
+        # 获取当前所有列
+        all_columns = df.columns.tolist()
+
+        # 移除要移动的列（保持其他列的相对顺序）
+        remaining_cols = [col for col in all_columns if col not in existing_cols]
+
+        # 构建新的列顺序
+        if to_end:
+            # 移到末尾：其他列 + 要移动的列
+            new_columns = remaining_cols + existing_cols
+        else:
+            # 移到前面指定位置
+            # 调整position到有效范围
+            position = max(0, min(position, len(remaining_cols)))
+            # 前面的列 + 要移动的列 + 后面的列
+            new_columns = remaining_cols[:position] + existing_cols + remaining_cols[position:]
+
+        return df[new_columns]
 
     @staticmethod
     def add_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> Optional[pd.DataFrame]:
@@ -991,18 +1083,9 @@ class CSVUtil(object):
 
                     # 模式 2: 转换指定的工作表（或默认第一个）
                     else:
-                        if sheet_name is None:
-                            # 默认读取第一个工作表（索引 0）
-                            df = pd.read_excel(input_file, sheet_name=0, dtype=str)
-                        elif isinstance(sheet_name, int):
-                            # 按索引读取
-                            df = pd.read_excel(input_file, sheet_name=sheet_name, dtype=str)
-                        elif isinstance(sheet_name, str):
-                            # 按名称读取
-                            df = pd.read_excel(input_file, sheet_name=sheet_name, dtype=str)
-                        else:
+                        df = CSVUtil.read_excel(input_file, sheet_name)
+                        if df is None:
                             raise ValueError(f"无效的 sheet_name 类型：{type(sheet_name)}, 应为 str 或 int")
-
                         CSVUtil.to_csv(df, temp_csv)
                         CommonUtil.printLog(f"✅ Excel 已成功转换为：{temp_csv}")
                         return temp_csv
