@@ -674,7 +674,8 @@ class FeishuMonitorByOAuth:
 
             else:
                 # 其他类型：发送文字说明
-                forward_content = f"{header}[{msg_type}消息] {content}"
+                # forward_content = f"{header}[{msg_type}消息] {content}"
+                forward_content = f"{header} {content}".strip()
                 send_result = self._send_text_message(token, target_chat_id, forward_content)
 
             _cp(f"  [调试] 发送结果: {send_result}", _C.GRAY)
