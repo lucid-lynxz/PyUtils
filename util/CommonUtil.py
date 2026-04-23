@@ -784,7 +784,7 @@ class CommonUtil(object):
         return CommonUtil._logger
 
     @staticmethod
-    def print(msg: str, target: int = 0):
+    def print(msg: str, target: int = 0, condition: bool = True):
         """
         打印日志
         @param msg: 打印内容
@@ -793,7 +793,11 @@ class CommonUtil(object):
                     1: 只输出到控制台
                     2: 只写入到文件
                     注意: 需要先触发 setup_logging() 后才支持
+        @param condition: 是否允许打印日志
         """
+        if not condition:
+            return
+
         if CommonUtil._logger is None or target == 0:
             CommonUtil.printLog(msg)
             return

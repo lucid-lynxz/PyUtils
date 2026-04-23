@@ -461,6 +461,98 @@ class JenkinsUtil:
             print(f"停止构建失败：{e}")
             return False
 
+    def rebuild(self,
+                job_name: str,
+                build_number: int,
+                parameters: Optional[Dict[str, Any]] = None,
+                block: bool = False,
+                poll_interval: int = 5,
+                timeout: int = 3600) -> Optional[int]:
+        """
+        重跑指定的构建（基于历史构建重新触发）
+        
+        :param job_name: Job 名称
+        :param build_number: 要重跑的构建编号
+        :param parameters: 新的构建参数 (可选)。若传空则使用原构建的参数；若传入新参数则覆盖原参数
+        :param block: 是否阻塞等待构建完成
+        :param poll_interval: 轮询间隔 (秒)
+        :param timeout: 超时时间 (秒), 仅当 block=True 时有效
+        :return: 新构建的编号
+        
+        使用示例：
+            # 1. 直接使用原参数重跑
+            new_build = jenkins.rebuild('my-job', 10)
+            
+            # 2. 修改部分参数后重跑
+            new_build = jenkins.rebuild('my-job', 10, parameters={'BRANCH': 'develop'})
+            
+            # 3. 阻塞等待重跑完成
+            new_build = jenkins.rebuild('my-job', 10, block=True)
+        """
+        try:
+            self._ensure_connected()
+
+            # 获取原构建的参数（如果未提供新参数）
+            if parameters is None:
+                original_params = self.get_build_parameters(job_name, build_number)
+                if original_params:
+                    parameters = original_params
+                    print(f"使用原构建 #{build_number} 的参数: {parameters}")
+                else:
+                    print(f"原构建 #{build_number} 没有参数，将无参数重跑")
+                    parameters = {}
+
+            # 获取当前最新的构建编号
+            before_build_number = self.get_last_build_number(job_name)
+
+            # 触发新构建（使用指定参数）
+            if parameters:
+                self.server.build_job(job_name, parameters)
+            else:
+                self.server.build_job(job_name)
+
+            print(f"已触发重跑：{job_name} (基于构建 #{build_number})")
+
+            # 等待新构建启动
+            max_wait = 30  # 最多等待 30 秒
+            wait_count = 0
+            new_build_number = None
+            while wait_count < max_wait:
+                current_build_number = self.get_last_build_number(job_name)
+                if current_build_number and current_build_number != before_build_number:
+                    new_build_number = current_build_number
+                    break
+                time.sleep(1)
+                wait_count += 1
+            else:
+                print("等待构建启动超时")
+                return None
+
+            print(f"重跑构建已启动，新编号：{new_build_number}")
+
+            # 如果需要阻塞等待
+            if block:
+                start_time = time.time()
+                while True:
+                    status = self.get_build_status(job_name, new_build_number)
+
+                    if status not in ['IN_PROGRESS', None]:
+                        print(f"重跑构建完成，状态：{status}")
+                        break
+
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        print(f"等待构建超时 ({timeout}秒)")
+                        break
+
+                    time.sleep(poll_interval)
+
+            return new_build_number
+
+        except Exception as e:
+            print(f"重跑构建失败：{e}")
+            return None
+
     # ==================== 高级查询功能 ====================
 
     def search_jobs(self,
@@ -795,10 +887,10 @@ def main_demo(url: str = 'http://localhost:8080', user_name: str = None, passwor
     except Exception as e:
         print(f"\n❌ 连接或使用 Jenkins 失败：{e}")
         print("\n请检查:")
-        print("  1. Jenkins 服务是否正常运行")
+        print(f"  1. Jenkins 服务是否正常运行")
         print(f"  2. URL 是否正确：{url}")
-        print("  3. 账号密码/API Token 是否正确")
-        print("  4. 网络连接是否正常")
+        print(f"  3. 账号密码/API Token 是否正确")
+        print(f"  4. 网络连接是否正常")
     return None
 
 
@@ -820,3 +912,6 @@ if __name__ == '__main__':
 
         # info = util.get_build_info(job_name, 17)
         # print(f'info={info}')
+
+        # 重新构建
+        util.rebuild(job_name, last_build_number,{'other_param':'hello_test0423'})
