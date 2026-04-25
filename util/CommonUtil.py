@@ -675,7 +675,7 @@ class CommonUtil(object):
         @param kv_sep_flag  key-value连接符, json_mode=False时使用
         """
         if json_mode:
-            return json.dumps(data, indent=json_indent)
+            return json.dumps(data, indent=json_indent, ensure_ascii=False)
         return kv_sep_flag.join(f"{k}: {v}" for k, v in data.items())
 
     @staticmethod
@@ -872,7 +872,8 @@ class CommonUtil(object):
             flags: int = 0,
             strip_result: bool = True,
             start_line: int = 0,
-            start_pattern: str = None
+            start_pattern: str = None,
+            line_mode: bool = True
     ) -> Dict[str, List[str]]:
         """
         从字符串列表中提取符合多个正则表达式的内容，返回分组结果
@@ -889,6 +890,7 @@ class CommonUtil(object):
         :param start_pattern: 起始匹配模式，找到第一个匹配该模式的行后开始生效
                              优先级高于 start_line，若两者都设置，以 start_pattern 为准
                              例如: start_pattern=r'=== TestCase Start ===' 表示从测试用例开始处过滤
+        :param line_mode: 是否逐行进行正则匹配, 默认True, 若为False,则会拼接所有有效行, 然后进行全文本匹配
         :return: 字典，key 为正则简写名称，value 为匹配到的内容列表
                 例如: {'A': ['123', '456'], 'B': ['abc37']}
         
@@ -983,6 +985,11 @@ class CommonUtil(object):
         if actual_start_index > 0:
             CommonUtil.printLog(f"📋 跳过前 {actual_start_index} 行，从第 {actual_start_index + 1} 行开始过滤")
 
+        if not line_mode:
+            # 拼接所有有效行
+            data = ['\n'.join(data[actual_start_index:])]
+            actual_start_index = 0
+
         # 遍历数据（从起始行开始）
         for line_idx in range(actual_start_index, len(data)):
             line = data[line_idx]
@@ -991,15 +998,9 @@ class CommonUtil(object):
 
             # 对每个正则进行匹配
             for key, compiled_pattern in compiled_patterns.items():
-                match = compiled_pattern.search(line)
-                if match:
-                    # 提取捕获组内容
-                    if match.groups():
-                        # 有捕获组，提取第一个捕获组
-                        extracted = match.group(1)
-                    else:
-                        # 没有捕获组，使用整个匹配结果
-                        extracted = match.group(0)
+                match_list = compiled_pattern.findall(line)
+                if not CommonUtil.isNoneOrBlank(match_list):
+                    extracted = ''.join(match_list)
 
                     # 根据参数决定是否去除空白
                     if strip_result and extracted:
