@@ -27,19 +27,26 @@ class LogExtractor:
     )
     """
 
-    def __init__(self, zip_path: Optional[str] = None, cache_dir: str = None, sub_dir_name: str = None):
+    def __init__(self, zip_path: Optional[str] = None, cache_dir: str = None, sub_dir_name: str = None,
+                 line_mode: bool = True, re_flag: int = 0):
         """
         默认从压缩包中读取指定日志文件内容, 再进行过滤, 也支持绝对路径
         @param zip_path: zip包本地路径或者可下载的url路径, 比如: http://xxx.aliyuncs.com/logs/测试日志_1775183375996.zip?OSSAccessKeyId=xx&Expires=xxx&Signature=xxx
                         若为空, 则表示不需要从zip中提取日志文件
         @param cache_dir: zip下载或解压等需要使用的缓存根目录, 若为空, 则自动在当前目录下创建一个 cache 缓存根目录
         @param sub_dir_name: 在 cache_dir 下允许创建一个子目录用于存放本次下载的文件, 若为空,则不会创建子目录, 直接会在 cache_dir 中存储
+        @param line_mode: 是否逐行匹配日志
+        @param re_flag: filter() 正则匹配使用的flags
         """
         self.zip_path = ''
         self.data: List[str] = []  # 日志文件原始内容
         self.result: Dict[str, List[str]] = {}  # 过滤后的日志关键信息
         self.cache_dir = cache_dir or FileUtil.create_cache_dir(None, __file__)
         self.sub_dir_name = '' if CommonUtil.isNoneOrBlank(sub_dir_name) else sub_dir_name
+        self.default_filter_params = {
+            'line_mode': line_mode,
+            'flags': re_flag
+        }
         self.update_zip_path(zip_path)
 
     def update_zip_path(self, zip_path: str, **kwargs) -> Self:
@@ -63,18 +70,21 @@ class LogExtractor:
         """
         读取日志文件内容
         @param target_path: 日志文件路径, 若是从zip中读取, 则表示在zip中的相对路径
-        @param in_zip: 是否从zip包中读取日志文件
+        @param in_zip: 是否从zip包中读取日志文件, 有传入 zip_path 时有效
         @param charset: 读取文件的编码格式
         """
-        if in_zip:
+        if in_zip and FileUtil.isFileExist(self.zip_path):
             self.data = CompressUtil.read_zip_file_content(self.zip_path, target_path, charset=charset, mode='lines')
         else:
             self.data = FileUtil.readFile(target_path, encoding=charset)
         return self  # 返回自身，支持链式调用
 
     def filter(self, patterns: Dict[str, str], **kwargs) -> Self:
-        """过滤数据"""
-        self.result = CommonUtil.filter_list(self.data, patterns, **kwargs)
+        """过滤数据, 若多次调用, 则会合并所有结果"""
+        # 合并参数，kwargs 会覆盖 default_params 中的同名键
+        merged_kwargs = {**self.default_filter_params, **kwargs}
+
+        self.result = {**self.result, **CommonUtil.filter_list(self.data, patterns, **merged_kwargs)}
         return self
 
     def distinct(self) -> Self:
@@ -86,6 +96,13 @@ class LogExtractor:
     def get_result(self) -> Dict[str, List[str]]:
         """获取最终结果"""
         return self.result
+
+    def print_result(self) -> Self:
+        """
+        打印结果
+        """
+        CommonUtil.printLog(CommonUtil.format_dict(self.result, json_mode=False, kv_sep_flag='\n'))
+        return self
 
     def reset(self) -> Self:
         """
@@ -115,7 +132,8 @@ class LogExtractor:
             local_log_column: str = 'local_log',
             result_combine_flags: Optional[Dict[str, str]] = None,
             default_combine_flag: str = ',',
-            force_download: bool = False
+            force_download: bool = False,
+            force_filter: bool = False
     ) -> pd.DataFrame:
         """
         处理Excel中的日志下载任务, 读取其中的 log_url 列数据进行下载, 下载完完成后更新本地日志路径到 local_Log 列
@@ -132,6 +150,7 @@ class LogExtractor:
             result_combine_flags: 日志信息过滤完成后, 对列表进行合并时使用的连接符, 允许不同日志使用不同的连接符, 若未指定, 则兜底使用 default_combine_flag
             default_combine_flag: 日志过滤后, 每种信息都是个列表, 将列表拼接成字符串时, 默认使用的分隔符
             force_download: 本地对应的日志文件存在时, 是否重新下载, 若为 False, 则会跳过下载及之后的操作
+            force_filter: 本地有对应的日志文件时, 是否重新过滤, 若为 False, 则会跳过过滤
 
         Returns:
             更新后的DataFrame
@@ -178,7 +197,7 @@ class LogExtractor:
         # 检查 local_log 列是否存在
         has_local_log = local_log_column in df.columns
 
-        if has_local_log and not force_download:
+        if has_local_log and not force_download and not force_filter:
             # local_log 列存在,过滤为空的
             mask_no_local = df[local_log_column].isna() | (df[local_log_column].astype(str).str.strip() == '')
             mask_need_download = mask_valid_url & mask_no_local
@@ -236,16 +255,23 @@ class LogExtractor:
         print(f"结果已保存到: {excel_path}")
         return df
 
-# if __name__ == '__main__':
-#     result = (
-#         LogExtractor('app_log.zip')
-#         .update_zip_path('http://xxx')
-#         .read_file('logs/error.log')
-#         .filter({
-#             'error_code': r'ErrorCode:(\d+)',
-#             'message': r'Message:(.*)'
-#         }, start_pattern=r'=== TestCase Start ===')
-#         .distinct()
-#         .get_result()
-#     )
-#     print(result)
+
+if __name__ == '__main__':
+    result = (
+        LogExtractor('app_log.zip')
+        .update_zip_path('http://xxx')
+        .read_file('logs/error.log')
+        .filter({
+            'error_code': r'ErrorCode:(\d+)',
+            'message': r'Message:(.*)'
+        }, start_pattern=r'=== TestCase Start ===')
+        .distinct()
+        .get_result()
+    )
+    print(result)
+
+    # (LogExtractor().read_file(r'H:\Workspace\Python\PyUtils\log\2025_10_20_09_02_05.txt')
+    #  .filter({'可用金额': '可用金额:(.*)$'})
+    #  .print_result()
+    #  .filter({'总金额': 'total_cash: (.*), max_finance_amount:'})
+    #  .print_result())
