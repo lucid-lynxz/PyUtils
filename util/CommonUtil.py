@@ -866,6 +866,35 @@ class CommonUtil(object):
         return [item for item in data if check_condition(item)]
 
     @staticmethod
+    def merge_dict(dict1: dict, dict2: dict) -> dict:
+        """
+        合并两个字典，相同 key 的 value 进行拼接
+        - 字符串：直接拼接
+        - 列表：合并列表
+        - 其他类型：转为字符串后拼接
+        """
+        result = dict1.copy()
+
+        for key, value in dict2.items():
+            if key in result:
+                # 相同 key，拼接 value
+                existing_value = result[key]
+
+                # 根据类型进行拼接
+                if isinstance(existing_value, list) and isinstance(value, list):
+                    result[key] = existing_value + value
+                elif isinstance(existing_value, str) and isinstance(value, str):
+                    result[key] = existing_value + value
+                else:
+                    # 其他类型转为字符串拼接
+                    result[key] = f"{existing_value}{value}"
+            else:
+                # 不同 key，直接添加
+                result[key] = value
+
+        return result
+
+    @staticmethod
     def filter_list(
             data: List[str],
             patterns: Dict[str, str],

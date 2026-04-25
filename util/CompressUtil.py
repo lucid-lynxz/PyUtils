@@ -216,6 +216,125 @@ class CompressUtil(object):
             return None
 
     @staticmethod
+    def list_files(zip_path: str, directory_path: str, max_depth: int = 0,
+                                     pwd: str = None, include_dirs: bool = False) -> list:
+        """
+        列出 ZIP 压缩包中指定目录下的文件路径列表
+        
+        :param zip_path: ZIP 文件的路径
+        :param directory_path: 目标目录在 ZIP 中的路径，如 'assets/myRes/' 或 'logs'
+                              - 末尾带 '/' 表示目录，不带也会自动处理
+        :param max_depth: 最大递归深度（默认 0）
+                         - 0: 仅列出指定目录下的直接子文件（不包含子目录中的文件）
+                         - 1: 包含一级子目录中的文件
+                         - 2: 包含二级子目录中的文件
+                         - -1 或更大值: 递归所有层级
+        :param pwd: 密码（如果压缩包有密码保护）
+        :param include_dirs: 是否在结果中包含目录路径（默认 False，只返回文件路径）
+        :return: 文件路径列表，按字典序排序
+                - 返回的是文件在 ZIP 中的相对路径
+                - 失败返回空列表 []
+        
+        :example:
+        # 示例 1: 列出根目录下所有文件（不递归）
+        files = list_files('data.zip', '', max_depth=0)
+        # 返回: ['file1.txt', 'file2.log']
+        
+        # 示例 2: 列出指定目录下的直接子文件
+        files = list_files('data.zip', 'logs/', max_depth=0)
+        # 返回: ['logs/error.log', 'logs/info.log']
+        
+        # 示例 3: 递归列出所有子目录的文件
+        files = list_files('data.zip', 'assets/', max_depth=-1)
+        # 返回: ['assets/a.txt', 'assets/sub/b.txt', 'assets/sub/deep/c.txt']
+        
+        # 示例 4: 只递归一层
+        files = list_files('data.zip', 'src/', max_depth=1)
+        # 返回: ['src/main.py', 'src/utils/helper.py']（但不包括 src/utils/deep/test.py）
+        
+        # 示例 5: 同时返回目录和文件
+        paths = list_files('data.zip', 'project/', max_depth=2, include_dirs=True)
+        # 返回: ['project/', 'project/src/', 'project/src/main.py', ...]
+        """
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # 设置密码（如果有）
+                if pwd is not None:
+                    try:
+                        zip_ref.setpassword(pwd.encode('utf-8'))
+                    except Exception as e:
+                        CommonUtil.printLog(f"❌ 密码设置失败：{e}")
+                        return []
+
+                # 规范化目录路径
+                if not directory_path.endswith('/'):
+                    directory_path += '/'
+                
+                # 获取所有文件和目录
+                all_names = zip_ref.namelist()
+                result = []
+                
+                for name in all_names:
+                    # 检查是否以目标目录开头
+                    if not name.startswith(directory_path):
+                        continue
+                    
+                    # 计算相对路径（去掉目标目录前缀）
+                    relative_path = name[len(directory_path):]
+                    
+                    # 如果是目录本身，跳过（除非 include_dirs=True 且是顶层目录）
+                    if name == directory_path:
+                        if include_dirs and max_depth >= 0:
+                            result.append(name)
+                        continue
+                    
+                    # 判断是否是目录（以 / 结尾）
+                    is_dir = name.endswith('/')
+                    
+                    # 如果不包含目录且当前是目录，跳过
+                    if not include_dirs and is_dir:
+                        continue
+                    
+                    # 计算递归深度
+                    if max_depth >= 0:
+                        # 计算相对路径的层级数
+                        if is_dir:
+                            # 目录：计算斜杠数量
+                            depth = relative_path.count('/')
+                        else:
+                            # 文件：计算父目录的层级数
+                            depth = relative_path.count('/')
+                        
+                        # 如果超过最大深度，跳过
+                        if depth > max_depth:
+                            continue
+                    
+                    # 添加到结果
+                    result.append(name)
+                
+                # 按字典序排序
+                result.sort()
+                return result
+                
+        except FileNotFoundError:
+            CommonUtil.printLog(f"❌ ZIP 文件不存在：{zip_path}")
+            return []
+        except zipfile.BadZipFile:
+            CommonUtil.printLog(f"❌ 无效的 ZIP 文件：{zip_path}")
+            return []
+        except RuntimeError as e:
+            if 'password' in str(e).lower():
+                CommonUtil.printLog(f"❌ 密码错误或压缩包需要密码：{e}")
+            else:
+                CommonUtil.printLog(f"❌ 读取运行时错误：{e}")
+            return []
+        except Exception as e:
+            CommonUtil.printLog(f"❌ 列出文件失败：{e}")
+            import traceback
+            CommonUtil.printLog(traceback.format_exc())
+            return []
+
+    @staticmethod
     def unzip_files(zip_path: str, dest_dir: str = None, specific_files: list = None,
                     pwd: str = None, print_log: bool = True) -> tuple:
         """

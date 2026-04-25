@@ -443,7 +443,8 @@ class FileUtil(object):
             return lines
 
         with open(path, "r", encoding=encoding) as f:
-            lines = f.readlines()
+            # lines = f.readlines()
+            lines = f.read().splitlines()  # 自动去除所有行的换行符，包括 \n, \r\n 等
         return lines
 
     @staticmethod

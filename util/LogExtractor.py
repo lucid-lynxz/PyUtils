@@ -39,7 +39,9 @@ class LogExtractor:
         @param re_flag: filter() 正则匹配使用的flags
         """
         self.zip_path = ''
-        self.data: List[str] = []  # 日志文件原始内容
+        self.log_files = []  # 日志文件列表, 对于传入日志目录时会提取该目录下的子文件路径, filter()时会遍历所有日志文件
+        self.log_in_zip: bool = True
+        self.log_charset: str = 'utf-8'
         self.result: Dict[str, List[str]] = {}  # 过滤后的日志关键信息
         self.cache_dir = cache_dir or FileUtil.create_cache_dir(None, __file__)
         self.sub_dir_name = '' if CommonUtil.isNoneOrBlank(sub_dir_name) else sub_dir_name
@@ -69,22 +71,48 @@ class LogExtractor:
     def read_file(self, target_path: str, in_zip: bool = True, charset: str = 'utf-8') -> Self:
         """
         读取日志文件内容
-        @param target_path: 日志文件路径, 若是从zip中读取, 则表示在zip中的相对路径
+        @param target_path: 日志文件路径, 若是从zip中读取, 则表示在zip中的相对路径, 也支持目录, 需要以'/' 或者 '\\' 结尾, filter()时会遍历所有日志文件
         @param in_zip: 是否从zip包中读取日志文件, 有传入 zip_path 时有效
         @param charset: 读取文件的编码格式
         """
-        if in_zip and FileUtil.isFileExist(self.zip_path):
-            self.data = CompressUtil.read_zip_file_content(self.zip_path, target_path, charset=charset, mode='lines')
-        else:
-            self.data = FileUtil.readFile(target_path, encoding=charset)
+        target_path = FileUtil.recookPath(target_path)
+        is_dir = FileUtil.isDirPath(target_path)
+        in_zip = in_zip and FileUtil.isFileExist(self.zip_path)
+        self.log_files = [target_path]
+        self.log_in_zip = in_zip
+        self.log_charset = charset
+        if is_dir:
+            if in_zip:
+                self.log_files = CompressUtil.list_files(self.zip_path, target_path)
+            else:
+                self.log_files = FileUtil.listAllFilePath(target_path)
+
         return self  # 返回自身，支持链式调用
+
+    def __read_file(self, target_path: str, in_zip: bool, charset: str = 'utf-8') -> Optional[List[str]]:
+        """
+
+        """
+        target_path = FileUtil.recookPath(target_path)
+        in_zip = in_zip and FileUtil.isFileExist(self.zip_path)
+
+        if in_zip:
+            return CompressUtil.read_zip_file_content(self.zip_path, target_path, charset=charset, mode='lines')
+        else:
+            return FileUtil.readFile(target_path, encoding=charset)
 
     def filter(self, patterns: Dict[str, str], **kwargs) -> Self:
         """过滤数据, 若多次调用, 则会合并所有结果"""
         # 合并参数，kwargs 会覆盖 default_params 中的同名键
         merged_kwargs = {**self.default_filter_params, **kwargs}
 
-        self.result = {**self.result, **CommonUtil.filter_list(self.data, patterns, **merged_kwargs)}
+        # 遍历 self.log_files
+        for log_file in self.log_files:
+            data = self.__read_file(log_file, self.log_in_zip, self.log_charset)
+            _cur_result = CommonUtil.filter_list(data, patterns, **merged_kwargs)
+            _cur_result = {k: v for k, v in _cur_result.items() if not CommonUtil.isNoneOrBlank(v)}
+            # self.result = {**self.result, **_cur_result} # 合并dict,并以后面的数据为准
+            self.result = CommonUtil.merge_dict(self.result, _cur_result)  # 拼接合并dict, 会保留所有数据
         return self
 
     def distinct(self) -> Self:
@@ -108,7 +136,7 @@ class LogExtractor:
         """
         清除数据
         """
-        self.data = []
+        self.log_files = []
         self.result = {}  # 过滤后的日志关键信息
         self.update_zip_path('')
         return self
@@ -257,21 +285,23 @@ class LogExtractor:
 
 
 if __name__ == '__main__':
-    result = (
-        LogExtractor('app_log.zip')
-        .update_zip_path('http://xxx')
-        .read_file('logs/error.log')
-        .filter({
-            'error_code': r'ErrorCode:(\d+)',
-            'message': r'Message:(.*)'
-        }, start_pattern=r'=== TestCase Start ===')
-        .distinct()
-        .get_result()
-    )
-    print(result)
+    # result = (
+    #     LogExtractor('app_log.zip')
+    #     .update_zip_path('http://xxx')
+    #     .read_file('logs/error.log')
+    #     .filter({
+    #         'error_code': r'ErrorCode:(\d+)',
+    #         'message': r'Message:(.*)'
+    #     }, start_pattern=r'=== TestCase Start ===')
+    #     .distinct()
+    #     .print_result()
+    #     .get_result()
+    # )
 
-    # (LogExtractor().read_file(r'H:\Workspace\Python\PyUtils\log\2025_10_20_09_02_05.txt')
-    #  .filter({'可用金额': '可用金额:(.*)$'})
-    #  .print_result()
-    #  .filter({'总金额': 'total_cash: (.*), max_finance_amount:'})
-    #  .print_result())
+    # 支持传入目录
+    (LogExtractor().read_file(r'H:\Workspace\Python\PyUtils\log\\')
+     .filter({'可用金额': '可用金额:(.*)$'})
+     .print_result()
+     .filter({'总金额': 'total_cash: (.*), max_finance_amount:'})  # 支持多次调用, 会合并所有结果
+     .distinct()  # 对结果中的value列表进行去重
+     .print_result())
