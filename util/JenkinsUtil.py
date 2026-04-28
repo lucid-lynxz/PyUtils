@@ -492,15 +492,13 @@ class JenkinsUtil:
         try:
             self._ensure_connected()
 
-            # 获取原构建的参数（如果未提供新参数）
-            if parameters is None:
-                original_params = self.get_build_parameters(job_name, build_number)
-                if original_params:
-                    parameters = original_params
-                    print(f"使用原构建 #{build_number} 的参数: {parameters}")
-                else:
-                    print(f"原构建 #{build_number} 没有参数，将无参数重跑")
-                    parameters = {}
+            # 获取原构建的参数并与传入的参数进行合并
+            original_params = self.get_build_parameters(job_name, build_number)
+            parameters = parameters or {}
+            parameters = {**original_params, **parameters}
+
+            if len(parameters) == 0:
+                parameters = None
 
             # 获取当前最新的构建编号
             before_build_number = self.get_last_build_number(job_name)
@@ -914,4 +912,4 @@ if __name__ == '__main__':
         # print(f'info={info}')
 
         # 重新构建
-        util.rebuild(job_name, last_build_number,{'other_param':'hello_test0423'})
+        util.rebuild(job_name, last_build_number, {'other_param': 'hello_test0423'})

@@ -1,17 +1,20 @@
+from typing import List, Union, Callable, Dict
+
+from typing_extensions import Self
+
+from util.CommonUtil import CommonUtil, singleton
+from util.TimeUtil import TimeUtil
+from util.qmt.market_bean import MarketData
 from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
-from typing import List, Optional, Union, Callable, Dict
-from typing_extensions import Self
-from util.TimeUtil import TimeUtil
-from util.qmt.market_bean import StockData, MarketData
-from util.CommonUtil import CommonUtil, singleton
 from xtquant.xttype import StockAccount
 
 
 @singleton
 class QmtUtil:
     """
-    miniQMT量化工具类, 提供一些常用的工具函数, 单例默默是
+    miniQMT量化工具类, 提供一些常用的工具函数
+    文档: https://dict.thinktrader.net/nativeApi/start_now.html
     创建对象: qmt_util = QmtUtil()
     注册行情数据获取回调函数: qmt_util.register(on_data_callback)
     立即订阅单股行情: qmt_util.subscribe_quote(stock_code, period='1d', start_time='', end_time='')
@@ -57,7 +60,7 @@ class QmtUtil:
             return
 
         if self.print_log:
-            CommonUtil.printLog(f'{QmtUtil._TAG} _default_on_data: {datas}')
+            CommonUtil.printLog(f'{self._TAG} _default_on_data: {datas}')
 
         for callback in self.on_data_callback_list:
             callback(datas)

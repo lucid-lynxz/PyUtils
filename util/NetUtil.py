@@ -248,6 +248,7 @@ class NetUtil(object):
                 downloaded_size = 0
                 start_ms = TimeUtil.currentTimeMillis()
 
+                last_progress = -1
                 with open(save_path, "wb") as f:
                     while True:
                         chunk = response.read(4096)  # 分块读取
@@ -259,7 +260,10 @@ class NetUtil(object):
                         # 计算并打印进度
                         if total_size > 0:
                             progress = int((downloaded_size / total_size) * 100)
-                            print(f"\rDownload progress: {progress}%", end='', flush=True)
+                            if progress - last_progress >= 1 or progress == 100:
+                                last_progress = progress
+                                print(f"\rDownload progress: {progress}%", end='', flush=True)
+
                             if progress >= 100:
                                 duration_sec = (TimeUtil.currentTimeMillis() - start_ms) / 1000
                                 file_size = FileUtil.format_size(total_size)

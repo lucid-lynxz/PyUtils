@@ -674,9 +674,10 @@ class CommonUtil(object):
         @param json_indent json缩进字符数
         @param kv_sep_flag  key-value连接符, json_mode=False时使用
         """
+        _is_empty = CommonUtil.isNoneOrBlank(data)
         if json_mode:
-            return json.dumps(data, indent=json_indent, ensure_ascii=False)
-        return kv_sep_flag.join(f"{k}: {v}" for k, v in data.items())
+            return '{}' if _is_empty else json.dumps(data, indent=json_indent, ensure_ascii=False)
+        return '' if _is_empty else kv_sep_flag.join(f"{k}: {v}" for k, v in data.items())
 
     @staticmethod
     def starts_with_chinese(text) -> bool:
@@ -1026,10 +1027,11 @@ class CommonUtil(object):
                 continue
 
             # 对每个正则进行匹配
+            combine_flag = ' ' if line_mode else ''
             for key, compiled_pattern in compiled_patterns.items():
                 match_list = compiled_pattern.findall(line)
                 if not CommonUtil.isNoneOrBlank(match_list):
-                    extracted = ''.join(match_list)
+                    extracted = combine_flag.join(match_list)
 
                     # 根据参数决定是否去除空白
                     if strip_result and extracted:
@@ -1061,6 +1063,101 @@ class CommonUtil(object):
         ['ErrorCode:1001', 'ErrorCode:1002', 'ErrorCode:1003']
         """
         return list(dict.fromkeys(data))
+
+    @staticmethod
+    def parse_cookie(cookie_source: str, from_file: bool = False) -> Dict[str, str]:
+        """
+        解析 Cookie 内容为字典
+        
+        :param cookie_source: Cookie 来源
+                             - 如果 from_file=True，则为文件路径
+                             - 如果 from_file=False，则为 Cookie 字符串
+        :param from_file: 是否从文件读取，默认 False
+                         - True: cookie_source 为文件路径，读取文件内容后解析
+                         - False: cookie_source 为 Cookie 字符串，直接解析
+        :return: Cookie 字典，key 为 Cookie 名称，value 为 Cookie 值
+                - 解析失败返回空字典 {}
+        
+        :example:
+        # 示例 1: 直接解析 Cookie 字符串
+        cookie_str = 'session=abc123; user_id=1001; token=xyz789'
+        result = parse_cookie(cookie_str)
+        # 返回: {'session': 'abc123', 'user_id': '1001', 'token': 'xyz789'}
+        
+        # 示例 2: 从文件读取并解析
+        result = parse_cookie('cookies.txt', from_file=True)
+        # 返回: {'session': 'abc123', 'user_id': '1001', ...}
+        
+        # 示例 3: 多行 Cookie 格式（常见于浏览器导出）
+        cookie_str = '''
+        session=abc123
+        user_id=1001
+        token=xyz789
+        '''
+        result = parse_cookie(cookie_str)
+        # 返回: {'session': 'abc123', 'user_id': '1001', 'token': 'xyz789'}
+        
+        # 示例 4: 带属性的 Cookie（自动忽略属性部分）
+        cookie_str = 'session=abc123; Path=/; HttpOnly; user_id=1001'
+        result = parse_cookie(cookie_str)
+        # 返回: {'session': 'abc123', 'user_id': '1001'}
+        """
+        try:
+            # 如果从文件读取，先读取文件内容
+            if from_file:
+                if not CommonUtil.isFileExist(cookie_source):
+                    CommonUtil.printLog(f"❌ Cookie 文件不存在: {cookie_source}")
+                    return {}
+                
+                with open(cookie_source, 'r', encoding='utf-8') as f:
+                    cookie_content = f.read()
+            else:
+                cookie_content = cookie_source
+            
+            # 检查内容是否为空
+            if CommonUtil.isNoneOrBlank(cookie_content):
+                CommonUtil.printLog("⚠️ Cookie 内容为空")
+                return {}
+            
+            result = {}
+            
+            # 按行分割处理（支持多行格式）
+            lines = cookie_content.strip().splitlines()
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    # 跳过空行和注释行
+                    continue
+                
+                # 尝试按分号分割（标准 Cookie 格式）
+                if ';' in line:
+                    pairs = line.split(';')
+                    for pair in pairs:
+                        pair = pair.strip()
+                        if '=' in pair:
+                            key, value = pair.split('=', 1)
+                            key = key.strip()
+                            value = value.strip()
+                            
+                            # 过滤掉 Cookie 属性（如 Path, Domain, HttpOnly 等）
+                            if key and value and key.lower() not in ['path', 'domain', 'expires', 'max-age', 'secure', 'httponly', 'samesite']:
+                                result[key] = value
+                elif '=' in line:
+                    # 单行单个 Cookie（每行一个）
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key and value:
+                        result[key] = value
+            
+            return result
+            
+        except Exception as e:
+            CommonUtil.printLog(f"❌ 解析 Cookie 失败: {e}")
+            import traceback
+            CommonUtil.printLog(traceback.format_exc())
+            return {}
 
 
 # 配置日志
