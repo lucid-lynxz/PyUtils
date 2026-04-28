@@ -220,7 +220,7 @@ class TimeUtil(object):
         """
         time_format = None
         if ' ' in target_str:
-            if '-' in time_format:
+            if '-' in target_str:
                 time_format = "%Y-%m-%d %H:%M:%S"
             else:
                 time_format = "%Y%m%d %H:%M:%S"
@@ -231,6 +231,118 @@ class TimeUtil(object):
         elif ':' in target_str:
             time_format = "%H:%M:%S"
         return time_format
+
+    @staticmethod
+    def timestamp_to_str(timestamp: float, fmt: str = '%Y-%m-%d %H:%M:%S.%f') -> str:
+        """
+        将时间戳转换为指定格式的时间字符串，自动识别秒或毫秒级别
+        
+        :param timestamp: 时间戳（秒或毫秒）
+                         - 如果值 > 10^12，认为是毫秒级时间戳
+                         - 否则认为是秒级时间戳
+        :param fmt: 输出格式，默认 '%Y-%m-%d %H:%M:%S.%f'（包含微秒）
+                   - '%Y-%m-%d %H:%M:%S'：不包含微秒
+                   - '%Y-%m-%d'：仅日期
+                   - '%H:%M:%S'：仅时间
+        :return: 格式化后的时间字符串
+        
+        :example:
+        # 示例 1: 秒级时间戳
+        ts = 1714032000.123456
+        result = timestamp_to_str(ts)
+        # 返回: '2024-04-25 12:00:00.123456'
+        
+        # 示例 2: 毫秒级时间戳
+        ts = 1714032000123
+        result = timestamp_to_str(ts)
+        # 返回: '2024-04-25 12:00:00.123000'
+        
+        # 示例 3: 自定义格式（不含微秒）
+        result = timestamp_to_str(ts, fmt='%Y-%m-%d %H:%M:%S')
+        # 返回: '2024-04-25 12:00:00'
+        
+        # 示例 4: 当前时间戳
+        import time
+        result = timestamp_to_str(time.time())
+        """
+        try:
+            # 自动判断时间戳单位
+            # 毫秒级时间戳通常 > 10^12 (即 2001-09-09 之后的毫秒时间戳)
+            if timestamp > 1e12:
+                # 毫秒转秒
+                timestamp_sec = timestamp / 1000.0
+            else:
+                # 已经是秒级
+                timestamp_sec = timestamp
+
+            # 转换为 datetime 对象
+            dt = datetime.fromtimestamp(timestamp_sec)
+
+            # 格式化输出
+            return dt.strftime(fmt)
+        except Exception as e:
+            print(f"❌ 时间戳转换失败: {timestamp}, 错误: {e}")
+            return str(timestamp)
+
+    @staticmethod
+    def str_to_timestamp_ms(time_str: str, fmt: str = None) -> int:
+        """
+        将时间字符串转换为毫秒级时间戳
+        
+        :param time_str: 时间字符串
+                        - 支持格式: 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', 'YYYY-MM-DD HH:MM:SS.ffffff' 等
+                        - 如果未指定 fmt，会自动尝试识别常见格式
+        :param fmt: 时间格式，如 '%Y-%m-%d %H:%M:%S'
+                   - 如果为 None，则自动识别格式
+        :return: 毫秒级时间戳（int）
+        
+        :example:
+        # 示例 1: 自动识别格式
+        ts = str_to_timestamp_ms('2024-04-25 12:00:00')
+        # 返回: 1714017600000
+        
+        # 示例 2: 指定格式
+        ts = str_to_timestamp_ms('2024-04-25', fmt='%Y-%m-%d')
+        # 返回: 1714003200000
+        
+        # 示例 3: 带微秒的时间
+        ts = str_to_timestamp_ms('2024-04-25 12:00:00.123456')
+        # 返回: 1714017600123
+        
+        # 示例 4: 仅日期（默认时间为 00:00:00）
+        ts = str_to_timestamp_ms('2024-04-25')
+        # 返回: 1714003200000
+        """
+        try:
+            # 如果未指定格式，尝试自动识别
+            if fmt is None:
+                fmt = TimeUtil.get_time_format(time_str)
+                if fmt is None:
+                    # 尝试更多常见格式
+                    for try_fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                        try:
+                            datetime.strptime(time_str, try_fmt)
+                            fmt = try_fmt
+                            break
+                        except ValueError:
+                            continue
+
+                    if fmt is None:
+                        raise ValueError(f"无法识别时间格式: {time_str}")
+
+            # 解析时间字符串为 datetime 对象
+            dt = datetime.strptime(time_str, fmt)
+
+            # 转换为时间戳（秒）
+            timestamp_sec = dt.timestamp()
+
+            # 转换为毫秒并取整
+            timestamp_ms = int(timestamp_sec * 1000)
+
+            return timestamp_ms
+        except Exception as e:
+            print(f"❌ 时间字符串转换失败: {time_str}, 错误: {e}")
+            return 0
 
 
 if __name__ == '__main__':
