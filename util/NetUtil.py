@@ -11,6 +11,7 @@ from collections import OrderedDict
 
 from util.CommonUtil import CommonUtil
 from util.DingTalkBot import DingTalkBot
+from util.FeishuBot import FeishuBot
 from util.TimeUtil import TimeUtil
 from util.FileUtil import FileUtil
 
@@ -37,6 +38,7 @@ class NetUtil(object):
               atAll: bool 是否at所有人
               extraInfo: str 所有消息都要额外拼接的固定内容, 可放空
               feishuToken: 飞书机器人链接中的token信息
+              feishuSecret: 飞书机器人链接中的签名信息
               accessToken: 钉钉机器人中的accessToken
               atPhone: 钉钉机器人支持at特定人员,此处填写手机号, 可多个,逗号分隔
         :param printLog: 是否打印日志, 默认为False
@@ -86,13 +88,14 @@ class NetUtil(object):
         ddSecret = configDict.get('secret', '')
         atPhone = configDict.get('atPhone', '')
         fsToken = configDict.get('feishuToken', '')
+        fsSecret = configDict.get('feishuSecret', '')
         if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
             return False
         # CommonUtil.printLog(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
         if not CommonUtil.isNoneOrBlank(ddAccessToken):
             NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret, markdown=markdown)
         if not CommonUtil.isNoneOrBlank(fsToken):
-            NetUtil.push_feishu_robot(content, fsToken, atAll, markdown=markdown)
+            NetUtil.push_feishu_robot(content, fsToken, atAll, markdown=markdown, secret=fsSecret)
         return True
 
     @staticmethod
@@ -125,7 +128,7 @@ class NetUtil(object):
     def push_feishu_robot(content: str,
                           access_token: str,
                           is_at_all: bool = False,
-                          markdown: bool = False) -> str:
+                          markdown: bool = False, secret: str = None) -> str:
         """
         发送普通文本消息到飞书自定义机器人
         官方文档: https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN
@@ -133,40 +136,9 @@ class NetUtil(object):
         :param access_token: 机器人token,必填
         :param is_at_all: 是否@所有人
         :param markdown: 是否发送markdown文本,默认为False
+        :param secret: 飞书机器人的签名,可选
         """
-        headers = {"Content-type": "application/json"}
-        atAllOpt = '\n<at user_id="all">所有人</at>' if is_at_all else ''
-
-        if markdown:
-            # Markdown 格式消息
-            json_data_obj = {
-                "content": {"post": {"zh_cn": {"title": "markdown_msg", "content": [[{"tag": "text", "text": content}]]}}},
-                "msg_type": "post"
-            }
-        else:
-            # 普通文本消息
-            json_data_obj = {
-                "content": {
-                    "text": "%s%s" % (content, atAllOpt)
-                },
-                "msg_type": "text"
-            }
-        # CommonUtil.printLog(f'data_obj={json_data_obj}')
-        # 将str类型转换为bytes类型
-        json_data_obj = json.dumps(json_data_obj).encode('utf-8')
-        # json_data_obj = urllib.parse.urlencode(json_data_obj).encode("utf-8")
-        request = urllib2.Request(url='https://open.feishu.cn/open-apis/bot/v2/hook/%s' % access_token,
-                                  data=json_data_obj,
-                                  headers=headers, method="POST")
-        try:
-            response = urllib2.urlopen(request)
-            fsResult = response.read().decode('utf-8')
-            CommonUtil.printLog(f'push_feishu_robot result={fsResult}')
-            return fsResult
-        except Exception as e:
-            traceback.print_exc()
-            CommonUtil.printLog(f'push_feishu_robot fail url={request.full_url} {e}')
-            return 'fail'
+        return FeishuBot(access_token, secret).send_msg(content, is_at_all, markdown)
 
     @staticmethod
     def getIp() -> str:

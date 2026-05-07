@@ -863,13 +863,29 @@ class FeishuMonitorByOAuth:
             content_str = body.get("content", "{}")
             content = json.loads(content_str)
 
-            # 直接在原始 content 中替换 image_key
-            content_str_new = content_str
-            for old_key, new_key in new_image_keys.items():
-                content_str_new = content_str_new.replace(old_key, new_key)
-
             # 解析替换后的内容
-            new_content = json.loads(content_str_new)
+            new_content = json.loads(content_str)
+
+            # 遍历内容，替换 image_key 并确保图片标签完整
+            def replace_image_keys(obj):
+                if isinstance(obj, dict):
+                    if obj.get("tag") == "img":
+                        old_key = obj.get("image_key", "")
+                        if old_key in new_image_keys:
+                            obj["image_key"] = new_image_keys[old_key]
+                        # 确保图片标签包含必要字段（width, height）
+                        if "width" not in obj:
+                            obj["width"] = 600
+                        if "height" not in obj:
+                            obj["height"] = 400
+                    for key, value in list(obj.items()):
+                        obj[key] = replace_image_keys(value)
+                elif isinstance(obj, list):
+                    for i, item in enumerate(obj):
+                        obj[i] = replace_image_keys(item)
+                return obj
+
+            new_content = replace_image_keys(new_content)
 
             # 确保格式正确：外层必须有 "post" 键，内部必须有语言键
             if "post" not in new_content:
