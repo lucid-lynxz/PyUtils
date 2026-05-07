@@ -108,7 +108,7 @@ class RedirectFeishuImpl(BaseConfig):
                         if pic_flag:
                             content = content.replace(f"[图片:{image_key}]", pic_flag).replace(f"[图片] image_key={image_key}", pic_flag)
                             content = f'{content}\n[{image_key}]({full_img_url})'
-                            content = content.replace('\n', '</br>')
+                            content = content.replace('\n', '<br>')
                             markdown = True
                     else:
                         break

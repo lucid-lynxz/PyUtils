@@ -64,10 +64,10 @@ class FeishuBot:
             if not hit:
                 content = f'{self.keyword[0]} {content}'.strip()
 
+        # 飞书支持 \n <br> <br/>字符: https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags?lang=zh-CN
+        content = content.replace('<br>', '\n').replace('</br>', '\n')
         if markdown:
             # Markdown 格式消息
-            # 飞书支持 \n <br> <br/>字符: https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags?lang=zh-CN
-            # content = content.replace('<br>', '\n').replace('</br>', '\n')
             json_data_obj = {
                 "content": {"post": {"zh_cn": {"title": "markdown_msg", "content": [[{"tag": "text", "text": f'{content}{atAllOpt}'}]]}}},
                 "msg_type": "post"

@@ -878,12 +878,46 @@ class FeishuMonitorByOAuth:
                             obj["width"] = 600
                         if "height" not in obj:
                             obj["height"] = 400
+                    elif obj.get("tag") == "text":
+                        # 移除空的 style 数组，避免 API 报错
+                        if "style" in obj and isinstance(obj["style"], list) and len(obj["style"]) == 0:
+                            del obj["style"]
                     for key, value in list(obj.items()):
                         obj[key] = replace_image_keys(value)
                 elif isinstance(obj, list):
                     for i, item in enumerate(obj):
                         obj[i] = replace_image_keys(item)
                 return obj
+            
+            new_content = replace_image_keys(new_content)
+            
+            # 清理空的文本行（只包含换行符或空白的文本标签）
+            def clean_empty_text(obj):
+                if isinstance(obj, list):
+                    # 过滤掉只包含空白的文本标签
+                    to_remove = []
+                    for i, item in enumerate(obj):
+                        if isinstance(item, dict) and item.get("tag") == "text":
+                            text = item.get("text", "")
+                            if text.strip() == "":
+                                to_remove.append(i)
+                        elif isinstance(item, list):
+                            clean_empty_text(item)
+                    # 逆序删除，避免索引问题
+                    for i in reversed(to_remove):
+                        del obj[i]
+                return obj
+            
+            # 清理 content 中的空文本行
+            post_data = new_content.get("post", {})
+            if isinstance(post_data, dict):
+                lang_key = next((k for k in ("zh_cn", "en_us", "ja_jp") if k in post_data), None)
+                if lang_key and isinstance(post_data[lang_key].get("content"), list):
+                    for row in post_data[lang_key]["content"]:
+                        if isinstance(row, list):
+                            clean_empty_text(row)
+                    # 清理空行
+                    post_data[lang_key]["content"] = [row for row in post_data[lang_key]["content"] if row]
 
             new_content = replace_image_keys(new_content)
 
