@@ -121,7 +121,7 @@ class TimeUtil(object):
         minutes = int(rest // 60)
         secs = int(rest % 60)
         result = '%s小时%s分%s秒' % (hour, minutes, secs)
-        return result.replace('分0秒', '分').replace('时0分', '时').replace('0小时', '')
+        return result.replace('分0秒', '分').replace('小时0分', '小时').replace('0小时', '')
 
     @staticmethod
     def currentTimeMillis() -> int:

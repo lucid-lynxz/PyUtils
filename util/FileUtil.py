@@ -869,7 +869,7 @@ class FileUtil(object):
     @staticmethod
     def delete_old_files(dir_path: str, days: int = 7, include_subdirs: bool = True,
                          file_only: bool = False, dir_only: bool = False,
-                         use_mtime: bool = True, dry_run: bool = False) -> dict:
+                         use_mtime: bool = True, dry_run: bool = False, skip_dot_files: bool = True) -> dict:
         """
         删除指定目录下N天前创建的文件或目录
 
@@ -880,6 +880,7 @@ class FileUtil(object):
         :param dir_only: 是否只删除目录,默认False
         :param use_mtime: 是否使用修改时间判断,默认True; False则使用创建时间(Windows有效)
         :param dry_run: 是否为试运行模式(只打印不删除),默认False
+        :param skip_dot_files: 跳过点开头的目录(含子目录/子文件)/文件
         :return: 统计信息字典 {deleted_files: int, deleted_dirs: int, skipped: int, errors: int}
 
         Examples:
@@ -920,6 +921,21 @@ class FileUtil(object):
             try:
                 if not os.path.exists(item_path):
                     continue
+
+                if skip_dot_files:
+                    # 跳过以点开头的文件或目录(包括其子目录/子文件)
+                    # 检查路径中的每一级目录是否有以点开头的
+                    rel_path = os.path.relpath(item_path, dir_path)
+                    path_parts = rel_path.replace('\\', '/').split('/')
+                    skip_item = False
+                    for part in path_parts:
+                        if part.startswith('.'):
+                            skip_item = True
+                            break
+
+                    if skip_item:
+                        stats['skipped'] += 1
+                        continue
 
                 is_dir = os.path.isdir(item_path)
 
