@@ -986,6 +986,71 @@ class FileUtil(object):
 
         return stats
 
+    @staticmethod
+    def get_file_times(file_paths: list, time_type: str = 'mtime', time_format: str = None) -> dict:
+        """
+        获取多个文件的创建/修改时间
+        :param file_paths: 文件路径列表, 可以通过 listAllFilePath(...) 获取
+                           有些时候,可能需要只需要获取部分文件的时间信息, 如: 只处理包含 'hello' 的文件(不区分大小写), 则:
+                           1. 先过滤出符合条件的路径list
+                           2. 执行本方法获取对应的时间信息
+                            filtered_files = [f for f in file_paths if 'hello' in f.lower()]
+                            result = FileUtil.get_file_times(filtered_files)
+        :param time_type: 时间类型,可选值:
+                         - 'mtime': 修改时间(默认)
+                         - 'ctime': 创建时间(Windows) / 状态改变时间(Linux/Mac)
+                         - 'atime': 最后访问时间
+        :param time_format: 时间格式化字符串,如 '%Y-%m-%d %H:%M:%S'
+                           - 若为None,则返回时间戳(float)
+                           - 若指定格式,则返回格式化后的时间字符串
+        :return: dict, key为文件路径, value为时间(时间戳或格式化字符串)
+        
+        Examples:
+            # 获取修改时间(时间戳)
+            result = FileUtil.get_file_times(['/path/to/file1.txt', '/path/to/file2.txt'])
+            # 返回: {'/path/to/file1.txt': 1714032000.0, '/path/to/file2.txt': 1714032100.0}
+            
+            # 获取创建时间(格式化字符串)
+            result = FileUtil.get_file_times(['/path/to/file1.txt'], time_type='ctime', time_format='%Y-%m-%d %H:%M:%S')
+            # 返回: {'/path/to/file1.txt': '2024-04-25 12:00:00'}
+
+            # 然后可以根据返回结果获取最新文件(时间戳最大的)
+            # 同理可以找最早的文件(时间戳最小的, 将max()改为min()即可)
+            latest_file = max(result, key=result.get)
+            latest_time = result[latest_file]
+        """
+        from util.TimeUtil import TimeUtil
+
+        result = {}
+        for file_path in file_paths:
+            file_path = FileUtil.recookPath(file_path)
+            if not FileUtil.isFileExist(file_path):
+                CommonUtil.printLog(f'get_file_times skip: 文件不存在 {file_path}')
+                continue
+
+            try:
+                # 根据time_type获取对应的时间戳
+                if time_type == 'mtime':
+                    timestamp = os.path.getmtime(file_path)
+                elif time_type == 'ctime':
+                    timestamp = os.path.getctime(file_path)
+                elif time_type == 'atime':
+                    timestamp = os.path.getatime(file_path)
+                else:
+                    CommonUtil.printLog(f'get_file_times warn: 未知的时间类型 {time_type}, 使用默认 mtime')
+                    timestamp = os.path.getmtime(file_path)
+
+                # 根据time_format决定返回值类型
+                if time_format:
+                    result[file_path] = TimeUtil.timestamp_to_str(timestamp, fmt=time_format)
+                else:
+                    result[file_path] = timestamp
+
+            except Exception as e:
+                CommonUtil.printLog(f'get_file_times error: 获取文件时间失败 {file_path}, 错误: {e}')
+
+        return result
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"
