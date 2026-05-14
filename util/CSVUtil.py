@@ -85,7 +85,7 @@ class CSVUtil(object):
     def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> pd.DataFrame:
         """
         重排并只保留指定的列数据
-        若要修改列名请自行调用接口: df=df.rename({'a':'b'}, inplace=False)
+        若要修改列名请自行调用接口: df=df.rename(columns={'a':'b'}, inplace=False)
         注意返回的新的df 不影响入参的源df, 请按需重新赋值
         """
         df = CSVUtil.add_cols(df, usecols)

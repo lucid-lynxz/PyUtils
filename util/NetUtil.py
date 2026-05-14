@@ -41,6 +41,10 @@ class NetUtil(object):
               feishuSecret: 飞书机器人链接中的签名信息
               accessToken: 钉钉机器人中的accessToken
               atPhone: 钉钉机器人支持at特定人员,此处填写手机号, 可多个,逗号分隔
+              允许最多4组配置, 除了默认的一组, 其他的需要添加序号 1/2/3, 如:
+              keyWord1/atAll1/extraInfo1...
+              keyWord2/atAll2/extraInfo2...
+              keyWord3/atAll3/extraInfo3...
         :param printLog: 是否打印日志, 默认为False
         :param with_time: 是否在消息前面加上时间, 默认为 True
         :param markdown: 是否发送markdown文本
@@ -75,27 +79,30 @@ class NetUtil(object):
         configDict = NetUtil.robot_dict if configDict is None else configDict
         if configDict is None:
             return False
-        keyWord = configDict.get('keyWord', '')
-        extraInfo = configDict.get('extraInfo', '')
-        extraInfo = '' if CommonUtil.isNoneOrBlank(extraInfo) else f'{extraInfo}\n'
-        timeInfo = TimeUtil.getTimeStr("%H:%M:%S") if with_time else ''
-        content = f'{keyWord} {timeInfo}\n{extraInfo}{content}'
-        content = content.strip()
 
-        atAll = configDict.get('atAll', 'False') == 'True'
+        for i in range(0, 4):
+            index = '' if i == 0 else f'{i}'
+            keyWord = configDict.get(f'keyWord{index}', '')
+            extraInfo = configDict.get(f'extraInfo{index}', '')
+            extraInfo = '' if CommonUtil.isNoneOrBlank(extraInfo) else f'{extraInfo}\n'
+            timeInfo = TimeUtil.getTimeStr("%H:%M:%S") if with_time else ''
+            content = f'{keyWord} {timeInfo}\n{extraInfo}{content}'
+            content = content.strip()
 
-        ddAccessToken = configDict.get('accessToken', '')
-        ddSecret = configDict.get('secret', '')
-        atPhone = configDict.get('atPhone', '')
-        fsToken = configDict.get('feishuToken', '')
-        fsSecret = configDict.get('feishuSecret', '')
-        if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
-            return False
-        # CommonUtil.printLog(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
-        if not CommonUtil.isNoneOrBlank(ddAccessToken):
-            NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret, markdown=markdown)
-        if not CommonUtil.isNoneOrBlank(fsToken):
-            NetUtil.push_feishu_robot(content, fsToken, atAll, markdown=markdown, secret=fsSecret)
+            atAll = configDict.get(f'atAll{index}', 'False') == 'True'
+
+            ddAccessToken = configDict.get(f'accessToken{index}', '')
+            ddSecret = configDict.get(f'secret{index}', '')
+            atPhone = configDict.get(f'atPhone{index}', '')
+            fsToken = configDict.get(f'feishuToken{index}', '')
+            fsSecret = configDict.get(f'feishuSecret{index}', '')
+            if CommonUtil.isNoneOrBlank('%s%s' % (ddAccessToken, fsToken)):
+                continue
+            # CommonUtil.printLog(f'ddAccessToken={ddAccessToken},fsToken={fsToken}---')
+            if not CommonUtil.isNoneOrBlank(ddAccessToken):
+                NetUtil.push_ding_talk_robot(content, ddAccessToken, atAll, at_mobiles=atPhone.split(','), secret=ddSecret, markdown=markdown)
+            if not CommonUtil.isNoneOrBlank(fsToken):
+                NetUtil.push_feishu_robot(content, fsToken, atAll, markdown=markdown, secret=fsSecret)
         return True
 
     @staticmethod
