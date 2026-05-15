@@ -429,12 +429,13 @@ class FileUtil(object):
         return True
 
     @staticmethod
-    def readFile(path: str, encoding='utf-8') -> list:
+    def readFile(path: str, encoding='utf-8', auto_remove_rn: bool = True) -> list:
         """
         读取给定路径的文件,返回所有放信息
         :param path: 文件路径(目录无效)
         :param encoding: 读取时使用的编码,默认为: utf-8
-        :return: list
+        :param auto_remove_rn: 读取文件内容时是否自动删除所有行的换行符，包括 \n, \r\n 等, 默认True
+        :return: list 元素是行文本数据
         """
         path = FileUtil.recookPath(path)
         lines = []
@@ -443,8 +444,10 @@ class FileUtil(object):
             return lines
 
         with open(path, "r", encoding=encoding) as f:
-            # lines = f.readlines()
-            lines = f.read().splitlines()  # 自动去除所有行的换行符，包括 \n, \r\n 等
+            if auto_remove_rn:
+                lines = f.read().splitlines()  # 自动去除所有行的换行符，包括 \n, \r\n 等
+            else:
+                lines = f.readlines()
         return lines
 
     @staticmethod
@@ -1004,12 +1007,12 @@ class FileUtil(object):
                            - 若为None,则返回时间戳(float)
                            - 若指定格式,则返回格式化后的时间字符串
         :return: dict, key为文件路径, value为时间(时间戳或格式化字符串)
-        
+
         Examples:
             # 获取修改时间(时间戳)
             result = FileUtil.get_file_times(['/path/to/file1.txt', '/path/to/file2.txt'])
             # 返回: {'/path/to/file1.txt': 1714032000.0, '/path/to/file2.txt': 1714032100.0}
-            
+
             # 获取创建时间(格式化字符串)
             result = FileUtil.get_file_times(['/path/to/file1.txt'], time_type='ctime', time_format='%Y-%m-%d %H:%M:%S')
             # 返回: {'/path/to/file1.txt': '2024-04-25 12:00:00'}

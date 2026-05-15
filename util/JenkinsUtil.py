@@ -470,7 +470,7 @@ class JenkinsUtil:
                 timeout: int = 3600) -> Optional[int]:
         """
         重跑指定的构建（基于历史构建重新触发）
-        
+
         :param job_name: Job 名称
         :param build_number: 要重跑的构建编号
         :param parameters: 新的构建参数 (可选)。若传空则使用原构建的参数；若传入新参数则覆盖原参数
@@ -478,24 +478,28 @@ class JenkinsUtil:
         :param poll_interval: 轮询间隔 (秒)
         :param timeout: 超时时间 (秒), 仅当 block=True 时有效
         :return: 新构建的编号
-        
+
         使用示例：
             # 1. 直接使用原参数重跑
             new_build = jenkins.rebuild('my-job', 10)
-            
+
             # 2. 修改部分参数后重跑
             new_build = jenkins.rebuild('my-job', 10, parameters={'BRANCH': 'develop'})
-            
+
             # 3. 阻塞等待重跑完成
             new_build = jenkins.rebuild('my-job', 10, block=True)
         """
         try:
             self._ensure_connected()
 
-            # 获取原构建的参数并与传入的参数进行合并
+            # 获取原构建的参数并合并传入的参数
             original_params = self.get_build_parameters(job_name, build_number)
-            parameters = parameters or {}
-            parameters = {**original_params, **parameters}
+
+            # 合并两个header, 生成最终的header再执行请求
+            if parameters is None or len(parameters) == 0:
+                parameters = original_params
+            else:
+                parameters = {**original_params, **parameters}
 
             if len(parameters) == 0:
                 parameters = None
@@ -509,7 +513,7 @@ class JenkinsUtil:
             else:
                 self.server.build_job(job_name)
 
-            print(f"已触发重跑：{job_name} (基于构建 #{build_number})")
+            print(f"已触发重跑：{job_name} (基于构建 #{build_number}),当前最新job编号:{before_build_number}")
 
             # 等待新构建启动
             max_wait = 30  # 最多等待 30 秒
