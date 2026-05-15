@@ -521,7 +521,14 @@ class AdbUtil(object):
                 print(f'getCurrentActivity fail out={out},devId={deviceId} {e}')
         return ''
 
-    def startApp(self, appPkgName: str, activityPath: str, deviceId: str = None):
+    def restartApp(self, appPkgName: str, deviceId: str = None):
+        """
+        重启app
+        """
+        self.killApp(appPkgName, deviceId)
+        self.startApp(appPkgName, deviceId=deviceId)
+
+    def startApp(self, appPkgName: str, activityPath: str = None, deviceId: str = None):
         """
         启动app指定activity
         可通过 adb shell dumpsys window | grep mCurrentFocus 查看到当前activity信息
@@ -530,7 +537,10 @@ class AdbUtil(object):
         """
         if CommonUtil.isNoneOrBlank(appPkgName):
             return self
-        self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
+        if CommonUtil.isNoneOrBlank(activityPath):
+            self.exeShellCmds([f'monkey -p {appPkgName}  -c android.intent.category.LAUNCHER 1'], deviceId)
+        else:
+            self.exeShellCmds(['am start %s/%s' % (appPkgName, activityPath)], deviceId)
         return self
 
     def killApp(self, appPkgName: Union[str, None], deviceId: str = None, printCmdInfo: bool = False):

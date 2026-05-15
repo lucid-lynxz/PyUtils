@@ -129,6 +129,19 @@ class TimeUtil(object):
         return int(round(time.time() * 1000))
 
     @staticmethod
+    def convertTimestamp(timestamp: int, fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
+        """
+        将毫秒级时间戳转换为时间字符串
+        :param timestamp: 毫秒级时间戳
+        :param fmt: 日期格式, 默认为: '%Y-%m-%d %H:%M:%S'
+        :return: 格式化后的时间字符串
+        """
+        # 将毫秒转换为秒
+        seconds = timestamp / 1000
+        dt = datetime.fromtimestamp(seconds)
+        return dt.strftime(fmt)
+
+    @staticmethod
     def getDurationStr(durationInMills: int) -> str:
         """将毫秒耗时转换更可读的 x时x分x秒的形式"""
         mills = durationInMills % 1000
@@ -137,7 +150,14 @@ class TimeUtil(object):
         restMinutes = restSeconds // 60
         minutes = restMinutes % 60
         hours = restSeconds // 3600
-        return "%s时%s分%s秒" % (hours, minutes, seconds)
+        result = f'{hours}小时{minutes}分{seconds}秒'
+        if result.startswith('0小时'):
+            result = result.replace('0小时', '')
+        if result.startswith('0分'):
+            result = result.replace('0分', '')
+        if result.endswith('0秒'):
+            result = result.replace('0秒', '')
+        return result
 
     @staticmethod
     def sleep(sec: float, minSec: float = 1, maxSec: float = 10) -> float:
@@ -236,7 +256,7 @@ class TimeUtil(object):
     def timestamp_to_str(timestamp: float, fmt: str = '%Y-%m-%d %H:%M:%S.%f') -> str:
         """
         将时间戳转换为指定格式的时间字符串，自动识别秒或毫秒级别
-        
+
         :param timestamp: 时间戳（秒或毫秒）
                          - 如果值 > 10^12，认为是毫秒级时间戳
                          - 否则认为是秒级时间戳
@@ -245,22 +265,22 @@ class TimeUtil(object):
                    - '%Y-%m-%d'：仅日期
                    - '%H:%M:%S'：仅时间
         :return: 格式化后的时间字符串
-        
+
         :example:
         # 示例 1: 秒级时间戳
         ts = 1714032000.123456
         result = timestamp_to_str(ts)
         # 返回: '2024-04-25 12:00:00.123456'
-        
+
         # 示例 2: 毫秒级时间戳
         ts = 1714032000123
         result = timestamp_to_str(ts)
         # 返回: '2024-04-25 12:00:00.123000'
-        
+
         # 示例 3: 自定义格式（不含微秒）
         result = timestamp_to_str(ts, fmt='%Y-%m-%d %H:%M:%S')
         # 返回: '2024-04-25 12:00:00'
-        
+
         # 示例 4: 当前时间戳
         import time
         result = timestamp_to_str(time.time())
@@ -288,27 +308,27 @@ class TimeUtil(object):
     def str_to_timestamp_ms(time_str: str, fmt: str = None) -> int:
         """
         将时间字符串转换为毫秒级时间戳
-        
+
         :param time_str: 时间字符串
                         - 支持格式: 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', 'YYYY-MM-DD HH:MM:SS.ffffff' 等
                         - 如果未指定 fmt，会自动尝试识别常见格式
         :param fmt: 时间格式，如 '%Y-%m-%d %H:%M:%S'
                    - 如果为 None，则自动识别格式
         :return: 毫秒级时间戳（int）
-        
+
         :example:
         # 示例 1: 自动识别格式
         ts = str_to_timestamp_ms('2024-04-25 12:00:00')
         # 返回: 1714017600000
-        
+
         # 示例 2: 指定格式
         ts = str_to_timestamp_ms('2024-04-25', fmt='%Y-%m-%d')
         # 返回: 1714003200000
-        
+
         # 示例 3: 带微秒的时间
         ts = str_to_timestamp_ms('2024-04-25 12:00:00.123456')
         # 返回: 1714017600123
-        
+
         # 示例 4: 仅日期（默认时间为 00:00:00）
         ts = str_to_timestamp_ms('2024-04-25')
         # 返回: 1714003200000
