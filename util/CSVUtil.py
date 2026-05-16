@@ -82,15 +82,45 @@ class CSVUtil(object):
         return df
 
     @staticmethod
-    def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> pd.DataFrame:
+    def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None, keep_all_cols: bool = False) -> pd.DataFrame:
         """
-        重排并只保留指定的列数据
+        重排并默认只保留指定的列数据
         若要修改列名请自行调用接口: df=df.rename(columns={'a':'b'}, inplace=False)
         注意返回的新的df 不影响入参的源df, 请按需重新赋值
+        @param df: 数据
+        @param usecols: 需要指定排序的列名
+        @param keep_all_cols: 是否保留其他不在 usecols 中的其他列, 默认不保留
         """
         df = CSVUtil.add_cols(df, usecols)
+
+        if keep_all_cols:  # 保留其他列
+            cols = df.columns.tolist()
+            usecols = usecols + [col for col in cols if col not in usecols]
+
         if df is not None and not CommonUtil.isNoneOrBlank(usecols):
             df = df[usecols]  # 重排顺序
+        return df
+
+    @staticmethod
+    def drop_cols(df: pd.DataFrame, columns: Union[str, List[str]]) -> pd.DataFrame:
+        """
+        删除指定列, 已兼容列不存在的情形
+        @param df: 数据
+        @param columns: 需要删除的列名, 支持单个和多个列名列表
+        """
+
+        use_cols = []
+        if isinstance(columns, str):
+            use_cols = [columns]
+        elif isinstance(columns, list):
+            use_cols = columns
+
+        if CommonUtil.isNoneOrBlank(use_cols):
+            return df
+
+        df_cols = df.columns.tolist()
+        use_cols = [col for col in use_cols if col in df_cols]
+        df = df.drop(columns=use_cols)
         return df
 
     @staticmethod
@@ -172,11 +202,14 @@ class CSVUtil(object):
         if df is None:
             return None
 
+        not_exist_cols = []
         if not CommonUtil.isNoneOrBlank(usecols):
             for col in usecols:
                 if col not in df.columns:
                     df[col] = ''  # 初始化为空字符
-                    CommonUtil.printLog(f'{col}列不存在, 添加')
+                    not_exist_cols.append(col)
+        if not_exist_cols:
+            CommonUtil.printLog(f'添加列: {not_exist_cols}')
         return df
 
     @staticmethod
@@ -195,7 +228,8 @@ class CSVUtil(object):
         return all(match_result) if all_match else any(match_result)
 
     @staticmethod
-    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n', mode: str = 'w') -> bool:
+    def to_csv(df: pd.DataFrame, output_path: str, encoding: str = 'utf-8-sig', index=False, lineterminator='\n', mode: str = 'w',
+               headers: Union[bool, List[str]] = True) -> bool:
         """
         将DataFrame保存为CSV文件
         :param df: DataFrame
@@ -204,13 +238,14 @@ class CSVUtil(object):
         :param index: 是否保存索引
         :param lineterminator: 行分隔符
         :param mode: 保存模式, w-覆盖  a-追加
+        :param headers: 列名, true表示将原始列名写入, 若传入 List, 则会改为新列名
         """
         if CommonUtil.isNoneOrBlank(output_path):
             return False
 
         try:
             FileUtil.createFile(output_path, False)
-            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode)
+            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode, header=headers)
             CommonUtil.printLog(f'to_csv success: total rows={len(df)}, 保存数据到: {output_path}')
             return True
         except Exception as e:
@@ -1109,9 +1144,10 @@ class CSVUtil(object):
         """
         从csv文件中分批次提取数据, 批次内部对各行数据进行并发处理, 返回新结果, 并将结果覆盖回原行数据中
 
-        :param csv_file: 输入CSV文件路径, 通常是: src.csv
-        :param output_file: 输出CSV文件路径, 通常是: 自动_t.csv
+        :param csv_file: 输入CSV文件路径, 通常是: src.csv, 若传入excel文件, 会尝试先转换
+        :param output_file: 输出CSV文件路径, 若传空, 则在原文件名后增加 '_output' 后缀作为输出文件
                             若文件已存在, 会读取其 col_keyword 列信息,去重, 并跳过相关行数据的处理
+                            若要跳过去重, 请删除 output_file 或者指定一个空白列
         :param process_row_data: 行数据处理函数, 输入是原始行对象pd.Series, 直接在其上修改即可
         :param col_keyword: 在input/output文件中都要存在的列名, 用于去重, 处理新行数据时, 若检测到该列数据已有处理过的缓存,则实际使用缓存值
                             filter_columns_dict为空时,默认是检测 output_file 该存在该列数据时, 就认为这条数据 已处理过, 会跳过
@@ -1125,6 +1161,12 @@ class CSVUtil(object):
         if not FileUtil.isFileExist(csv_file):
             CommonUtil.printLog(f"❌ 输入文件不存在: {csv_file}")
             return result_df
+
+        # 尝试转换为csv文件
+        csv_file = CSVUtil.convert_excel(csv_file)
+
+        if CommonUtil.isNoneOrBlank(output_file):
+            output_file = csv_file.replace('.csv', '_output.csv')
 
         # 2. 加载已处理的数据（用于去重）
         processed_queries = set()
