@@ -66,7 +66,7 @@ class KVCache(Generic[T]):
                     second_cache.update(self.cache)
                     self.cache = second_cache
         CommonUtil.printLog(f'初始化缓存成功,共有: {len(self.cache.keys())}条数据')
-        
+
         # 启动定期检查缓存过期的后台线程
         if self.enable and self.expire_seconds > 0:
             self._start_expire_check_thread()
@@ -101,7 +101,7 @@ class KVCache(Generic[T]):
         """
         if not self.enable or self.expire_seconds <= 0:
             return
-        
+
         with self.lock:
             if self._is_cache_expired():
                 CommonUtil.printLog(f'⚠️ 缓存已过期，删除重建: {self.cache_file}')
@@ -121,7 +121,7 @@ class KVCache(Generic[T]):
                     if self._stop_check_thread:
                         break
                     time.sleep(0.1)
-                
+
                 if not self._stop_check_thread:
                     self._check_and_handle_expire()
                     self._last_check_time = time.time()
@@ -167,7 +167,7 @@ class KVCache(Generic[T]):
                         CommonUtil.printLog(f'加载缓存成功,共有: {len(result.keys())}条数据, 文件:{cache_file}')
                         return result
             except Exception as e:
-                CommonUtil.printLog(f"加载缓存文件失败: {e}")
+                CommonUtil.printLog(f"加载缓存文件失败: {e}, cache_file={cache_file}")
                 return {}
         return {}
 
@@ -182,7 +182,7 @@ class KVCache(Generic[T]):
             if cache_dir and not os.path.exists(cache_dir):
                 os.makedirs(cache_dir)
             # CommonUtil.printLog(f'尝试保存缓存: {self.cache_file}')
-            intent = None if len(self.cache.keys()) >= 50000 else 2
+            intent = None if len(self.cache.keys()) >= 10000 else 2
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=intent)
             # CommonUtil.printLog(f'保存缓存成功')
