@@ -28,7 +28,10 @@ class LogExtractor:
     """
 
     def __init__(self, zip_path: Optional[str] = None, cache_dir: str = None, sub_dir_name: str = None,
-                 line_mode: bool = True, re_flag: int = 0):
+                 line_mode: bool = True, re_flag: int = 0,
+                 distinct: bool = True,  # 默认是否对对结果列表中的list进行去重
+                 key_distinct_dict: Dict[str, bool] = None  # 指定某些key是否去重, 若未指定,则使用 distinct 参数
+                 ):
         """
         默认从压缩包中读取指定日志文件内容, 再进行过滤, 也支持绝对路径
         @param zip_path: zip包本地路径或者可下载的url路径, 比如: http://xxx.aliyuncs.com/logs/测试日志_1775183375996.zip?OSSAccessKeyId=xx&Expires=xxx&Signature=xxx
@@ -50,6 +53,8 @@ class LogExtractor:
             'flags': re_flag
         }
         self.update_zip_path(zip_path)
+        self.enable_distinct = distinct
+        self.key_distinct_dict = key_distinct_dict or {}
 
     def update_zip_path(self, zip_path: str, **kwargs) -> Self:
         """
@@ -118,7 +123,9 @@ class LogExtractor:
     def distinct(self) -> Self:
         """对结果列表中的list元素进行去重保序"""
         for key in self.result:
-            self.result[key] = CommonUtil.deduplicate_list(self.result[key])
+            enable_distinct = self.key_distinct_dict.get(key, self.enable_distinct)
+            if enable_distinct:
+                self.result[key] = CommonUtil.deduplicate_list(self.result[key])
         return self
 
     def get_result(self) -> Dict[str, List[str]]:
