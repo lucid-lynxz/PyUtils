@@ -30,7 +30,8 @@ class LogExtractor:
     def __init__(self, zip_path: Optional[str] = None, cache_dir: str = None, sub_dir_name: str = None,
                  line_mode: bool = True, re_flag: int = 0,
                  distinct: bool = True,  # 默认是否对对结果列表中的list进行去重
-                 key_distinct_dict: Dict[str, bool] = None  # 指定某些key是否去重, 若未指定,则使用 distinct 参数
+                 key_distinct_dict: Dict[str, bool] = None,  # 指定某些key是否去重, 若未指定,则使用 distinct 参数
+                 key_recook_dict: Dict[str, Callable[[List[str]], str]] = None  # 对提取到的原始数据(去重前)列表进行二次处理
                  ):
         """
         默认从压缩包中读取指定日志文件内容, 再进行过滤, 也支持绝对路径
@@ -55,6 +56,7 @@ class LogExtractor:
         self.update_zip_path(zip_path)
         self.enable_distinct = distinct
         self.key_distinct_dict = key_distinct_dict or {}
+        self.key_recook_dict = key_recook_dict or {}
 
     def update_zip_path(self, zip_path: str, **kwargs) -> Self:
         """
@@ -118,6 +120,12 @@ class LogExtractor:
             _cur_result = {k: v for k, v in _cur_result.items() if not CommonUtil.isNoneOrBlank(v)}
             # self.result = {**self.result, **_cur_result} # 合并dict,并以后面的数据为准
             self.result = CommonUtil.merge_dict(self.result, _cur_result)  # 拼接合并dict, 会保留所有数据
+
+        # 对结果进行二次处理
+        for key in self.result:
+            recook_func = self.key_recook_dict.get(key)
+            if recook_func:
+                self.result[key] = recook_func(self.result[key])
         return self
 
     def distinct(self) -> Self:
