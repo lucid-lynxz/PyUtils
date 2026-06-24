@@ -79,7 +79,7 @@ class CSVUtil(object):
         else:
             print(f"read_excel fail: 无效的 sheet_name 类型：{type(sheet)}, 应为 str 或 int")
             df = None
-        return df
+        return df.fillna('')
 
     @staticmethod
     def reorder_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None, keep_all_cols: bool = False) -> pd.DataFrame:
@@ -127,29 +127,29 @@ class CSVUtil(object):
     def move_cols(df: pd.DataFrame, columns: Union[str, List[str]], position: int = 0, to_end: bool = False) -> pd.DataFrame:
         """
         将指定列移动到DataFrame的指定位置（最前面或最后面），其他列保持原有相对顺序
-        
+
         :param df: 输入的DataFrame
         :param columns: 要移动的列名或列名列表，如 'E' 或 ['E', 'D']
         :param position: 移动到的目标位置（从0开始），默认为0表示移到最前面。
                         当 to_end=True 时，此参数无效
         :param to_end: 是否移到末尾，默认为False（移到前面）。若为True则移到所有列的最后面
         :return: 重排后的新DataFrame（不修改原DataFrame）
-        
+
         使用示例：
             # 将 E, D 两列移到最前面，顺序为 E, D
             df_new = CSVUtil.move_columns(df, ['E', 'D'])
             # 或显式指定
             df_new = CSVUtil.move_columns(df, ['E', 'D'], position=0, to_end=False)
-            
+
             # 将 E, D 两列移到第2个位置（索引1）
             df_new = CSVUtil.move_columns(df, ['E', 'D'], position=1)
-            
+
             # 将 E, D 两列移到最末尾
             df_new = CSVUtil.move_columns(df, ['E', 'D'], to_end=True)
-            
+
             # 只移动单列到最前面
             df_new = CSVUtil.move_columns(df, 'E')
-            
+
             # 只移动单列到最后面
             df_new = CSVUtil.move_columns(df, 'E', to_end=True)
         """
@@ -194,7 +194,7 @@ class CSVUtil(object):
         return df[new_columns]
 
     @staticmethod
-    def add_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None) -> Optional[pd.DataFrame]:
+    def add_cols(df: pd.DataFrame, usecols: Optional[Union[pd.Index, List[str]]] = None, fill_na: bool = False) -> Optional[pd.DataFrame]:
         """
         按需添加列
         若要修改列名请自行调用接口: df=df.rename({'a':'b'}, inplace=False)
@@ -210,6 +210,9 @@ class CSVUtil(object):
                     not_exist_cols.append(col)
         if not_exist_cols:
             CommonUtil.printLog(f'添加列: {not_exist_cols}')
+
+        if fill_na:
+            df.fillna('', inplace=True)
         return df
 
     @staticmethod
@@ -1165,6 +1168,7 @@ class CSVUtil(object):
         # 尝试转换为csv文件
         csv_file = CSVUtil.convert_excel(csv_file)
 
+        # 若未传入输出文件,则根据输入文件名进行修改
         if CommonUtil.isNoneOrBlank(output_file):
             output_file = csv_file.replace('.csv', '_output.csv')
 
@@ -1191,7 +1195,7 @@ class CSVUtil(object):
 
         # 3. 分块读取
         try:
-            chunk_iter = pd.read_csv(csv_file, chunksize=chunk_size, dtype=str)
+            chunk_iter = pd.read_csv(csv_file, chunksize=chunk_size, dtype=str, keep_default_na=False, na_values=[])
         except Exception as e:
             CommonUtil.printLog(f"❌ 无法分块读取文件 {csv_file}: {e}")
             return result_df
@@ -1256,6 +1260,7 @@ class CSVUtil(object):
         CommonUtil.printLog(f"📈 总成功条数: {total_processed}")
 
         CommonUtil.printLog(f"📁 最终结果保存至: {output_file}")
+        return CSVUtil.read_csv(output_file)
 
     @staticmethod
     def merge_csv_in_dir(src_dir: str, output_csv_name: str = 'merge_result',

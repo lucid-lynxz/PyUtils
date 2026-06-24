@@ -212,10 +212,18 @@ class CommonUtil(object):
         :param info: 待判断的带有len()方法的对象, 若是字符串,则会进行strip()后再处理
         :return:
         """
-        if info is None or len(info) == 0:
+        if info is None:
             return True
+
         elif isinstance(info, str):
             return len(info.strip()) == 0
+        elif (isinstance(info, dict)
+              or isinstance(info, list)
+              or isinstance(info, tuple)
+              or isinstance(info, set)
+              or isinstance(info, bytes)
+              or isinstance(info, bytearray)):
+            return len(info) == 0
         else:
             return False
 
@@ -334,7 +342,10 @@ class CommonUtil(object):
         return path
 
     @staticmethod
-    def convertStr2Float(src: str, defaultValue: float) -> float:
+    def convertStr2Float(src: Union[str, float], defaultValue: float) -> float:
+        if isinstance(src, float):
+            return src
+
         if CommonUtil.isNoneOrBlank(src):
             return defaultValue
 
@@ -344,7 +355,10 @@ class CommonUtil(object):
             return defaultValue
 
     @staticmethod
-    def convertStr2Int(src: str, defaultValue: int) -> int:
+    def convertStr2Int(src: Union[str, int], defaultValue: int) -> int:
+        if isinstance(src, int):
+            return src
+
         if CommonUtil.isNoneOrBlank(src):
             return defaultValue
 
@@ -396,20 +410,60 @@ class CommonUtil(object):
             return None
 
     @staticmethod
-    def get_input_info(tip: str, defaultValue: str, quit: str = "q") -> str:
+    def get_input_info(tip: str, def_value: str, timeout: int = None, value_timeout: str = None, quit_flag: str = "q") -> str:
         """
         获取用户输入的值
         :param tip: 提示语
-        :param defaultValue:输入为空时,返回的默认值
+        :param def_value:输入为空时,返回的默认值
+        :param timeout: 超时时间(秒), 超时后 value_timeout, None表示不超时
+        :param value_timeout: 超时时返回的值, 若为None,则使用 def_value
+        :param quit_flag: 退出字符, 输入该字符则退出程序
         :return:
         """
-        msg = input(tip).strip()
-        _result = defaultValue
-        if len(msg) > 0:
-            _result = msg
-        if quit is not None and quit == _result:
-            exit(0)
-        return _result
+        if timeout is None:
+            # 不超时，使用标准 input
+            msg = input(tip).strip()
+            _result = def_value
+            if len(msg) > 0:
+                _result = msg
+            if quit_flag is not None and quit_flag == _result:
+                exit(0)
+            return _result
+        else:
+            # 支持超时
+            import threading
+            if value_timeout is None:
+                value_timeout = def_value
+            result = [value_timeout]  # 使用列表存储结果，以便在子线程中修改
+
+            def get_input():
+                try:
+                    msg = input(tip).strip()
+                    if len(msg) > 0:
+                        result[0] = msg
+                except:
+                    pass
+
+            # 创建子线程获取输入
+            input_thread = threading.Thread(target=get_input)
+            input_thread.daemon = True  # 设置为守护线程
+            input_thread.start()
+
+            # 等待线程结束或超时
+            input_thread.join(timeout=timeout)
+
+            # 检查是否超时
+            if input_thread.is_alive():
+                # 超时，打印提示
+                print(f"\n输入超时({timeout}秒)，使用值: {value_timeout}")
+                # 由于 input() 仍在等待，需要强制结束线程（但 Python 线程无法强制结束）
+                # 这里我们只能返回默认值，input() 会在用户按下回车后才继续
+                # 这是一个已知的 Python 限制
+
+            _result = result[0]
+            if quit_flag is not None and quit_flag == _result:
+                exit(0)
+            return _result
 
     @staticmethod
     def get_input_with_timeout(prompt: str, default: str = "", timeout: int = 5) -> str:
@@ -422,6 +476,7 @@ class CommonUtil(object):
         :return: 用户输入或默认值
         """
         import threading
+
         result = [default]
 
         def input_thread_func():
@@ -440,6 +495,7 @@ class CommonUtil(object):
         if thread.is_alive():
             print(f"\n[超时 {timeout}秒，使用默认值: {default}]")
             print("提示: 请按回车键继续...")
+
         return result[0]
 
     @staticmethod
@@ -743,7 +799,7 @@ class CommonUtil(object):
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(formatter)
 
-        # 配置主 logger，同时输出到文件和控制台
+        # 配置主 logger，同时输出到控制台和日志文件
         logging.basicConfig(level=logging.INFO, format=fmt, handlers=[file_handler, console_handler])
         CommonUtil._logger = logging.getLogger(log_name)
 
@@ -767,11 +823,11 @@ class CommonUtil(object):
 
         CommonUtil.redirect_print_log(redirect_log)
 
-        # 重定向 sys.stdout 使所有 print() 语句都写入日志
+        # 重定向 sys.stdout 使所有 print() 语句都写入日志文件（不输出到控制台，避免重复）
         class StdoutRedirector:
             def __init__(self, original_stdout):
                 self.original_stdout = original_stdout
-                self.logger = CommonUtil._logger
+                self.logger = CommonUtil._file_only_logger  # 使用只写入文件的 logger
 
             def write(self, text):
                 if text.strip():  # 忽略空行
@@ -809,6 +865,59 @@ class CommonUtil(object):
             CommonUtil._file_only_logger.info(msg)
         else:
             CommonUtil.printLog(msg)
+
+    @staticmethod
+    def pad_strings(strings: List[str], pad_side: str = 'right') -> List[str]:
+        """
+        将字符串列表中所有元素的长度补齐到相同长度
+
+        Args:
+            strings: 字符串列表
+            pad_side: 填充位置，可选值:
+                      - 'right': 在右侧填充空格（默认）
+                      - 'left': 在左侧填充空格
+                      - 'center': 在中间填充空格
+
+        Returns:
+            list[str]: 补齐后的字符串列表，所有元素长度相同
+
+        Example:
+            pad_strings(['a', 'bb', 'ccc'])
+            ['a  ', 'bb ', 'ccc']
+
+            pad_strings(['a', 'bb', 'ccc'], pad_side='left')
+            ['  a', ' bb', 'ccc']
+        """
+        if not strings:
+            return []
+
+        # 找到最长字符串的长度
+        max_len = max(len(s) for s in strings)
+
+        # 补齐所有字符串
+        return [CommonUtil.pad_string(s, max_len, pad_side) for s in strings]
+
+    @staticmethod
+    def pad_string(s: str, max_len: int, pad_side: str = 'right') -> str:
+        """
+        将字符串补齐到指定长度
+        @param s: 字符串
+        @param max_len: 最大长度
+        @param pad_side: 填充位置，可选值:
+                         - 'right': 在右侧填充空格（默认）
+                         - 'left': 在左侧填充空格
+                         - 'center': 在中间填充空格
+        """
+        # 补齐所有字符串
+        if pad_side == 'right':
+            result = s.ljust(max_len)
+        elif pad_side == 'left':
+            result = s.rjust(max_len)
+        elif pad_side == 'center':
+            result = s.center(max_len)
+        else:
+            raise ValueError(f"pad_side 必须是 'right', 'left' 或 'center'，当前值为: {pad_side}")
+        return result
 
     @staticmethod
     def filter_dict_list(
@@ -920,7 +1029,7 @@ class CommonUtil(object):
         :param start_pattern: 起始匹配模式，找到第一个匹配该模式的行后开始生效
                              优先级高于 start_line，若两者都设置，以 start_pattern 为准
                              例如: start_pattern=r'=== TestCase Start ===' 表示从测试用例开始处过滤
-        :param line_mode: 是否逐行进行正则匹配, 默认True, 若为False,则会拼接所有有效行, 然后进行全文本匹配
+        :param line_mode: 是否按行过滤，默认 True, 若为False, 会先合并有效的数据行, 再进行一次性匹配, 以便支持跨行匹配的需求
         :return: 字典，key 为正则简写名称，value 为匹配到的内容列表
                 例如: {'A': ['123', '456'], 'B': ['abc37']}
         
@@ -1029,17 +1138,26 @@ class CommonUtil(object):
             # 对每个正则进行匹配
             combine_flag = ' ' if line_mode else ''
             for key, compiled_pattern in compiled_patterns.items():
+                extracted = None
                 match_list = compiled_pattern.findall(line)
                 if not CommonUtil.isNoneOrBlank(match_list):
-                    extracted = combine_flag.join(match_list)
+                    try:
+                        # 处理 findall 返回元组的情况（当正则中有捕获组时）
+                        if match_list and isinstance(match_list[0], tuple):
+                            # 元组转字符串：取第一个非空元素或拼接所有元素
+                            extracted = combine_flag.join([str(item) for item in match_list[0] if item])
+                        else:
+                            extracted = combine_flag.join(match_list)
+                    except Exception as e:
+                        CommonUtil.printLog(f"❌ 正则提取失败 [{key}]: {line.strip()[:80]}\n错误信息: {e}")
 
-                    # 根据参数决定是否去除空白
-                    if strip_result and extracted:
-                        extracted = extracted.strip()
+                # 根据参数决定是否去除空白
+                if strip_result and extracted:
+                    extracted = extracted.strip()
 
-                    # 添加到结果列表
-                    if not CommonUtil.isNoneOrBlank(extracted):
-                        result[key].append(extracted)
+                # 添加到结果列表
+                if not CommonUtil.isNoneOrBlank(extracted):
+                    result[key].append(extracted)
         return result
 
     @staticmethod
@@ -1068,7 +1186,7 @@ class CommonUtil(object):
     def parse_cookie(cookie_source: str, from_file: bool = False) -> Dict[str, str]:
         """
         解析 Cookie 内容为字典
-        
+
         :param cookie_source: Cookie 来源
                              - 如果 from_file=True，则为文件路径
                              - 如果 from_file=False，则为 Cookie 字符串
@@ -1077,17 +1195,17 @@ class CommonUtil(object):
                          - False: cookie_source 为 Cookie 字符串，直接解析
         :return: Cookie 字典，key 为 Cookie 名称，value 为 Cookie 值
                 - 解析失败返回空字典 {}
-        
+
         :example:
         # 示例 1: 直接解析 Cookie 字符串
         cookie_str = 'session=abc123; user_id=1001; token=xyz789'
         result = parse_cookie(cookie_str)
         # 返回: {'session': 'abc123', 'user_id': '1001', 'token': 'xyz789'}
-        
+
         # 示例 2: 从文件读取并解析
         result = parse_cookie('cookies.txt', from_file=True)
         # 返回: {'session': 'abc123', 'user_id': '1001', ...}
-        
+
         # 示例 3: 多行 Cookie 格式（常见于浏览器导出）
         cookie_str = '''
         session=abc123
@@ -1096,7 +1214,7 @@ class CommonUtil(object):
         '''
         result = parse_cookie(cookie_str)
         # 返回: {'session': 'abc123', 'user_id': '1001', 'token': 'xyz789'}
-        
+
         # 示例 4: 带属性的 Cookie（自动忽略属性部分）
         cookie_str = 'session=abc123; Path=/; HttpOnly; user_id=1001'
         result = parse_cookie(cookie_str)
@@ -1108,28 +1226,28 @@ class CommonUtil(object):
                 if not CommonUtil.isFileExist(cookie_source):
                     CommonUtil.printLog(f"❌ Cookie 文件不存在: {cookie_source}")
                     return {}
-                
+
                 with open(cookie_source, 'r', encoding='utf-8') as f:
                     cookie_content = f.read()
             else:
                 cookie_content = cookie_source
-            
+
             # 检查内容是否为空
             if CommonUtil.isNoneOrBlank(cookie_content):
                 CommonUtil.printLog("⚠️ Cookie 内容为空")
                 return {}
-            
+
             result = {}
-            
+
             # 按行分割处理（支持多行格式）
             lines = cookie_content.strip().splitlines()
-            
+
             for line in lines:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     # 跳过空行和注释行
                     continue
-                
+
                 # 尝试按分号分割（标准 Cookie 格式）
                 if ';' in line:
                     pairs = line.split(';')
@@ -1139,7 +1257,7 @@ class CommonUtil(object):
                             key, value = pair.split('=', 1)
                             key = key.strip()
                             value = value.strip()
-                            
+
                             # 过滤掉 Cookie 属性（如 Path, Domain, HttpOnly 等）
                             if key and value and key.lower() not in ['path', 'domain', 'expires', 'max-age', 'secure', 'httponly', 'samesite']:
                                 result[key] = value
@@ -1150,14 +1268,31 @@ class CommonUtil(object):
                     value = value.strip()
                     if key and value:
                         result[key] = value
-            
+
             return result
-            
+
         except Exception as e:
             CommonUtil.printLog(f"❌ 解析 Cookie 失败: {e}")
             import traceback
             CommonUtil.printLog(traceback.format_exc())
             return {}
+
+    @staticmethod
+    def parse_json_str(json_str: str, default_value: Dict = None) -> dict:
+        """
+        解析JSON字符串
+
+        :param json_str: JSON字符串
+        :param default_value: 解析失败后的默认值
+        :return: JSON对象
+        """
+        if CommonUtil.isNoneOrBlank(json_str):
+            return default_value
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return default_value
 
 
 # 配置日志
