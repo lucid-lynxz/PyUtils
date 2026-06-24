@@ -242,7 +242,7 @@ class AdbUtil(object):
                 pass
             else:
                 success = False
-            print("push: %s 结果success=%s,result=%s" % (runCmd, success, result))
+            # print("push: %s 结果success=%s,result=%s" % (runCmd, success, result))
         return success
 
     def setLogcatBufferSize(self, size: str = '16M', deviceId: str = None) -> str:

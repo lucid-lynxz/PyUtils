@@ -5,7 +5,8 @@ import json
 import os
 import threading
 import time
-from typing import Optional, TypeVar, Generic, Callable, Set
+from typing import Optional, TypeVar, Generic, Callable, Set, Dict
+
 from typing_extensions import Self
 
 from util.CommonUtil import CommonUtil
@@ -65,7 +66,7 @@ class KVCache(Generic[T]):
                     second_cache = self._load_cache(item)
                     second_cache.update(self.cache)
                     self.cache = second_cache
-        CommonUtil.printLog(f'初始化缓存成功,共有: {len(self.cache.keys())}条数据')
+        # CommonUtil.printLog(f'初始化缓存成功,共有: {len(self.cache.keys())}条数据: {self.cache_file}')
 
         # 启动定期检查缓存过期的后台线程
         if self.enable and self.expire_seconds > 0:
@@ -139,7 +140,7 @@ class KVCache(Generic[T]):
             name=f"KVCache-ExpireCheck-{os.path.basename(self.cache_file)}"
         )
         self._check_thread.start()
-        CommonUtil.printLog(f'已启动缓存过期定期检查线程，间隔: {self.check_interval}秒')
+        # CommonUtil.printLog(f'已启动缓存过期定期检查线程，间隔: {self.check_interval}秒')
 
     def stop_expire_check(self):
         """
@@ -167,7 +168,7 @@ class KVCache(Generic[T]):
                         CommonUtil.printLog(f'加载缓存成功,共有: {len(result.keys())}条数据, 文件:{cache_file}')
                         return result
             except Exception as e:
-                CommonUtil.printLog(f"加载缓存文件失败: {e}, cache_file={cache_file}")
+                CommonUtil.printLog(f"加载缓存文件失败: {e} ,文件:{cache_file}")
                 return {}
         return {}
 
@@ -244,3 +245,16 @@ class KVCache(Generic[T]):
             self.stop_expire_check()
         except Exception:
             pass
+
+
+# 创建一个 KVCacheManager 用于管理 KVCache 对象,对于每个 cache_file 文件, 只允许生成一个  KVCache对象
+class KVCacheManager(Generic[T]):
+    _cache_map: Dict[str, KVCache[T]] = {}
+    _lock = threading.Lock()
+
+    @staticmethod
+    def get_cache( cache_file: str, *args, **kwargs) -> KVCache[T]:
+        with KVCacheManager._lock:
+            if cache_file not in KVCacheManager._cache_map:
+                KVCacheManager._cache_map[cache_file] = KVCache(cache_file, *args, **kwargs)
+            return KVCacheManager._cache_map[cache_file]

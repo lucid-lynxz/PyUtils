@@ -1054,6 +1054,40 @@ class FileUtil(object):
 
         return result
 
+    @staticmethod
+    def get_newest_file(file_paths: List[str], by_create_time: bool = False) -> Optional[str]:
+        """
+        获取列表中最新创建或修改的文件路径
+
+        :param file_paths: List[str], 文件绝对路径列表
+        :param by_create_time: bool True-表示t创建时间，False-表示修改时间（默认）
+        :return: str, 最新文件的路径, 返回None表示获取失败
+        """
+        if CommonUtil.isNoneOrBlank(file_paths):
+            return None
+
+        newest_path = None
+        newest_time = 0.0
+
+        for path in file_paths:
+            if not os.path.exists(path):
+                print(f"警告：文件不存在 - {path}")
+                continue
+
+            try:
+                if by_create_time:  # 通过创建时间来判断
+                    # Windows 使用 os.path.getctime，Linux/macOS 创建时间不可靠
+                    file_time = os.path.getctime(path)
+                else:  # 通过文件修改时间来判断
+                    file_time = os.path.getmtime(path)
+
+                if file_time > newest_time:
+                    newest_time = file_time
+                    newest_path = path
+            except Exception as e:
+                print(f"读取文件时间失败: {path}, 错误信息: {e}")
+        return newest_path
+
 
 if __name__ == '__main__':
     # tPath = "/Users/lynxz/temp/a.txt"
