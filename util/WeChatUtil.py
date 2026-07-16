@@ -18,25 +18,25 @@
 """
 
 import threading
+from collections import deque
+from typing import List
 
 import uiautomation as uia
-from uiautomation import UIAutomationInitializerInThread
-
 from typing_extensions import Self
-from collections import deque
-from util.TimeUtil import TimeUtil
+from uiautomation import UIAutomationInitializerInThread
+from wxauto import Chat, WeChat
+from wxauto.msgs import Message
+
 from util.CommonUtil import CommonUtil
 from util.DelayedTaskManager import DelayedTaskManager
-
-from wxauto import WeChat
-from wxauto import Chat
-from wxauto.msgs import FriendMessage, Message
+from util.TimeUtil import TimeUtil
 
 
 class WeChatUtil:
-    def __init__(self, msg_list_control_name: str = '消息', max_hist: int = 5):
+    def __init__(self, nickname: str = None, msg_list_control_name: str = '消息', max_hist: int = 5):
         """
         微信消息监控工具
+        :param nickname: 要监听的微信窗口用户昵称, 主要用于多开场景, 单开微信时不需要传入)
         :param msg_list_control_name: 微信消息列表控件名称,自测 '3.9.10.27' 版本的聊天列表控件名是:'消息'
         :param max_hist: 缓存最大历史消息数量, 与历史消息相同的消息不会打印
         """
@@ -46,7 +46,7 @@ class WeChatUtil:
         self.task_manager = DelayedTaskManager()
 
         self.wxauto_monitor_names = set()  # 使用wxauto监听的好友昵称列表
-        self.wxauto = WeChat()  # 初始化微信实例
+        self.wxauto = WeChat(nickname=nickname)  # 初始化微信实例
         # self.wxauto.KeepRunning()  # 保持程序运行
 
     def stop(self):
@@ -113,10 +113,20 @@ class WeChatUtil:
         self.wxauto.SendMsg(msg, who=who)
         return self
 
+    def monitor_batch(self, who_list: List[str], enable: bool = True) -> Self:
+        """
+        批量监听指定好友的消息
+        :param who_list: 要监控的好友昵称列表
+        :param enable: 启用监听 or 移除监听
+        """
+        for who in who_list:
+            self.monitor(who, enable)
+        return self
+
     def monitor(self, who: str, enable: bool) -> Self:
         """
         监听/取消监听指定好友的消息
-        :param who: 要监控的好友昵称
+        :param who: 要监控的好友昵称或群名
         :param enable: 是否监听, True: 监听, False: 取消监听
         """
         CommonUtil.printLog(f'monitor({who}, {enable})')
@@ -142,7 +152,8 @@ class WeChatUtil:
 
         # 示例2：自动下载图片和视频
         if msg.type in ('image', 'video'):
-            CommonUtil.printLog(msg.download())
+            download_path = msg.download()
+            CommonUtil.printLog(download_path)
 
         # # 示例3：自动回复收到
         # if isinstance(msg, FriendMessage):

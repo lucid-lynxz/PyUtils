@@ -121,7 +121,10 @@ class TimeUtil(object):
         minutes = int(rest // 60)
         secs = int(rest % 60)
         result = '%s小时%s分%s秒' % (hour, minutes, secs)
-        return result.replace('分0秒', '分').replace('小时0分', '小时').replace('0小时', '')
+        result = result.replace('分0秒', '分').replace('小时0分', '小时')
+        if result.startswith('0小时'):
+            result = result.replace('0小时', '')
+        return result
 
     @staticmethod
     def currentTimeMillis() -> int:
@@ -151,12 +154,17 @@ class TimeUtil(object):
         minutes = restMinutes % 60
         hours = restSeconds // 3600
         result = f'{hours}小时{minutes}分{seconds}秒'
+        if '分0秒' in result:
+            result = result.replace('0秒', '')
+        if '时0分' in result:
+            result = result.replace('0分', '')
         if result.startswith('0小时'):
             result = result.replace('0小时', '')
         if result.startswith('0分'):
             result = result.replace('0分', '')
         if result.endswith('0秒'):
             result = result.replace('0秒', '')
+
         return result
 
     @staticmethod
@@ -166,6 +174,9 @@ class TimeUtil(object):
         :param sec: 等待指定的秒数，大于0有效，若小于0，则会在 [minSec,maxSec) 中随机算一个
         :return 最终使用的时长,单位:s
         """
+        if sec == 0:
+            return 0
+
         if sec < 0:
             sec = round(minSec + random.random() * (maxSec - minSec), 1)  # 保留一位小数
 
