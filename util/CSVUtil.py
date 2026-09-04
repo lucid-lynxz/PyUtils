@@ -202,17 +202,33 @@ class CSVUtil(object):
         if df is None:
             return None
 
-        not_exist_cols = []
         if not CommonUtil.isNoneOrBlank(usecols):
-            for col in usecols:
-                if col not in df.columns:
-                    df[col] = ''  # 初始化为空字符
-                    not_exist_cols.append(col)
-        if not_exist_cols:
-            CommonUtil.printLog(f'添加列: {not_exist_cols}')
-
+            missing_cols = [col for col in usecols if col not in df.columns]
+            if missing_cols:
+                # 一次性批量添加所有缺失列, 避免逐列 insert 导致 DataFrame 碎片化
+                new_df = pd.DataFrame({col: '' for col in missing_cols}, index=df.index)
+                df = pd.concat([df, new_df], axis=1)
+                CommonUtil.printLog(f'{missing_cols}列不存在, 添加')
         if fill_na:
             df.fillna('', inplace=True)
+        return df
+
+    @staticmethod
+    def add_cols_csv(file_path: str, usecols: Optional[Union[pd.Index, List[str]]] = None, fill_na: bool = False) -> pd.DataFrame:
+        """
+        确保指定的 csv/excel 文件中指定列存在
+        @param file_path: 文件路径, 支持 .csv .xlsx
+        @param usecols: 需要添加的列
+        @param fill_na: 对于na数据, 是否自动填充为 ''
+        """
+        if file_path.endswith('.csv'):
+            df = CSVUtil.read_csv(file_path)
+            df = CSVUtil.add_cols(df, usecols, fill_na)
+            CSVUtil.to_csv(df, file_path)
+        else:
+            df = CSVUtil.read_excel(file_path)
+            df = CSVUtil.add_cols(df, usecols, fill_na)
+            df.to_excel(file_path, index=False)
         return df
 
     @staticmethod
@@ -248,7 +264,11 @@ class CSVUtil(object):
 
         try:
             FileUtil.createFile(output_path, False)
-            df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode, header=headers)
+            # 兼容新旧版本 pandas：1.0+ 用 lineterminator，旧版用 line_terminator
+            try:
+                df.to_csv(output_path, index=index, encoding=encoding, lineterminator=lineterminator, mode=mode, header=headers)
+            except TypeError:
+                df.to_csv(output_path, index=index, encoding=encoding, line_terminator=lineterminator, mode=mode, header=headers)
             CommonUtil.printLog(f'to_csv success: total rows={len(df)}, 保存数据到: {output_path}')
             return True
         except Exception as e:
@@ -446,7 +466,7 @@ class CSVUtil(object):
 
     @staticmethod
     def merge(df_left: pd.DataFrame, df_right: pd.DataFrame, on_column: str, priority_left: bool = True, keep_both: bool = True,
-              deduplicate: bool = False):
+              deduplicate: bool = False) -> pd.DataFrame:
         """
         合并两个DataFrame，去重并解决冲突
         对于 'on_column' 列值相同的记录, 只会保留一行, 若其他column值存在冲突, 则以 'priority' 指定的数据为准

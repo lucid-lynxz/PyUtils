@@ -67,3 +67,11 @@ class QPSLimiter:
         """获取经过的时间"""
         with self.lock:
             return time.time() - self.start_time
+
+    def reset(self):
+        """重置QPS限制器"""
+        with self.lock:
+            self.request_times.clear()
+            self.start_time = time.time()
+            self.api_request_count = 0
+            self.last_request_time = 0.0

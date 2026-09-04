@@ -121,10 +121,7 @@ class TimeUtil(object):
         minutes = int(rest // 60)
         secs = int(rest % 60)
         result = '%s小时%s分%s秒' % (hour, minutes, secs)
-        result = result.replace('分0秒', '分').replace('小时0分', '小时')
-        if result.startswith('0小时'):
-            result = result.replace('0小时', '')
-        return result
+        return result.replace('分0秒', '分').replace('小时0分', '小时').replace('0小时', '')
 
     @staticmethod
     def currentTimeMillis() -> int:
@@ -154,21 +151,16 @@ class TimeUtil(object):
         minutes = restMinutes % 60
         hours = restSeconds // 3600
         result = f'{hours}小时{minutes}分{seconds}秒'
-        if '分0秒' in result:
-            result = result.replace('0秒', '')
-        if '时0分' in result:
-            result = result.replace('0分', '')
         if result.startswith('0小时'):
             result = result.replace('0小时', '')
-        if result.startswith('0分'):
+        if result.startswith('0分') or '时0分' in result:
             result = result.replace('0分', '')
-        if result.endswith('0秒'):
+        if result.endswith('分0秒'):
             result = result.replace('0秒', '')
-
         return result
 
     @staticmethod
-    def sleep(sec: float, minSec: float = 1, maxSec: float = 10) -> float:
+    def sleep(sec: float, minSec: float = 1, maxSec: float = 10, print_log: bool = False) -> float:
         """
         等待一会
         :param sec: 等待指定的秒数，大于0有效，若小于0，则会在 [minSec,maxSec) 中随机算一个
@@ -184,6 +176,8 @@ class TimeUtil(object):
             sec = 1
 
         if sec > 0:
+            if print_log:
+                print(f'sleep {sec}s')
             time.sleep(sec)
         return sec
 
@@ -206,7 +200,7 @@ class TimeUtil(object):
             diff = time_diff.total_seconds()
             return diff
         except Exception as e:
-            print(f'calc_sec_diff exception {e}')
+            print(f'calc_sec_diff("{time1}","{time2}", "{fmt}", {def_value}): exception {e}')
             return def_value
 
     @staticmethod
@@ -374,6 +368,93 @@ class TimeUtil(object):
         except Exception as e:
             print(f"❌ 时间字符串转换失败: {time_str}, 错误: {e}")
             return 0
+
+    @staticmethod
+    def _parse_to_minutes(time_str: str) -> int:
+        """
+        内部方法：将时间字符串统一转换为当天的分钟数 (0-1440)。
+        - 忽略秒数，只精确到分钟。
+        - 特殊处理 '24:xx' 为 1440 分钟。
+
+        :param time_str: 时间字符串，如 '07:00', '07:00:30', '24:00'
+        :return: 整数分钟数
+        """
+        if not time_str:
+            raise ValueError("时间字符串不能为空")
+
+        time_str = time_str.strip()
+
+        # 特殊处理 24:00 或 24:00:00，视为当天终点 (1440 分钟)
+        if time_str.startswith("24:"):
+            return 1440
+
+        parts = time_str.split(":")
+        if len(parts) < 2:
+            raise ValueError(f"时间格式错误，期望 HH:MM 或 HH:MM:SS，收到：{time_str}")
+
+        try:
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            # 秒数部分直接忽略，满足“只判断到分钟级别”的需求
+        except ValueError:
+            raise ValueError(f"时间数值解析失败：{time_str}")
+
+        return hours * 60 + minutes
+
+    @classmethod
+    def is_in_range(cls, target_time: str, time_range: str) -> bool:
+        """
+        判断目标时间是否落在指定的时间区间内。
+        自动处理跨天场景（如 22:00-05:00）和格式不一致场景（如秒级 vs 分钟级）。
+
+        :param target_time: 目标时间点，例：'17:55:38' 或 '17:55'
+        :param time_range: 时间区间字符串，例：'00:00-24:00' 或 '22:00-05:00' 或 '00:00:00-24:00:00'
+        :return: Boolean，True 表示在区间内，False 表示不在
+        """
+        if "-" not in time_range:
+            raise ValueError(f"时间区间格式错误，必须包含 '-' 分隔符：{time_range}")
+
+        start_str, end_str = time_range.split("-", 1)  # 限制分割一次，防止时间本身含横杠（虽不太可能）
+
+        start_min = cls._parse_to_minutes(start_str)
+        end_min = cls._parse_to_minutes(end_str)
+        target_min = cls._parse_to_minutes(target_time)
+
+        # 场景 A: 不跨天 (开始时间 <= 结束时间)
+        # 例如：09:00 (540) - 18:00 (1080)
+        # 逻辑：540 <= target <= 1080
+        if start_min <= end_min:
+            return start_min <= target_min <= end_min
+
+        # 场景 B: 跨天 (开始时间 > 结束时间)
+        # 例如：22:00 (1320) - 05:00 (300)
+        # 有效区间为：[1320, 1440] U [0, 300]
+        # 逻辑：target >= 1320 OR target <= 300
+        # 注意：若 target 为 24:00 (1440)，在跨天场景下通常属于“前半夜”的结束，满足 >= start
+        return (target_min >= start_min) or (target_min <= end_min)
+
+    @classmethod
+    def normalize_range(cls, time_range: str) -> str:
+        """
+        （可选辅助方法）将时间区间标准化为 HH:MM-HH:MM 格式，去除秒数。
+        :param time_range: 原始区间字符串
+        :return: 标准化后的字符串
+        """
+        if "-" not in time_range:
+            return time_range
+
+        start_str, end_str = time_range.split("-", 1)
+        start_min = cls._parse_to_minutes(start_str)
+        end_min = cls._parse_to_minutes(end_str)
+
+        def mins_to_str(m):
+            if m == 1440:
+                return "24:00"
+            h = m // 60
+            m_rem = m % 60
+            return f"{h:02d}:{m_rem:02d}"
+
+        return f"{mins_to_str(start_min)}-{mins_to_str(end_min)}"
 
 
 if __name__ == '__main__':

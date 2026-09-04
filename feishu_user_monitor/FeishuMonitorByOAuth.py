@@ -637,10 +637,15 @@ class FeishuMonitorByOAuth:
             source_chat_name = msg.get("chat_name", "")
 
             # 构建转发内容（简化格式）
-            if add_header and source_chat_name:
+            is_app_sender = (sender_name == "机器人") or (msg.get("sender_id", "") or "").startswith("cli_")
+            if add_header and source_chat_name and not is_app_sender:
                 header = f"[转发自 {source_chat_name} {sender_name}] "
-            elif add_header:
+            elif add_header and source_chat_name:
+                header = f"[转发自 {source_chat_name}] "
+            elif add_header and not is_app_sender:
                 header = f"[转发自 {sender_name}] "
+            elif add_header:
+                header = "[转发] "
             else:
                 header = ""
 
@@ -725,10 +730,15 @@ class FeishuMonitorByOAuth:
             downloaded_images = msg.get("downloaded_images", {})
 
             # 构建转发头部（简化格式，避免特殊字符问题）
-            if add_header and source_chat_name:
+            is_app_sender = (sender_name == "机器人") or (msg.get("sender_id", "") or "").startswith("cli_")
+            if add_header and source_chat_name and not is_app_sender:
                 header = f"[转发自 {source_chat_name} {sender_name}] "
-            elif add_header:
+            elif add_header and source_chat_name:
+                header = f"[转发自 {source_chat_name}] "
+            elif add_header and not is_app_sender:
                 header = f"[转发自 {sender_name}] "
+            elif add_header:
+                header = "[转发] "
             else:
                 header = ""
 
@@ -1412,9 +1422,12 @@ class FeishuMonitorByOAuth:
                 if mopen_id and mname and mopen_id not in self._sender_cache:
                     self._sender_cache[mopen_id] = mname
 
-        sender_name = sender_id
-        if sender_type == "user" and sender_id.startswith("ou_"):
+        if sender_type == "app":
+            sender_name = "机器人"
+        elif sender_type == "user" and sender_id.startswith("ou_"):
             sender_name = self._get_sender_name(token, sender_id)
+        else:
+            sender_name = sender_id
 
         _cp("─" * 62, _C.GRAY)
         _cp(f"  群：{chat_name}", _C.CYAN)
@@ -1730,9 +1743,12 @@ class FeishuMonitorByOAuth:
         sender = sender if isinstance(sender, dict) else {}
         sender_id = sender.get("id", "?")
         sender_type = sender.get("sender_type", "")
-        sender_name = sender_id
-        if sender_type == "user" and sender_id.startswith("ou_"):
+        if sender_type == "app":
+            sender_name = "机器人"
+        elif sender_type == "user" and sender_id.startswith("ou_"):
             sender_name = self._get_sender_name(token, sender_id)
+        else:
+            sender_name = sender_id
 
         image_key = ""
         image_keys: list[str] = []

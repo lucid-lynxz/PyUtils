@@ -54,6 +54,10 @@ class KVCache(Generic[T]):
         self._stop_check_thread: bool = False  # 停止定期检查线程的标志
         self._check_thread: Optional[threading.Thread] = None  # 定期检查线程
 
+        # 创建缓存文件
+        if FileUtil.isFileExist(cache_file):
+            FileUtil.createFile(cache_file)
+
         # 检查缓存是否过期
         if self._is_cache_expired():
             CommonUtil.printLog(f'缓存已过期,删除重建: {cache_file}')
@@ -225,6 +229,19 @@ class KVCache(Generic[T]):
             self._save_cache()
         return self
 
+    # 删除某个缓存
+    def delete(self, key: str) -> Self:
+        """
+        删除某个缓存
+        :param key: 缓存key
+        """
+        if not self.enable:
+            return self
+        with self.lock:
+            if key in self.cache:
+                del self.cache[key]
+        return self
+
     def clear(self) -> Self:
         """
         清空缓存（包括内存和文件）
@@ -253,7 +270,7 @@ class KVCacheManager(Generic[T]):
     _lock = threading.Lock()
 
     @staticmethod
-    def get_cache( cache_file: str, *args, **kwargs) -> KVCache[T]:
+    def get_cache(cache_file: str, *args, **kwargs) -> KVCache[T]:
         with KVCacheManager._lock:
             if cache_file not in KVCacheManager._cache_map:
                 KVCacheManager._cache_map[cache_file] = KVCache(cache_file, *args, **kwargs)
