@@ -233,6 +233,75 @@ class DelayedTaskManager:
         """
         return self._cancelTask(taskId) or self._cancelAsyncTask(taskId)
 
+    def _join_timers(self, timers: List[threading.Timer], timeout: Union[float, None]) -> None:
+        """在线程池中等待一组 Timer 完成（供 wait() 在 executor 中使用）"""
+        start = time.time()
+        for timer in timers:
+            remaining = None
+            if timeout is not None:
+                elapsed = time.time() - start
+                remaining = max(0.0, timeout - elapsed)
+                if remaining == 0:
+                    return
+            timer.join(timeout=remaining)
+
+    def wait_sync(self, timeout: Union[float, None] = None) -> bool:
+        """
+        阻塞等待所有已启动的同步任务执行完成
+        不需要在 async 方法中调用，仅处理同步任务
+        :param timeout: 最长等待秒数，None 表示一直等
+        :return: 是否所有同步任务都已结束
+        """
+        start = time.time()
+        for timer in list(self.tasks.values()):
+            remaining = None
+            if timeout is not None:
+                elapsed = time.time() - start
+                remaining = max(0.0, timeout - elapsed)
+                if remaining == 0:
+                    return False
+            timer.join(timeout=remaining)
+        return len(self.tasks) == 0
+
+    async def wait(self, timeout: Union[float, None] = None) -> bool:
+        """
+        等待所有同步和异步任务执行完成
+        注意：该方法必须在事件循环中通过 await 调用
+        :param timeout: 最长等待秒数，None 表示一直等
+        :return: 是否所有任务都已结束
+        """
+        start = time.time()
+        loop = asyncio.get_running_loop()
+
+        def remaining_time():
+            if timeout is None:
+                return None
+            r = timeout - (time.time() - start)
+            return r if r > 0 else 0.0
+
+        # 循环等待，直到没有正在运行的同步/异步任务，或超时
+        while self.tasks or self.asyncTasks:
+            rem = remaining_time()
+            if rem == 0:
+                return False
+
+            # 等待当前所有同步任务（在 executor 中执行，避免阻塞事件循环）
+            sync_tasks = list(self.tasks.values())
+            if sync_tasks:
+                await loop.run_in_executor(None, self._join_timers, sync_tasks, rem)
+
+            # 等待当前所有异步任务
+            async_tasks = list(self.asyncTasks.values())
+            if async_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*async_tasks, return_exceptions=True),
+                        timeout=rem
+                    )
+                except asyncio.TimeoutError:
+                    return False
+        return True
+
 
 # 使用示例
 async def _example():
@@ -289,16 +358,19 @@ async def _example():
     print(f"{time.strftime('%H:%M:%S')} 已安排依赖任务: A依赖于B和C")
 
     # 等待所有任务完成
-    await asyncio.sleep(4)
-    time.sleep(4)
+    # await asyncio.sleep(4)
+    # time.sleep(4)
     print(f"{time.strftime('%H:%M:%S')} 依赖关系示例结束")
 
     # 等待第一个任务执行完成
-    await asyncio.sleep(3)
+    # await asyncio.sleep(3)
     print(f"{time.strftime('%H:%M:%S')} 异步示例结束")
 
     # 等待第一个任务执行完成
-    time.sleep(3)
+    # time.sleep(3)
+
+    # 等待所有任务执行完成
+    await manager.wait()
     print(f"{time.strftime('%H:%M:%S')} 示例结束")
 
 

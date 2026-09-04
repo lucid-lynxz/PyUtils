@@ -478,10 +478,11 @@ class FileUtil(object):
         return os.path.abspath(path)
 
     @staticmethod
-    def deleteEmptyDirsRecursively(path: str):
+    def deleteEmptyDirsRecursively(path: str, include_self: bool = True):
         """
         递归删除所有空白目录
         :param path: 要删除的空白目录的根路径
+        :param include_self: 是否包含自身
         """
         path = FileUtil.recookPath(path)
         if not FileUtil.isDirFile(path):
@@ -499,7 +500,7 @@ class FileUtil(object):
                 FileUtil.deleteEmptyDirsRecursively(subDirFullPath)
 
         # 在确认所有子目录都被处理之后，再次检查当前目录是否空白, 若是,则删除
-        if FileUtil.isDirEmpty(path):
+        if include_self and FileUtil.isDirEmpty(path):
             FileUtil.deleteFile(path, True)
 
     @staticmethod

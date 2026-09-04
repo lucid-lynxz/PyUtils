@@ -1,12 +1,20 @@
 # !/usr/bin/env python3
 # -*- coding:utf-8 -*-
-import json
-import functools, logging
 import importlib.util
-import os, sys, threading, time, re
-import platform, random
-import signal, subprocess
+import importlib.util
+import json
+import logging
+import os
+import platform
+import random
+import re
+import signal
+import subprocess
+import sys
+import time
 from typing import Type, Union, Optional, List, Set, Dict, Any, Pattern
+
+import pandas as pd
 
 Number = Union[int, float]
 
@@ -212,7 +220,7 @@ class CommonUtil(object):
         :param info: 待判断的带有len()方法的对象, 若是字符串,则会进行strip()后再处理
         :return:
         """
-        if info is None:
+        if info is None or (isinstance(info, float) and pd.isna(info)):
             return True
 
         elif isinstance(info, str):
@@ -224,6 +232,10 @@ class CommonUtil(object):
               or isinstance(info, bytes)
               or isinstance(info, bytearray)):
             return len(info) == 0
+        elif isinstance(info, (int, float, bool)):
+            return False
+        elif isinstance(info, pd.Series):
+            return info.astype(str).str.strip().isin(['', 'nan']).all()
         else:
             return False
 
@@ -712,7 +724,7 @@ class CommonUtil(object):
             return result_set
 
     @staticmethod
-    def format_dict(data: dict, json_mode: bool = True, json_indent: int = 2, kv_sep_flag: str = ', ') -> str:
+    def format_dict(data: Union[List, Dict], json_mode: bool = True, json_indent: int = 2, kv_sep_flag: str = ', ') -> str:
         """
         格式化dict, 支持两种结果:
         1. json格式, 并根据指定的缩进字符排列
@@ -976,28 +988,40 @@ class CommonUtil(object):
         return [item for item in data if check_condition(item)]
 
     @staticmethod
-    def merge_dict(dict1: dict, dict2: dict) -> dict:
+    def merge_dict(dict_left: dict, dict_right: dict, priority: str = 'merge') -> dict:
         """
         合并两个字典，相同 key 的 value 进行拼接
         - 字符串：直接拼接
         - 列表：合并列表
         - 其他类型：转为字符串后拼接
+        @param dict_left: 左字典
+        @param dict_right: 右字典
+        @param priority: 存在相同key时的处理策略: merge:合并  left: 左优先 right: 右优先
         """
-        result = dict1.copy()
+        priority = priority.lower().strip()
+        if priority not in ['merge', 'left', 'right']:
+            priority = 'merge'
 
-        for key, value in dict2.items():
+        result = dict_left.copy()
+
+        for key, value in dict_right.items():
             if key in result:
                 # 相同 key，拼接 value
                 existing_value = result[key]
 
-                # 根据类型进行拼接
-                if isinstance(existing_value, list) and isinstance(value, list):
-                    result[key] = existing_value + value
-                elif isinstance(existing_value, str) and isinstance(value, str):
-                    result[key] = existing_value + value
+                if priority == 'left':
+                    result[key] = existing_value
+                elif priority == 'right':
+                    result[key] = value
                 else:
-                    # 其他类型转为字符串拼接
-                    result[key] = f"{existing_value}{value}"
+                    # 根据类型进行拼接
+                    if isinstance(existing_value, list) and isinstance(value, list):
+                        result[key] = existing_value + value
+                    elif isinstance(existing_value, str) and isinstance(value, str):
+                        result[key] = existing_value + value
+                    else:
+                        # 其他类型转为字符串拼接
+                        result[key] = f"{existing_value}{value}"
             else:
                 # 不同 key，直接添加
                 result[key] = value
@@ -1125,7 +1149,6 @@ class CommonUtil(object):
             CommonUtil.printLog(f"📋 跳过前 {actual_start_index} 行，从第 {actual_start_index + 1} 行开始过滤")
 
         if not line_mode:
-            # 拼接所有有效行
             data = ['\n'.join(data[actual_start_index:])]
             actual_start_index = 0
 
@@ -1278,7 +1301,7 @@ class CommonUtil(object):
             return {}
 
     @staticmethod
-    def parse_json_str(json_str: str, default_value: Dict = None) -> dict:
+    def parse_json_str(json_str: str, default_value: Dict = None) -> Dict[str, Any]:
         """
         解析JSON字符串
 
@@ -1291,7 +1314,8 @@ class CommonUtil(object):
 
         try:
             return json.loads(json_str)
-        except json.JSONDecodeError:
+        except Exception as e:
+            CommonUtil.printLog(f"❌ parse_json_str失败: 错误信息: {e}, {json_str}")
             return default_value
 
 
