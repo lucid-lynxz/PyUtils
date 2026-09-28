@@ -63,7 +63,7 @@ class KVCache(Generic[T]):
             CommonUtil.printLog(f'缓存已过期,删除重建: {cache_file}')
             FileUtil.deleteFile(cache_file)
 
-        self.cache = self._load_cache(self.cache_file)
+        self.cache: Dict[str, T] = self._load_cache(self.cache_file)
         if not CommonUtil.isNoneOrBlank(second_cache_files):
             for item in second_cache_files:
                 if FileUtil.isFileExist(item):
@@ -156,7 +156,7 @@ class KVCache(Generic[T]):
             self._check_thread.join(timeout=2)
             CommonUtil.printLog(f'已停止缓存过期定期检查线程')
 
-    def _load_cache(self, cache_file: str) -> dict:
+    def _load_cache(self, cache_file: str) -> Dict[str, T]:
         """加载缓存文件"""
         if os.path.exists(cache_file):
             try:
