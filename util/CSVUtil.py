@@ -228,7 +228,7 @@ class CSVUtil(object):
         else:
             df = CSVUtil.read_excel(file_path)
             df = CSVUtil.add_cols(df, usecols, fill_na)
-            df.to_excel(file_path, index=False)
+            CSVUtil.to_excel(df, file_path)
         return df
 
     @staticmethod
@@ -273,6 +273,53 @@ class CSVUtil(object):
             return True
         except Exception as e:
             CommonUtil.printLog(f'to_csv fail: {e}\n保存数据到: {output_path}')
+            return False
+
+    # XML 1.0 不允许的控制字符, openpyxl 写 excel 时遇到会抛出 IllegalCharacterError, 需要先清理掉
+    # 参考openpyxl内部实现: openpyxl.cell.cell.ILLEGAL_CHARACTERS_RE
+    _illegal_chars_re = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+    @staticmethod
+    def remove_illegal_chars(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        清理DataFrame中所有字符串单元格里的非法控制字符
+        平台接口返回的文本(如评测备注)中可能夹杂 \x03 等控制字符, 直接写excel时 openpyxl 会抛出
+        IllegalCharacterError, 需要先清理
+        :param df: 原始DataFrame
+        :return: 清理后的新DataFrame, 不修改原始数据
+        """
+        if df is None:
+            return None
+
+        def _clean(value):
+            if isinstance(value, str):
+                return CSVUtil._illegal_chars_re.sub('', value)
+            return value
+
+        return df.apply(lambda col: col.map(_clean))
+
+    @staticmethod
+    def to_excel(df: pd.DataFrame, output_path: str, index: bool = False, print_log: bool = True, **kwargs) -> bool:
+        """
+        将DataFrame保存为excel文件, 自动清理非法控制字符, 避免 openpyxl IllegalCharacterError
+        :param df: DataFrame
+        :param output_path: 输出路径
+        :param index: 是否保存索引
+        :param print_log: 是否打印日志
+        :param kwargs: 透传给 df.to_excel 的其他参数
+        :return: 是否成功
+        """
+        if CommonUtil.isNoneOrBlank(output_path):
+            return False
+
+        try:
+            FileUtil.createFile(output_path, False)
+            df = CSVUtil.remove_illegal_chars(df)
+            df.to_excel(output_path, index=index, **kwargs)
+            CommonUtil.printLog(f'to_excel success: total rows={len(df)}, 保存数据到: {output_path}', condition=print_log)
+            return True
+        except Exception as e:
+            CommonUtil.printLog(f'to_excel fail: {e}\n保存数据到: {output_path}')
             return False
 
     @staticmethod

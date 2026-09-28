@@ -13,7 +13,7 @@ class DingTalkSendFile:
     * 实测发送得文件/图片都无法预览, 需要下载后查看, 下载的文件都是 .file 后缀, 还需要自行修改
     *
     * 操作:
-    * 1. 创建钉钉应用:https://open-dev.dingtalk.com/fe/app#/appMgr/inner/eapp/***REMOVED***/2
+    * 1. 创建钉钉应用: https://open-dev.dingtalk.com/fe/app#/appMgr/inner (企业内部应用)
     * 2. https://open-dev.dingtalk.com/，获取CorpId(网页右上角)
     * 3. 进入开发者后台应用开发/企业内部应用/钉钉应用，选中应用点击右侧扩展菜单的应用详情，点击左上角的凭证与基础信息获取AppKey(Client ID)，AppSecret(Client Secret)
     * 4. 获取群聊chat_id:
@@ -24,9 +24,9 @@ class DingTalkSendFile:
     """
 
     # ----------------------------------------------------------------------------------------------------
-    def __init__(self, chat_id: str, app_key: Optional[str] = None, app_secret: Optional[str] = None):
+    def __init__(self, chat_id: Optional[str] = None, app_key: Optional[str] = None, app_secret: Optional[str] = None):
         """
-        @param chat_id: 文件要发送到的目标群聊id
+        @param chat_id: 文件要发送到的目标群聊id, 若为None,则从当前目录下的 .env 文件中读取 'dd_chat_id' 属性
         @param app_key: 钉钉应用的app_key, 若为None,则从当前目录下的 .env 文件中读取 'dd_appKey' 属性
         @param app_secret: 钉钉应用的app_secret, 若为None,则从当前目录下的 .env 文件中读取 'dd_appSecret' 属性
         """
@@ -34,7 +34,7 @@ class DingTalkSendFile:
         load_dotenv(dotenv_path=env_path)
         self.client_id = app_key or os.getenv('dd_appKey')  # 企业应用的 appKey
         self.client_secret = app_secret or os.getenv('dd_appSecret')  # 企业应用的  appSecret
-        self.chat_id = chat_id  # 企业群聊id
+        self.chat_id = chat_id or os.getenv('dd_chat_id')  # 企业群聊id
         self.access_token: str = ''
 
     # ----------------------------------------------------------------------------------------------------
@@ -106,7 +106,7 @@ class DingTalkSendFile:
 
 
 if __name__ == '__main__':
-    # 实例化类
-    sendFileUtil = DingTalkSendFile('***REMOVED***')
+    # 实例化类 (chat_id/appKey/appSecret 均从 util/.env 读取, 避免硬编码敏感信息)
+    sendFileUtil = DingTalkSendFile()
     sendFileUtil.send_file(r'H:\Pictures\拯救姬3.jpg')
     sendFileUtil.send_file(r'H:\Pictures\测试.xlsx')
